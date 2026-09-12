@@ -36,15 +36,17 @@
 // two-row card, and the `stretch` single-row card — is gone. This bar now
 // always renders what used to be the COMPACT (icon-only) JSX, unconditionally,
 // stretched to fill whatever width its container gives it (`w-full` on the
-// card below, no `max-w`/`mx-auto` cap) instead of only kicking in below a
-// measured breakpoint. Below, every main control still drops its visible
-// label for a hover/focus `Tooltip` (`CompactCallControlButton`), the timer
-// still shows its "MM:SS" digits next to a Clock icon, and Volume/Transcript
-// still trail in their own leading/trailing flex slots — none of that
-// content changed, only the "which rendering, and how wide" logic around it.
-// `stretch` stays as an accepted prop (default `false`) purely so Phase 1/
-// Phase 2's existing call sites don't need to change their JSX — it no
-// longer affects anything rendered here.
+// card below AND on the outer full-bleed wrapper — see that wrapper's own
+// doc comment for why both levels need it explicitly rather than leaning on
+// ambient flex stretch — no `max-w`/`mx-auto` cap) instead of only kicking
+// in below a measured breakpoint. Below, every main control still drops its
+// visible label for a hover/focus `Tooltip` (`CompactCallControlButton`),
+// the timer still shows its "MM:SS" digits next to a Clock icon, and
+// Volume/Transcript still trail in their own leading/trailing flex slots —
+// none of that content changed, only the "which rendering, and how wide"
+// logic around it. `stretch` stays as an accepted prop (default `false`)
+// purely so Phase 1/Phase 2's existing call sites don't need to change
+// their JSX — it no longer affects anything rendered here.
 import React, { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -400,7 +402,17 @@ export function VoiceCallControls({
     // rather than on the card below — no caller passes it today, but this
     // is the more useful target for a future one (positioning/spacing
     // overrides for the whole bar's slot, not the card's own look).
-    <div className={cn("shrink-0 bg-lyra-bg-surface-base px-6 py-3", className)}>
+    // `w-full` explicit here (not just relied on as this flex item's own
+    // implicit cross-axis stretch from a `flex-col` ancestor) — per an
+    // explicit follow-up bug report/screenshot ("it's not full width")
+    // after the compact-card-stretch fix above: `shrink-0` alone left this
+    // wrapper's own WIDTH sized to content in practice once Phase 1/Phase
+    // 2 pass their own `className="px-0 py-0 bg-transparent"` override
+    // here (neutralizing this div's padding/background so the CALLER's own
+    // wrapping row supplies those instead) — same "don't lean on ambient
+    // stretch actually being definite" fix as `SidePanel`'s own `h-full`
+    // doc comment (side-panel.tsx) describes for its pinned branch.
+    <div className={cn("w-full shrink-0 bg-lyra-bg-surface-base px-6 py-3", className)}>
       {/* This card used to be one of three branches (wide two-row centered
           card / compact icon-only row / `stretch` single-row wide) picked
           by `stretch`+`isCompact` — see this file's own top doc comment
@@ -414,19 +426,19 @@ export function VoiceCallControls({
           no-shadow treatment the compact branch always had. */}
       <div
         className={cn(
-          // `bg-lyra-bg-surface-overlay` — per explicit request ("use the
-          // same white background on the call controls as the interior
-          // panel so it stands out more in dark mode"), matching
-          // `InteriorPanel`'s own root background (interior-panel.tsx,
-          // lyra-ui). Was `bg-lyra-bg-surface-base`, the same token the
-          // surrounding dark-mode page background itself uses
-          // (`--lyra-color-bg-surface-base: #1f1f1e`), which is why this bar
-          // visually disappeared into the page in dark mode; `surface-
-          // overlay` is a lighter, deliberately-standing-out surface token
-          // in dark mode (`#2e2e2e`) while staying identical to `surface-
-          // base` in light mode (both `#ffffff`), so light mode looks
-          // unchanged.
-          "border border-lyra-border-subtle bg-lyra-bg-surface-overlay",
+          // `bg-lyra-bg-surface-container-subtle` — per explicit request
+          // ("make the background of the call controls the neutral
+          // color"): was `bg-lyra-bg-surface-overlay` (a prior explicit
+          // request to stand out from the page in dark mode — see this
+          // file's own git history for that reasoning). `surface-
+          // container-subtle` is this design system's actual "neutral"
+          // surface token — the same one `Icon`'s own `background="neutral"`
+          // variant maps to (icon.tsx) and the same one `SidePanel` uses
+          // for its own panel surface (side-panel.tsx) — a plain neutral
+          // gray container (`#fbfcfe` light / `#262626` dark) rather than
+          // the lighter, "stands out" white/near-white treatment
+          // `surface-overlay` gave it.
+          "border border-lyra-border-subtle bg-lyra-bg-surface-container-subtle",
           "w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1"
         )}
       >
@@ -545,7 +557,8 @@ export function VoiceCallControls({
               control in the leading cluster above, rather than a row folded
               into `CompactVolumeButton`'s own popover — see that
               component's own doc comment for the "why" this reverted.
-              `onToggleTranscript` omitted entirely hides this trigger. */}
+              `onToggleTranscript` omitted entirely hides this trigger, same
+              as the wide rendering's own matching icon further down. */}
           {onToggleTranscript && (
             <>
               {/* Separator — per explicit follow-up request ("add a
@@ -573,9 +586,11 @@ export function VoiceCallControls({
               own slot (see this branch's own top comment), and shows its
               actual "MM:SS" digits (`formatElapsedTime`) next to the Clock
               icon rather than just the bare icon a hover/focus `Tooltip`
-              used to be the only way to read it through. Divider matches
-              this row's own leading dividers (`h-4 w-px bg-lyra-border-
-              subtle`) exactly, and is gated on the same `elapsedSeconds !== undefined`
+              used to be the only way to read it through — same digits the
+              wide rendering below already shows inline, just reused here
+              too now. Divider matches the wide rendering's own trailing-
+              timer separator further down (`h-4 w-px bg-lyra-border-subtle`)
+              exactly, and is gated on the same `elapsedSeconds !== undefined`
               check as the timer itself, so no dangling divider with nothing
               after it.
               Per a later explicit follow-up request ("make the width of the

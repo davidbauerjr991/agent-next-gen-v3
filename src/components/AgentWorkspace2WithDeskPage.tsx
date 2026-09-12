@@ -72,6 +72,7 @@ import {
   type MenuEntry,
   CHANNEL_TYPE_META,
   InteriorPanel,
+  SidePanel,
   EmptyState,
 } from "@nicecxone/lyra-ui";
 import { CREATE_NEW_CUSTOMERS, type CreateNewCustomerRecord } from "@nicecxone/lyra-ui/customers-data";
@@ -2999,7 +3000,27 @@ export function AgentWorkspace2WithDeskPage({
   // Voice call transcript side panel + floating video window — see
   // AgentNextGenPage.tsx's identical state/effect (same
   // `[activeInteractionId]` dependency) for the full rationale.
-  const [voiceTranscriptPanelOpen, setVoiceTranscriptPanelOpen] = useState(false);
+  //
+  // Per explicit request ("respect the visibility of the details panel -
+  // if a user opens it then opens another channel, keep it open, if
+  // they close it and go to another channel, keep it closed"): this is
+  // now the ONE shared open/closed flag for the "Details" panel
+  // regardless of which channel type is active — both the voice combo
+  // panel (below) and the non-voice panel now read/write this same
+  // state instead of each tracking its own (voice's own
+  // `voiceTranscriptPanelOpen` boolean vs. non-voice's
+  // `!!selectedSessionDetails`). Only one of those two panels is ever
+  // mounted at a time (gated on `activeChannelType === "voice"`), so
+  // before this fix, switching the active channel tab within the same
+  // interaction swapped which panel was mounted — and the newly-mounted
+  // one's own independent, untouched state decided visibility, ignoring
+  // whatever the user had just done. `selectedSessionDetails` (below)
+  // still holds which non-voice session's details to display — it's
+  // content, not visibility — and is intentionally NOT nulled out when
+  // the panel closes, so if the user reopens it (even after a channel
+  // switch) the same content is still there, matching how voice already
+  // keeps `selectedVoiceDetailsSession` around across a close.
+  const [detailsPanelOpen, setDetailsPanelOpen] = useState(false);
   const [voiceVideoWindowOpen, setVoiceVideoWindowOpen] = useState(false);
   // Whether the video window is currently the full-screen variant vs. the
   // small floating one — see AgentNextGenPage.tsx's identical state for
@@ -3020,9 +3041,27 @@ export function AgentWorkspace2WithDeskPage({
   const [selectedSessionDetails, setSelectedSessionDetails] = useState<Contact | null>(null);
   // See AgentNextGenPage.tsx's identical state for the full doc comment.
   const [customerDetailsOpen, setCustomerDetailsOpen] = useState(false);
+  // Per explicit follow-up request ("update the side panel in phase 2 to
+  // match the side panel update you did in phase 1"): the voice/non-voice
+  // "Details" panel below is now a `SidePanel` instead of an
+  // `InteriorPanel` — see AgentNextGenPage.tsx's identical state for the
+  // full rationale. `detailsPanelFullScreen`/`detailsPanelWidth`/
+  // `detailsPanelResizing` mirror that file's identical state one-for-one
+  // (own toggle button, reset on close/new-interaction, substitutes
+  // `sidePanelContainerWidth` for the normal width while on) but are a
+  // SEPARATE piece of state, not reused from the Customer Information
+  // panel's own — the two panels can be open/full-screen independently of
+  // each other.
+  const [detailsPanelFullScreen, setDetailsPanelFullScreen] = useState(false);
+  // 350 — matches the old `InteriorPanel`'s own default starting width
+  // (`minWidth`, interior-panel.tsx: panels open at their narrowest by
+  // default). `onWidthChange` below keeps this in sync with manual drags,
+  // same as `sidePanelWidth` above.
+  const [detailsPanelWidth, setDetailsPanelWidth] = useState(350);
+  const [detailsPanelResizing, setDetailsPanelResizing] = useState(false);
   useEffect(() => {
     if (activeInteractionId) {
-      setVoiceTranscriptPanelOpen(false);
+      setDetailsPanelOpen(false);
       setVoiceVideoWindowOpen(false);
       setVoiceVideoFullScreen(false);
       setVoiceDetailsPanelTab("Transcript");
@@ -3030,6 +3069,7 @@ export function AgentWorkspace2WithDeskPage({
       setCurrentVoiceSession(null);
       setSelectedSessionDetails(null);
       setCustomerDetailsOpen(false);
+      setDetailsPanelFullScreen(false);
     }
   }, [activeInteractionId]);
   const [panelMounted,   setPanelMounted]   = useState(false);
@@ -8020,7 +8060,7 @@ export function AgentWorkspace2WithDeskPage({
                          those instead of sitting slightly indented (was
                          `px-4`/16px). Same fix as Phase 1's identical call
                          site, AgentNextGenPage.tsx. */
-                      <div className="shrink-0 bg-lyra-bg-surface-base px-6 py-2">
+                      <div className="shrink-0 bg-lyra-bg-surface-base px-6 pt-4 pb-0">
                         <VoiceCallControls
                           stretch
                           className="px-0 py-0 bg-transparent"
@@ -8034,14 +8074,14 @@ export function AgentWorkspace2WithDeskPage({
                           elapsedSeconds={clockTick - activeInteractionVoiceThread.startTick}
                           onAddToast={addToast}
                           onToggleTranscript={() => {
-                            if (voiceTranscriptPanelOpen && voiceDetailsPanelTab === "Transcript") {
-                              setVoiceTranscriptPanelOpen(false);
+                            if (detailsPanelOpen && voiceDetailsPanelTab === "Transcript") {
+                              setDetailsPanelOpen(false);
                             } else {
                               setVoiceDetailsPanelTab("Transcript");
-                              setVoiceTranscriptPanelOpen(true);
+                              setDetailsPanelOpen(true);
                             }
                           }}
-                          transcriptOpen={voiceTranscriptPanelOpen && voiceDetailsPanelTab === "Transcript"}
+                          transcriptOpen={detailsPanelOpen && voiceDetailsPanelTab === "Transcript"}
                           onToggleVideo={() =>
                             setVoiceVideoWindowOpen((v) => {
                               const next = !v;
@@ -8407,23 +8447,38 @@ export function AgentWorkspace2WithDeskPage({
                           // open on a tab OTHER than "Details".
                           onViewSessionDetails={(session) => {
                             if (activeChannelType === "voice") {
-                              if (voiceTranscriptPanelOpen && voiceDetailsPanelTab !== "Details") {
-                                setVoiceTranscriptPanelOpen(false);
+                              if (detailsPanelOpen && voiceDetailsPanelTab !== "Details") {
+                                setDetailsPanelOpen(false);
                                 return;
                               }
                               const alreadyShowingThisSession =
-                                voiceTranscriptPanelOpen &&
+                                detailsPanelOpen &&
                                 voiceDetailsPanelTab === "Details" &&
                                 selectedVoiceDetailsSession?.id === session.id;
                               if (alreadyShowingThisSession) {
-                                setVoiceTranscriptPanelOpen(false);
+                                setDetailsPanelOpen(false);
                               } else {
                                 setSelectedVoiceDetailsSession(session);
                                 setVoiceDetailsPanelTab("Details");
-                                setVoiceTranscriptPanelOpen(true);
+                                setDetailsPanelOpen(true);
                               }
                             } else {
-                              setSelectedSessionDetails((prev) => (prev?.id === session.id ? null : session));
+                              // Per explicit fix ("respect the visibility of
+                              // the details panel"): toggles the SHARED
+                              // `detailsPanelOpen` flag rather than nulling
+                              // `selectedSessionDetails` itself — the
+                              // session stays remembered so a later reopen
+                              // (including after switching channel tabs and
+                              // back) shows the same content, same as
+                              // voice's own `selectedVoiceDetailsSession`.
+                              const alreadyShowingThisSession =
+                                detailsPanelOpen && selectedSessionDetails?.id === session.id;
+                              if (alreadyShowingThisSession) {
+                                setDetailsPanelOpen(false);
+                              } else {
+                                setSelectedSessionDetails(session);
+                                setDetailsPanelOpen(true);
+                              }
                             }
                           }}
                         />
@@ -8493,203 +8548,6 @@ export function AgentWorkspace2WithDeskPage({
                         </>
                         )}
                       </div>
-                      {/* Voice's own "Session Details"/"Transcript"
-                          `InteriorPanel` — see AgentNextGenPage.tsx's
-                          identical render site for the full "why
-                          InteriorPanel, not SidePanel, a fresh
-                          InteractionTranscript instance, and why voice
-                          reuses this ONE panel via a Details/Transcript
-                          tab pair instead of opening a second panel for
-                          'View Details'" reasoning. */}
-                      {activeChannelType === "voice" && (
-                        <InteriorPanel
-                          side="right"
-                          // See AgentNextGenPage.tsx's identical comment for
-                          // the full rationale: this INTERACTION panel
-                          // (Session Details/Transcript) drops to 768px,
-                          // narrower than the 1024px it was set to on an
-                          // earlier pass, which the dashboard's own
-                          // InteriorPanel instances (`selectedAllContactsRecord`
-                          // above and the queue-drilldown/Case Details/
-                          // Contact History slot further down) keep instead.
-                          absoluteBreakpoint={768}
-                          open={voiceTranscriptPanelOpen}
-                          // Per explicit request ("take the content in the
-                          // customer information side panel and load it in
-                          // the interior panel ... allow it to expand full
-                          // screen"): swapped in below alongside the
-                          // header/body/footer, whenever `customerDetailsOpen`
-                          // — `useCustomerDetailsInteriorPanel`'s own back
-                          // arrow (`headerIcon`) is what flips this back off.
-                          allowFullScreen={customerDetailsOpen}
-                          // Per explicit request ("rename the panel
-                          // 'Details'") — was "Session Details".
-                          headerIcon={customerDetailsOpen ? customerDetailsPanel.headerIcon : undefined}
-                          headerTitle={customerDetailsOpen ? customerDetailsPanel.headerTitle : "Details"}
-                          // See AgentNextGenPage.tsx's identical prop for
-                          // the full rationale (contact type + contact ID
-                          // of whichever session is showing, not the
-                          // customer name).
-                          headerSubhead={
-                            customerDetailsOpen
-                              ? customerDetailsPanel.headerSubhead
-                              : selectedVoiceDetailsSession
-                              ? `${selectedVoiceDetailsSession.channel} | #${selectedVoiceDetailsSession.contactId}`
-                              : `${CHANNEL_TYPE_META[activeChannelType].label} | #${activeChannel?.contactId ?? activeInteraction.customerId}`
-                          }
-                          onClose={() => {
-                            setVoiceTranscriptPanelOpen(false);
-                            setCustomerDetailsOpen(false);
-                          }}
-                          closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
-                          headerTabs={
-                            customerDetailsOpen ? (
-                              customerDetailsPanel.headerTabs
-                            ) : (
-                              <TabList className="px-4">
-                                {(["Details", "Transcript"] as const).map((label) => (
-                                  <Tab
-                                    key={label}
-                                    active={voiceDetailsPanelTab === label}
-                                    onClick={() => setVoiceDetailsPanelTab(label)}
-                                  >
-                                    {label}
-                                  </Tab>
-                                ))}
-                              </TabList>
-                            )
-                          }
-                          footer={customerDetailsOpen ? customerDetailsPanel.footer : undefined}
-                        >
-                          {customerDetailsOpen ? (
-                            customerDetailsPanel.body
-                          ) : (
-                            <>
-                          {voiceDetailsPanelTab === "Details" && (
-                            <>
-                              {selectedVoiceDetailsSession || currentVoiceSession ? (
-                                // Per explicit request ("when a user clicks
-                                // 'View Details' — display the accordions
-                                // instead of the current session details
-                                // content"): the accordions replace the
-                                // previous flat `TranscriptSessionDetails`
-                                // render here.
-                                <DetailsPanelAccordions
-                                  sessionContact={(selectedVoiceDetailsSession ?? currentVoiceSession)!}
-                                  customerName={activeInteraction.customerName}
-                                  customerId={activeInteraction.customerId}
-                                  channels={activeInteraction.threads}
-                                  onViewCustomerDetails={() => setCustomerDetailsOpen(true)}
-                                />
-                              ) : (
-                                <p className="lyra-body-md text-lyra-fg-secondary px-4 pt-3 pb-4">
-                                  Select "View Details" on a session to see its details here.
-                                </p>
-                              )}
-                            </>
-                          )}
-                          {voiceDetailsPanelTab === "Transcript" && (
-                            <InteractionTranscript
-                              channelType={activeChannelType}
-                              direction={activeChannel?.direction}
-                              customerName={activeInteraction.customerName}
-                              // See `activeInteractionCustomerIdentified`'s
-                              // own doc comment above for the full "why".
-                              customerIdentified={activeInteractionCustomerIdentified}
-                              contactId={activeChannel?.contactId ?? activeInteraction.customerId}
-                              skillLabel={activeChannel?.preview}
-                              isFreshLaunch={!!activeChannel?.startedFresh}
-                              liveMessages={activeInteraction.liveMessages?.[activeChannelKey] ?? []}
-                              dimmed={!!activeInteraction.closed || activeChannelStatus === "Closed"}
-                              currentStatus={activeChannelStatus}
-                              onCurrentStatusChange={(status) =>
-                                activeChannel && handleInteractionStatusChange(activeInteraction.id, activeChannel.id, status)
-                              }
-                              showSessionActionCluster={false}
-                              onViewSessionDetails={(session) => {
-                                setSelectedVoiceDetailsSession(session);
-                                setVoiceDetailsPanelTab("Details");
-                              }}
-                              // See AgentNextGenPage.tsx's identical prop
-                              // for the full rationale.
-                              showViewDetails={false}
-                            />
-                          )}
-                            </>
-                          )}
-                        </InteriorPanel>
-                      )}
-                      {/* Non-voice "Session Details" `InteriorPanel` — see
-                          AgentNextGenPage.tsx's identical render site for
-                          the full rationale. Mounted only for a non-voice
-                          active channel (mirrors the voice combo panel's
-                          own `activeChannelType === "voice"` gate just
-                          above) so exactly one of the two ever occupies
-                          this slot at a time — otherwise both would show
-                          their own idle accordions simultaneously whenever
-                          a voice channel's `selectedSessionDetails` happens
-                          to be null (which it always is; voice routes "View
-                          Details" through the combo panel's own state
-                          instead). */}
-                      {activeChannelType !== "voice" && (
-                        <InteriorPanel
-                          side="right"
-                          // See AgentNextGenPage.tsx's identical comment for
-                          // the full rationale: this INTERACTION panel
-                          // (Session Details) drops to 768px, same as the
-                          // voice combo panel just above.
-                          absoluteBreakpoint={768}
-                          open={!!selectedSessionDetails}
-                          // Per explicit request ("take the content in the
-                          // customer information side panel and load it in
-                          // the interior panel ... allow it to expand full
-                          // screen"): swapped in below alongside the
-                          // header/body/footer, whenever `customerDetailsOpen`
-                          // — `useCustomerDetailsInteriorPanel`'s own back
-                          // arrow (`headerIcon`) is what flips this back off.
-                          allowFullScreen={customerDetailsOpen}
-                          // Per explicit request ("rename the panel
-                          // 'Details'") — was "Session Details".
-                          headerIcon={customerDetailsOpen ? customerDetailsPanel.headerIcon : undefined}
-                          headerTitle={customerDetailsOpen ? customerDetailsPanel.headerTitle : "Details"}
-                          // See AgentNextGenPage.tsx's identical prop for
-                          // the full rationale.
-                          headerSubhead={
-                            customerDetailsOpen
-                              ? customerDetailsPanel.headerSubhead
-                              : selectedSessionDetails
-                              ? `${selectedSessionDetails.channel} | #${selectedSessionDetails.contactId}`
-                              : undefined
-                          }
-                          onClose={() => {
-                            setSelectedSessionDetails(null);
-                            setCustomerDetailsOpen(false);
-                          }}
-                          closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
-                          headerTabs={customerDetailsOpen ? customerDetailsPanel.headerTabs : undefined}
-                          footer={customerDetailsOpen ? customerDetailsPanel.footer : undefined}
-                        >
-                          {customerDetailsOpen ? (
-                            customerDetailsPanel.body
-                          ) : (
-                            selectedSessionDetails && (
-                              // Per explicit request ("when a user clicks
-                              // 'View Details' — display the accordions
-                              // instead of the current session details
-                              // content"): the accordions replace the
-                              // previous flat `TranscriptSessionDetails`
-                              // render here.
-                              <DetailsPanelAccordions
-                                sessionContact={selectedSessionDetails}
-                                customerName={activeInteraction.customerName}
-                                customerId={activeInteraction.customerId}
-                                channels={activeInteraction.threads}
-                                onViewCustomerDetails={() => setCustomerDetailsOpen(true)}
-                              />
-                            )
-                          )}
-                        </InteriorPanel>
-                      )}
                   </div>
                 </div>
               ) : (
@@ -9382,6 +9240,292 @@ export function AgentWorkspace2WithDeskPage({
             )}
 
               </div>
+              {/* Details panel (voice combo panel + non-voice single-
+                  purpose panel below) — per explicit follow-up request
+                  ("update the side panel in phase 2 to match the side
+                  panel update you did in phase 1 - it's still opening
+                  details as an interior panel"): converted from
+                  `InteriorPanel` to `SidePanel` and relocated here, as a
+                  sibling of the whole tab-row/content-column wrapper
+                  above (was nested inside it) — same "confined inside
+                  the page header instead of spanning the full container
+                  height" fix, and the same `InteriorPanel`→`SidePanel`
+                  swap, AgentNextGenPage.tsx's identical render site
+                  already got (see that file's own doc comment on this
+                  exact block for the full "why" — `pinned`/
+                  `headerActions`/`width` below rebuild what
+                  `InteriorPanel`'s `absoluteBreakpoint`/`allowFullScreen`/
+                  `onClose`/`closeIcon` used to do, `SidePanel` having
+                  none of those built in). `detailsPanelFullScreen`/
+                  `detailsPanelWidth`/`detailsPanelResizing` mirror
+                  AgentNextGenPage.tsx's identical state one-for-one.
+                  Content below (voice/non-voice split, tabs, accordions,
+                  transcript) is otherwise unchanged from the original
+                  `InteriorPanel` usage — including this page's own
+                  `onViewCustomerDetails` link into the accordions
+                  (AgentNextGenPage.tsx dropped that per its own separate
+                  explicit request, "remove the customer details
+                  accordion from phase 1" — this page never got that
+                  request, so it stays). */}
+              {activeInteraction && (
+                <div
+                  key={`details-panel-${activeInteraction.id}`}
+                  className="shrink-0 h-full z-[5] animate-in fade-in-0 duration-200 delay-150 fill-mode-backwards"
+                >
+                  {/* Voice's own "Session Details"/"Transcript"
+                      `SidePanel` — see AgentNextGenPage.tsx's identical
+                      render site for the full "why not InteriorPanel, a
+                      fresh InteractionTranscript instance, and why voice
+                      reuses this ONE panel via a Details/Transcript
+                      tab pair instead of opening a second panel for
+                      'View Details'" reasoning. */}
+                  {activeChannelType === "voice" && (
+                    <SidePanel
+                      side="right"
+                      // See AgentNextGenPage.tsx's identical render site
+                      // for the full rationale behind each rebuilt piece.
+                      // `isSidePanelContainerNarrow`/`sidePanelContainerWidth`
+                      // is the same container query the docked Customer
+                      // Information `SidePanel` already uses for its own
+                      // identical 768px threshold.
+                      pinned={detailsPanelFullScreen ? false : !isSidePanelContainerNarrow}
+                      open={detailsPanelOpen}
+                      // Per explicit request ("take the content in the
+                      // customer information side panel and load it in
+                      // the interior panel ... allow it to expand full
+                      // screen"): swapped in below alongside the
+                      // header/body/footer, whenever `customerDetailsOpen`
+                      // — `useCustomerDetailsInteriorPanel`'s own back
+                      // arrow (`headerIcon`) is what flips this back off.
+                      headerIcon={customerDetailsOpen ? customerDetailsPanel.headerIcon : undefined}
+                      headerTitle={customerDetailsOpen ? customerDetailsPanel.headerTitle : "Details"}
+                      // See AgentNextGenPage.tsx's identical prop for
+                      // the full rationale (contact type + contact ID
+                      // of whichever session is showing, not the
+                      // customer name).
+                      headerSubhead={
+                        customerDetailsOpen
+                          ? customerDetailsPanel.headerSubhead
+                          : selectedVoiceDetailsSession
+                          ? `${selectedVoiceDetailsSession.channel} | #${selectedVoiceDetailsSession.contactId}`
+                          : `${CHANNEL_TYPE_META[activeChannelType].label} | #${activeChannel?.contactId ?? activeInteraction.customerId}`
+                      }
+                      // Full-screen toggle (only while drilled into the
+                      // full Customer Information content) and close
+                      // button, both hand-built from the same
+                      // `PanelPinButton` atom `CustomerInformationSidePanel`
+                      // already uses for its own identical pair — see
+                      // AgentNextGenPage.tsx's identical render site for
+                      // the full rationale.
+                      headerActions={
+                        <>
+                          {customerDetailsOpen && (
+                            <PanelPinButton
+                              pinned={false}
+                              onToggle={() => setDetailsPanelFullScreen((v) => !v)}
+                              icon={
+                                detailsPanelFullScreen ? (
+                                  <Minimize2 className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                                ) : (
+                                  <Maximize2 className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                                )
+                              }
+                              pinnedLabel={detailsPanelFullScreen ? "Exit Full Screen" : "Full Screen"}
+                              unpinnedLabel={detailsPanelFullScreen ? "Exit Full Screen" : "Full Screen"}
+                            />
+                          )}
+                          <PanelPinButton
+                            pinned={false}
+                            onToggle={() => {
+                              setDetailsPanelOpen(false);
+                              setCustomerDetailsOpen(false);
+                              setDetailsPanelFullScreen(false);
+                            }}
+                            icon={<PanelRightClose className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />}
+                            pinnedLabel="Close Details"
+                            unpinnedLabel="Close Details"
+                          />
+                        </>
+                      }
+                      headerTabs={
+                        customerDetailsOpen ? (
+                          customerDetailsPanel.headerTabs
+                        ) : (
+                          <TabList className="px-4">
+                            {(["Details", "Transcript"] as const).map((label) => (
+                              <Tab
+                                key={label}
+                                active={voiceDetailsPanelTab === label}
+                                onClick={() => setVoiceDetailsPanelTab(label)}
+                              >
+                                {label}
+                              </Tab>
+                            ))}
+                          </TabList>
+                        )
+                      }
+                      footer={customerDetailsOpen ? customerDetailsPanel.footer : undefined}
+                      // Full-screen substitutes the shared content-area
+                      // measurement (`sidePanelContainerWidth`) for the
+                      // normal drag-resized width — same trick
+                      // `CustomerInformationSidePanel` uses for its own
+                      // full-screen.
+                      width={detailsPanelFullScreen ? sidePanelContainerWidth : Math.min(detailsPanelWidth, sidePanelContainerWidth)}
+                      minWidth={350}
+                      maxWidth={Math.max(0, Math.min(425, sidePanelContainerWidth))}
+                      resizable={!detailsPanelFullScreen}
+                      onWidthChange={setDetailsPanelWidth}
+                      onResizeStateChange={setDetailsPanelResizing}
+                    >
+                      {customerDetailsOpen ? (
+                        customerDetailsPanel.body
+                      ) : (
+                        <>
+                      {voiceDetailsPanelTab === "Details" && (
+                        <>
+                          {selectedVoiceDetailsSession || currentVoiceSession ? (
+                            // Per explicit request ("when a user clicks
+                            // 'View Details' — display the accordions
+                            // instead of the current session details
+                            // content"): the accordions replace the
+                            // previous flat `TranscriptSessionDetails`
+                            // render here.
+                            <DetailsPanelAccordions
+                              sessionContact={(selectedVoiceDetailsSession ?? currentVoiceSession)!}
+                              customerName={activeInteraction.customerName}
+                              customerId={activeInteraction.customerId}
+                              channels={activeInteraction.threads}
+                              onViewCustomerDetails={() => setCustomerDetailsOpen(true)}
+                            />
+                          ) : (
+                            <p className="lyra-body-md text-lyra-fg-secondary px-4 pt-3 pb-4">
+                              Select "View Details" on a session to see its details here.
+                            </p>
+                          )}
+                        </>
+                      )}
+                      {voiceDetailsPanelTab === "Transcript" && (
+                        <InteractionTranscript
+                          channelType={activeChannelType}
+                          direction={activeChannel?.direction}
+                          customerName={activeInteraction.customerName}
+                          // See `activeInteractionCustomerIdentified`'s
+                          // own doc comment above for the full "why".
+                          customerIdentified={activeInteractionCustomerIdentified}
+                          contactId={activeChannel?.contactId ?? activeInteraction.customerId}
+                          skillLabel={activeChannel?.preview}
+                          isFreshLaunch={!!activeChannel?.startedFresh}
+                          liveMessages={activeInteraction.liveMessages?.[activeChannelKey] ?? []}
+                          dimmed={!!activeInteraction.closed || activeChannelStatus === "Closed"}
+                          currentStatus={activeChannelStatus}
+                          onCurrentStatusChange={(status) =>
+                            activeChannel && handleInteractionStatusChange(activeInteraction.id, activeChannel.id, status)
+                          }
+                          showSessionActionCluster={false}
+                          onViewSessionDetails={(session) => {
+                            setSelectedVoiceDetailsSession(session);
+                            setVoiceDetailsPanelTab("Details");
+                          }}
+                          // See AgentNextGenPage.tsx's identical prop
+                          // for the full rationale.
+                          showViewDetails={false}
+                        />
+                      )}
+                        </>
+                      )}
+                    </SidePanel>
+                  )}
+                  {/* Non-voice "Session Details" `SidePanel` — see
+                      AgentNextGenPage.tsx's identical render site for
+                      the full rationale — same treatment as the voice
+                      combo panel just above. Mounted only for a
+                      non-voice active channel (mirrors the voice combo
+                      panel's own `activeChannelType === "voice"` gate
+                      just above) so exactly one of the two ever
+                      occupies this slot at a time — otherwise both
+                      would show their own idle accordions
+                      simultaneously whenever a voice channel's
+                      `selectedSessionDetails` happens to be null (which
+                      it always is; voice routes "View Details" through
+                      the combo panel's own state instead). */}
+                  {activeChannelType !== "voice" && (
+                    <SidePanel
+                      side="right"
+                      pinned={detailsPanelFullScreen ? false : !isSidePanelContainerNarrow}
+                      open={detailsPanelOpen}
+                      headerIcon={customerDetailsOpen ? customerDetailsPanel.headerIcon : undefined}
+                      headerTitle={customerDetailsOpen ? customerDetailsPanel.headerTitle : "Details"}
+                      // See AgentNextGenPage.tsx's identical prop for
+                      // the full rationale.
+                      headerSubhead={
+                        customerDetailsOpen
+                          ? customerDetailsPanel.headerSubhead
+                          : selectedSessionDetails
+                          ? `${selectedSessionDetails.channel} | #${selectedSessionDetails.contactId}`
+                          : undefined
+                      }
+                      headerActions={
+                        <>
+                          {customerDetailsOpen && (
+                            <PanelPinButton
+                              pinned={false}
+                              onToggle={() => setDetailsPanelFullScreen((v) => !v)}
+                              icon={
+                                detailsPanelFullScreen ? (
+                                  <Minimize2 className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                                ) : (
+                                  <Maximize2 className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+                                )
+                              }
+                              pinnedLabel={detailsPanelFullScreen ? "Exit Full Screen" : "Full Screen"}
+                              unpinnedLabel={detailsPanelFullScreen ? "Exit Full Screen" : "Full Screen"}
+                            />
+                          )}
+                          <PanelPinButton
+                            pinned={false}
+                            onToggle={() => {
+                              setDetailsPanelOpen(false);
+                              setCustomerDetailsOpen(false);
+                              setDetailsPanelFullScreen(false);
+                            }}
+                            icon={<PanelRightClose className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />}
+                            pinnedLabel="Close Details"
+                            unpinnedLabel="Close Details"
+                          />
+                        </>
+                      }
+                      headerTabs={customerDetailsOpen ? customerDetailsPanel.headerTabs : undefined}
+                      footer={customerDetailsOpen ? customerDetailsPanel.footer : undefined}
+                      width={detailsPanelFullScreen ? sidePanelContainerWidth : Math.min(detailsPanelWidth, sidePanelContainerWidth)}
+                      minWidth={350}
+                      maxWidth={Math.max(0, Math.min(425, sidePanelContainerWidth))}
+                      resizable={!detailsPanelFullScreen}
+                      onWidthChange={setDetailsPanelWidth}
+                      onResizeStateChange={setDetailsPanelResizing}
+                    >
+                      {customerDetailsOpen ? (
+                        customerDetailsPanel.body
+                      ) : (
+                        selectedSessionDetails && (
+                          // Per explicit request ("when a user clicks
+                          // 'View Details' — display the accordions
+                          // instead of the current session details
+                          // content"): the accordions replace the
+                          // previous flat `TranscriptSessionDetails`
+                          // render here.
+                          <DetailsPanelAccordions
+                            sessionContact={selectedSessionDetails}
+                            customerName={activeInteraction.customerName}
+                            customerId={activeInteraction.customerId}
+                            channels={activeInteraction.threads}
+                            onViewCustomerDetails={() => setCustomerDetailsOpen(true)}
+                          />
+                        )
+                      )}
+                    </SidePanel>
+                  )}
+                </div>
+              )}
               {/* Customer Information now docks on the RIGHT of the main
                   content column (per explicit request — was on the left) —
                   this block itself is unchanged from its old position

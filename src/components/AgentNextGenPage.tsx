@@ -1716,7 +1716,27 @@ export function AgentNextGenPage({
   // just above, rather than only a brand-new card: a panel/window left
   // open from a PREVIOUS call would otherwise still show while looking at
   // a different, unrelated interaction.
-  const [voiceTranscriptPanelOpen, setVoiceTranscriptPanelOpen] = useState(false);
+  //
+  // Per explicit request ("respect the visibility of the details panel -
+  // if a user opens it then opens another channel, keep it open, if
+  // they close it and go to another channel, keep it closed"): this is
+  // now the ONE shared open/closed flag for the "Details" panel
+  // regardless of which channel type is active — both the voice combo
+  // panel (below) and the non-voice panel now read/write this same
+  // state instead of each tracking its own (voice's own
+  // `voiceTranscriptPanelOpen` boolean vs. non-voice's
+  // `!!selectedSessionDetails`). Only one of those two panels is ever
+  // mounted at a time (gated on `activeChannelType === "voice"`), so
+  // before this fix, switching the active channel tab within the same
+  // interaction swapped which panel was mounted — and the newly-mounted
+  // one's own independent, untouched state decided visibility, ignoring
+  // whatever the user had just done. `selectedSessionDetails` (below)
+  // still holds which non-voice session's details to display — it's
+  // content, not visibility — and is intentionally NOT nulled out when
+  // the panel closes, so if the user reopens it (even after a channel
+  // switch) the same content is still there, matching how voice already
+  // keeps `selectedVoiceDetailsSession` around across a close.
+  const [detailsPanelOpen, setDetailsPanelOpen] = useState(false);
   const [voiceVideoWindowOpen, setVoiceVideoWindowOpen] = useState(false);
   // Whether the video window is currently the full-screen variant
   // (`VideoCallFullScreen`, rendered inline in the transcript column) vs.
@@ -1730,8 +1750,9 @@ export function AgentNextGenPage({
   // real "Session Details" `InteriorPanel` instead of the old inline
   // dropdown — per explicit request, though, a VOICE contact doesn't get a
   // second, separate panel for this: it reuses the EXISTING "Transcript"
-  // panel above (`voiceTranscriptPanelOpen`), which gains a second tab
-  // ("Details") alongside its original "Transcript" one. `voiceDetailsPanelTab`
+  // panel above (now gated by the shared `detailsPanelOpen`), which gains
+  // a second tab ("Details") alongside its original "Transcript" one.
+  // `voiceDetailsPanelTab`
   // is which of those 2 tabs that shared panel currently shows — defaults
   // to "Transcript" so the transcript-icon toggle's own existing behavior
   // (open straight to the transcript) is unaffected; "View Details" flips
@@ -1786,7 +1807,7 @@ export function AgentNextGenPage({
   const [detailsPanelResizing, setDetailsPanelResizing] = useState(false);
   useEffect(() => {
     if (activeInteractionId) {
-      setVoiceTranscriptPanelOpen(false);
+      setDetailsPanelOpen(false);
       setVoiceVideoWindowOpen(false);
       setVoiceVideoFullScreen(false);
       setVoiceDetailsPanelTab("Transcript");
@@ -7332,7 +7353,7 @@ export function AgentNextGenPage({
                          right) so this bar's left/right edges line up with
                          those instead of sitting slightly indented (was
                          `px-4`/16px). */
-                      <div className="shrink-0 bg-lyra-bg-surface-base px-6 py-2">
+                      <div className="shrink-0 bg-lyra-bg-surface-base px-6 pt-4 pb-0">
                         <VoiceCallControls
                           stretch
                           className="px-0 py-0 bg-transparent"
@@ -7346,14 +7367,14 @@ export function AgentNextGenPage({
                           elapsedSeconds={clockTick - activeInteractionVoiceThread.startTick}
                           onAddToast={addToast}
                           onToggleTranscript={() => {
-                            if (voiceTranscriptPanelOpen && voiceDetailsPanelTab === "Transcript") {
-                              setVoiceTranscriptPanelOpen(false);
+                            if (detailsPanelOpen && voiceDetailsPanelTab === "Transcript") {
+                              setDetailsPanelOpen(false);
                             } else {
                               setVoiceDetailsPanelTab("Transcript");
-                              setVoiceTranscriptPanelOpen(true);
+                              setDetailsPanelOpen(true);
                             }
                           }}
-                          transcriptOpen={voiceTranscriptPanelOpen && voiceDetailsPanelTab === "Transcript"}
+                          transcriptOpen={detailsPanelOpen && voiceDetailsPanelTab === "Transcript"}
                           onToggleVideo={() =>
                             setVoiceVideoWindowOpen((v) => {
                               const next = !v;
@@ -7759,23 +7780,38 @@ export function AgentNextGenPage({
                           // toggle every other trigger for it already gets).
                           onViewSessionDetails={(session) => {
                             if (activeChannelType === "voice") {
-                              if (voiceTranscriptPanelOpen && voiceDetailsPanelTab !== "Details") {
-                                setVoiceTranscriptPanelOpen(false);
+                              if (detailsPanelOpen && voiceDetailsPanelTab !== "Details") {
+                                setDetailsPanelOpen(false);
                                 return;
                               }
                               const alreadyShowingThisSession =
-                                voiceTranscriptPanelOpen &&
+                                detailsPanelOpen &&
                                 voiceDetailsPanelTab === "Details" &&
                                 selectedVoiceDetailsSession?.id === session.id;
                               if (alreadyShowingThisSession) {
-                                setVoiceTranscriptPanelOpen(false);
+                                setDetailsPanelOpen(false);
                               } else {
                                 setSelectedVoiceDetailsSession(session);
                                 setVoiceDetailsPanelTab("Details");
-                                setVoiceTranscriptPanelOpen(true);
+                                setDetailsPanelOpen(true);
                               }
                             } else {
-                              setSelectedSessionDetails((prev) => (prev?.id === session.id ? null : session));
+                              // Per explicit fix ("respect the visibility of
+                              // the details panel"): toggles the SHARED
+                              // `detailsPanelOpen` flag rather than nulling
+                              // `selectedSessionDetails` itself — the
+                              // session stays remembered so a later reopen
+                              // (including after switching channel tabs and
+                              // back) shows the same content, same as
+                              // voice's own `selectedVoiceDetailsSession`.
+                              const alreadyShowingThisSession =
+                                detailsPanelOpen && selectedSessionDetails?.id === session.id;
+                              if (alreadyShowingThisSession) {
+                                setDetailsPanelOpen(false);
+                              } else {
+                                setSelectedSessionDetails(session);
+                                setDetailsPanelOpen(true);
+                              }
                             }
                           }}
                         />
@@ -8513,7 +8549,7 @@ export function AgentNextGenPage({
                       // (agent-next-gen-customer-info-panel.tsx) for the
                       // full "why" behind each piece.
                       pinned={detailsPanelFullScreen ? false : !isSidePanelContainerNarrow}
-                      open={voiceTranscriptPanelOpen}
+                      open={detailsPanelOpen}
                       headerIcon={customerDetailsOpen ? customerDetailsPanel.headerIcon : undefined}
                       headerTitle={customerDetailsOpen ? customerDetailsPanel.headerTitle : "Details"}
                       headerSubhead={
@@ -8553,7 +8589,7 @@ export function AgentNextGenPage({
                           <PanelPinButton
                             pinned={false}
                             onToggle={() => {
-                              setVoiceTranscriptPanelOpen(false);
+                              setDetailsPanelOpen(false);
                               setCustomerDetailsOpen(false);
                               setDetailsPanelFullScreen(false);
                             }}
@@ -8708,7 +8744,7 @@ export function AgentNextGenPage({
                       // `InteriorPanel`'s `absoluteBreakpoint`/
                       // `allowFullScreen`/`onClose`/`closeIcon`).
                       pinned={detailsPanelFullScreen ? false : !isSidePanelContainerNarrow}
-                      open={!!selectedSessionDetails}
+                      open={detailsPanelOpen}
                       headerIcon={customerDetailsOpen ? customerDetailsPanel.headerIcon : undefined}
                       headerTitle={customerDetailsOpen ? customerDetailsPanel.headerTitle : "Details"}
                       headerSubhead={
@@ -8738,7 +8774,7 @@ export function AgentNextGenPage({
                           <PanelPinButton
                             pinned={false}
                             onToggle={() => {
-                              setSelectedSessionDetails(null);
+                              setDetailsPanelOpen(false);
                               setCustomerDetailsOpen(false);
                               setDetailsPanelFullScreen(false);
                             }}
