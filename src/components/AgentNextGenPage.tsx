@@ -8497,6 +8497,21 @@ export function AgentNextGenPage({
                   props, the voice/non-voice split) is otherwise unchanged
                   from that original in-row usage. */}
               {activeInteraction && (
+                // `z-[5]` on this wrapper (not just relying on `SidePanel`'s
+                // own internal `z-[5]`) — same fix, same reasoning, as the
+                // docked Customer Information `SidePanel`'s own identical
+                // wrapper just below (see that div's own doc comment,
+                // "`z-[5]` here...", for the full "why": `animate-in` gives
+                // a wrapper its own stacking context, which otherwise
+                // isolates `SidePanel`'s internal `position: absolute;
+                // z-index: 5` from the content-column sibling it needs to
+                // sit above, letting the two compete by DOM order instead).
+                // Restores this subtree to the same local tier (record
+                // header sticky separator `z-[1]`, `InteriorPanel` `z-[3]`,
+                // `SidePanel` `z-[5]`, shared panel's fullscreen overlay
+                // `z-[9]`) it occupied before this wrapper existed — not an
+                // arbitrary small z-index invented at this call site (the
+                // exact thing CONTRIBUTING.md §4 warns against).
                 <div
                   key={`details-panel-${activeInteraction.id}`}
                   className="shrink-0 h-full z-[5] animate-in fade-in-0 duration-200 delay-150 fill-mode-backwards"
