@@ -218,6 +218,30 @@ export interface Thread {
    *  render a direction icon at all) — every consumer falls back to its
    *  plain, pre-existing icon in that case. */
   direction?: "inbound" | "outbound";
+  /** True while the agent has explicitly put this live voice call on hold
+   *  via `VoiceCallControls`'s own Hold button (as opposed to the pre-
+   *  existing "navigated away from a live call" on-hold reading —
+   *  `channelOnHold`, each page's own LeftNav `channels` builder). Per
+   *  explicit request ("putting an active call on hold from the call
+   *  controls should ... add an on hold chip to the interactionNavItem
+   *  (keep the color the active color to avoid confusion)"): lifted here
+   *  (rather than left as `VoiceCallControls`'s own local decorative state)
+   *  specifically so it (a) survives that bar unmounting/remounting when
+   *  the agent switches to a different interaction and back, and (b) can
+   *  drive the LeftNav row's own `OnHoldPill` (`OnHoldBadge.tsx`) even
+   *  while this interaction is still the ACTIVE one being viewed — see
+   *  each page's own `channelOnHold` derivation, now
+   *  `(interaction.id !== activeInteractionId || c.heldByAgent)` instead of
+   *  just the first half. Deliberately NOT folded into the CARD-level
+   *  `onHold` prop (the whole-card warning tint/corner badge) — per the
+   *  same explicit request's own parenthetical, an interaction the agent
+   *  is still actively looking at keeps its normal active (blue) card
+   *  look regardless of this flag, so only the row's own chip changes,
+   *  never the card's border/tint. Set/cleared by each page's own
+   *  `onHoldChange` handler passed to `VoiceCallControls`; reset to
+   *  `undefined` whenever a fresh voice `Thread` replaces this one (every
+   *  `newChannel` builder simply omits it). */
+  heldByAgent?: boolean;
   /** REMOVED (was `interactionId?: string`) — a plain synthesized digit
    *  shown on this Thread's `ChannelToggle` tooltip as "#{interactionId}",
    *  genuinely redundant now that `Contact.contactId` exists as the real,
@@ -460,6 +484,30 @@ export interface Interaction {
    * status `TRANSCRIPT_SESSIONS`/`_VOICE`/`_EMAIL` otherwise assigns it.
    */
   threadStatuses?: Record<string, string>;
+  /**
+   * True once the agent has hung up this interaction's own voice call —
+   * deliberately SEPARATE from `threadStatuses` above. Per explicit
+   * request ("when a call is ended do not set the status to closed - keep
+   * it at whatever status it currently is - there may be after call work
+   * to do"): Hang Up no longer writes "Closed" into `threadStatuses` for
+   * the voice thread — that's a real disposition the agent picks (during
+   * after-call work), not something that should happen automatically the
+   * instant the call itself ends. This field is the one place that now
+   * tracks "is the call itself still connected" independently of "what has
+   * the agent dispositioned this channel as" — `findLiveVoiceThread`/
+   * `isOnVoiceCall` (AgentNextGenPage.tsx/AgentWorkspace2WithDeskPage.tsx)
+   * both read this instead of `threadStatuses`'s own "Closed" value now:
+   * it's what hides the call-controls bar and clears the agent's
+   * auto-"Working" status the moment Hang Up is pressed, regardless of
+   * whatever real status the channel still carries while ACW is pending.
+   * Reset back to `undefined` by `handleStartCall`/`handleQuickDial`/
+   * `handleRedial`/`handleAddAdHocChannel` whenever any of them opens a
+   * genuinely fresh voice `Thread` — the exact same "clear stale per-call
+   * state" moment those handlers already reset `threadStatuses`/
+   * `liveMessages` at — so a previous call's hangup doesn't leave a
+   * brand-new one looking pre-ended.
+   */
+  voiceCallEnded?: boolean;
 }
 
 /** Whether ANY currently-open channel on this Interaction is actually

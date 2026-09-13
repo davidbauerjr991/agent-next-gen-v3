@@ -61,7 +61,8 @@ import {
   Play,
   Mic,
   MicOff,
-  VenetianMask,
+  AudioLines,
+  AudioLinesOff,
   Circle,
   Grid3x3,
   Video,
@@ -141,12 +142,41 @@ const CompactCallControlButton = React.forwardRef<
     icon: React.ReactNode;
     active?: boolean;
     critical?: boolean;
+    /**
+     * Per explicit request ("make the mute and video icons darker"): swaps
+     * this button's own DEFAULT (non-active, non-critical) resting color
+     * from `fg-secondary` (60% opacity — this bar's usual resting-state
+     * gray, still used by every other control here) to `fg-default` (80%
+     * opacity) — the SAME token every one of these buttons already promotes
+     * to on hover/focus (see the plain `else` branch below), just applied
+     * at rest instead of only on interaction. Both are existing lyra-ui
+     * neutral-text tiers (see lyra-tokens.css), not one-off colors, so this
+     * stays inside the request's own "keep the same styling for lyra-ui"
+     * instruction. Ignored once `active`/`critical` is true — those already
+     * render in their own (even stronger) blue/red, so there's nothing left
+     * for this to darken further. Mute and Video are the two call sites
+     * that pass this below; every other control keeps the plain resting
+     * `secondary` gray unchanged.
+     */
+    strong?: boolean;
+    /**
+     * Per explicit request ("make the mute / video buttons outline icon
+     * buttons"): lets Mute/Video opt into `Button`'s real `"outline"`
+     * variant (a bordered, `bg-lyra-bg-control` surface) instead of this
+     * component's own default `"ghost"` (transparent until hover) — every
+     * other control here (Hold/Mask/Record/Keypad/Transcript) omits this
+     * and keeps the existing plain `ghost` look unchanged. The `active`/
+     * `critical`/`strong` tint classes above are unaffected either way —
+     * they already override `outline`'s own default `bg`/`text` tokens via
+     * `cn()`'s tailwind-merge the same way they already override `ghost`'s.
+     */
+    variant?: "ghost" | "outline";
   }
->(({ icon, active, critical, className, ...rest }, ref) => {
+>(({ icon, active, critical, strong, variant = "ghost", className, ...rest }, ref) => {
   return (
     <Button
       ref={ref}
-      variant="ghost"
+      variant={variant}
       size="icon"
       aria-pressed={critical ? undefined : active}
       className={cn(
@@ -155,6 +185,8 @@ const CompactCallControlButton = React.forwardRef<
           ? "text-lyra-status-critical-strong hover:bg-lyra-status-critical-subtle hover:text-lyra-status-critical-strong active:bg-lyra-status-critical-medium"
           : active
           ? "text-lyra-fg-active-strong bg-lyra-bg-active-subtle hover:text-lyra-fg-active-strong"
+          : strong
+          ? "text-lyra-fg-default hover:text-lyra-fg-default"
           : "text-lyra-fg-secondary hover:text-lyra-fg-default",
         className
       )}
@@ -344,6 +376,25 @@ export interface VoiceCallControlsProps {
    *  its own local decorative state instead, see `onToggleVideo`'s own
    *  doc comment). */
   videoOpen?: boolean;
+  /** Whether this call is currently on hold — controlled from the caller
+   *  once `onHoldChange` is wired, same "read the caller's real state once
+   *  wired, else track local decorative state" split `videoOpen`/
+   *  `onToggleVideo` above already establishes. Per explicit request
+   *  ("putting an active call on hold from the call controls should ...
+   *  add an on hold chip to the interactionNavItem"): unlike every other
+   *  decorative toggle in this bar (Mute/Mask/Record), Hold now needs to
+   *  survive this whole bar unmounting/remounting (it only renders for
+   *  whichever interaction is currently ACTIVE — see each page's own
+   *  `activeInteractionVoiceThread` render site) — a plain local `useState`
+   *  can't do that on its own, so the caller lifts it onto the underlying
+   *  `Thread` instead. Ignored (this button falls back to its own old local
+   *  state) while `onHoldChange` is omitted. */
+  onHold?: boolean;
+  /** Fired with the NEW hold state whenever the Hold/Resume button is
+   *  pressed. Only takes effect (makes `onHold` above controlled) when
+   *  provided — omit to leave this button exactly as before (a purely
+   *  local, decorative toggle with no effect outside this component). */
+  onHoldChange?: (onHold: boolean) => void;
   /** Per explicit request (Agent Workspace 2.0 Phase 1 only): hides the
    *  "Add video" button entirely. This bar's own divider just before it
    *  stays either way — it still separates the call-feature cluster from
@@ -372,11 +423,18 @@ export function VoiceCallControls({
   transcriptOpen,
   onToggleVideo,
   videoOpen,
+  onHold: onHoldControlled,
+  onHoldChange,
   showAddVideo = true,
   stretch = false,
   className,
 }: VoiceCallControlsProps) {
-  const [onHold, setOnHold] = useState(false);
+  // Decorative-only fallback for a caller that hasn't wired `onHoldChange`
+  // through yet — see that prop's own doc comment (same `localVideoAdded`/
+  // `onToggleVideo` split just below).
+  const [localOnHold, setLocalOnHold] = useState(false);
+  const onHold = onHoldChange ? !!onHoldControlled : localOnHold;
+  const setOnHold = onHoldChange ?? setLocalOnHold;
   const [muted, setMuted] = useState(false);
   const [masked, setMasked] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -442,21 +500,102 @@ export function VoiceCallControls({
           "w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1"
         )}
       >
-        {/* Two real flex slots (main buttons / volume+transcript+timer) in
-            normal document flow. Per explicit follow-up request ("move the
-            timer to the far right after volume"), the timer that used to
-            sit in its own leading slot here (a bare Clock icon, no digits —
-            see the trailing slot below for where it lives now, WITH its
-            digits) is gone; `justify-between` still needs no manual
-            centering math with just these two slots — the leading one
-            (`flex-1`, `justify-start` per a later explicit follow-up
-            request — was `justify-center`) claims whatever space the
-            trailing one doesn't. */}
-        <div className="flex min-w-0 flex-1 items-center justify-start gap-1">
+        {/* Three real flex slots now (timer / main buttons+volume / dark
+            mute+video+End Call), replacing the former two-slot layout — per
+            explicit request/reference screenshot ("update the call control
+            button order to be like the attached screenshot"). The
+            screenshot's own left-to-right shape is: a timer alone at the
+            far left with a large gap after it, a centered cluster of
+            lighter/decorative controls, a divider, a visibly DARKER
+            mute+video pair, then a large red "End Call" button anchored to
+            the far right. `justify-between` on this row still does the
+            bookending work (leading/trailing slots `shrink-0`, middle slot
+            `flex-1`+`justify-center` claims whatever space is left and
+            centers its own contents within it) — same mechanism the old
+            two-slot layout already used, just with a third slot added and
+            the controls redistributed among all three. */}
+        <div className="flex shrink-0 items-center gap-1">
+          {/* Timer — moved here from its old trailing position (see this
+              bar's own git history: "move the timer to the far right after
+              volume") per the reference screenshot, which shows the
+              timer/status leading the WHOLE bar on the far left instead.
+              Digits/width behavior unchanged (see the comment that used to
+              sit here for the "why" of the fixed `w-[34px]` digit width and
+              `tabular-nums`) — only its position moved, and its own
+              trailing divider is dropped since it's now alone in the
+              leftmost slot with nothing to its left to separate from.
+              Per explicit follow-up request ("when record is enabled make
+              the clock icon on the left of the timer a red badge"): the
+              leading glyph now swaps from the plain `Clock` outline to a
+              solid red `Circle` — the SAME icon+fill/text color pair
+              (`fill-lyra-status-critical-strong text-lyra-status-critical-
+              strong`) the Record button below already uses for its own
+              filled/active state, so this reuses an existing "recording"
+              treatment instead of inventing a new badge style — whenever
+              `recording` is on, reverting to the plain clock the instant
+              recording stops. Per an explicit follow-up request ("make the
+              red dot next to the timer pulse or animate when recording"):
+              `animate-pulse` (Tailwind's own built-in fade in/out keyframe,
+              already relied on elsewhere in this app for "something's
+              live" affordances) is added here so the dot itself breathes
+              while recording, on top of its plain solid-red look — the
+              Record button's own filled-red `Circle` (just below, in the
+              decorative cluster) intentionally keeps its plain static fill:
+              this pulsing is specific to the badge this request named, not
+              a blanket "recording" treatment applied everywhere red shows
+              up in this bar. */}
+          {elapsedSeconds !== undefined && (
+            <span
+              className="flex items-center gap-1 lyra-body-sm text-lyra-fg-secondary"
+              aria-label={`Call duration ${formatElapsedTime(elapsedSeconds)}`}
+            >
+              {recording ? (
+                <Circle
+                  className="h-4 w-4 shrink-0 fill-lyra-status-critical-strong text-lyra-status-critical-strong animate-pulse"
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+              ) : (
+                <Clock className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+              )}
+              <span className="w-[34px] shrink-0 text-right tabular-nums">{formatElapsedTime(elapsedSeconds)}</span>
+            </span>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+          {/* Decorative cluster — Hold/Mask/Record/Keypad/Transcript/Volume,
+              unchanged in behavior/styling from before, just relocated out
+              of the old leading `justify-start` slot into this slot
+              (originally `justify-center`, per an explicit follow-up
+              request — "move the middle buttons to the right" — now
+              `justify-end` instead, so this cluster sits flush against the
+              divider/dark-cluster/End Call group that follows it rather
+              than floating in the middle of the bar's own open space) so
+              the timer (now leading) and the dark Mute/Video/End Call group
+              (now trailing) bookend it, matching the reference screenshot's
+              own middle cluster. Mute itself moved OUT of this cluster into
+              the trailing dark group below — see that slot's own comment
+              for why. */}
           <Tooltip content={onHold ? "Resume" : "Hold"} placement="top" asLabel>
             <CompactCallControlButton
               icon={onHold ? <Play className="h-4 w-4" strokeWidth={1.5} /> : <Pause className="h-4 w-4" strokeWidth={1.5} />}
               active={onHold}
+              // Per explicit request ("putting an active call on hold from
+              // the call controls should turn the on hold button warning
+              // color"): overrides `active`'s own default blue tint
+              // (`CompactCallControlButton`'s shared "active" look, still
+              // used unchanged by every other toggle in this bar) with the
+              // same warning amber `OnHoldPill` itself uses
+              // (`OnHoldBadge.tsx`) — this button and that chip now read as
+              // the same "on hold" state/color, not two different ones.
+              // `cn()`'s tailwind-merge (this component's own `className`
+              // prop, applied last) lets these win over `active`'s classes
+              // without needing a new prop on the shared button component.
+              className={
+                onHold
+                  ? "text-lyra-status-warning-strong bg-lyra-status-warning-subtle hover:text-lyra-status-warning-strong"
+                  : undefined
+              }
               onClick={() => {
                 const next = !onHold;
                 setOnHold(next);
@@ -464,16 +603,24 @@ export function VoiceCallControls({
               }}
             />
           </Tooltip>
-          <Tooltip content={muted ? "Unmute" : "Mute"} placement="top" asLabel>
-            <CompactCallControlButton
-              icon={muted ? <MicOff className="h-4 w-4" strokeWidth={1.5} /> : <Mic className="h-4 w-4" strokeWidth={1.5} />}
-              active={muted}
-              onClick={() => setMuted((m) => !m)}
-            />
-          </Tooltip>
           <Tooltip content="Mask" placement="top" asLabel>
             <CompactCallControlButton
-              icon={<VenetianMask className="h-4 w-4" strokeWidth={1.5} />}
+              // Per explicit request ("use audio lines and audio lines off
+              // for the masking icon"): swaps between `AudioLines`/
+              // `AudioLinesOff` on `masked`, mirroring the existing
+              // `Mic`/`MicOff` toggle just above (`muted ? MicOff : Mic`) —
+              // the slashed icon shows while the effect (masking the real
+              // voice signal) is actively engaged. Requires
+              // lucide-react >=1.33.0 (bumped in package.json), the first
+              // published version that includes `AudioLinesOff` — it does
+              // not exist in the 0.468.0 that was previously pinned.
+              icon={
+                masked ? (
+                  <AudioLinesOff className="h-4 w-4" strokeWidth={1.5} />
+                ) : (
+                  <AudioLines className="h-4 w-4" strokeWidth={1.5} />
+                )
+              }
               active={masked}
               onClick={() => {
                 const next = !masked;
@@ -526,11 +673,81 @@ export function VoiceCallControls({
               </Popover>
             </span>
           </Tooltip>
+          {/* Transcript — per an earlier explicit follow-up request ("take
+              the transcript button out of the volume dropdown and put it to
+              the left of the volume button"): its own plain
+              `CompactCallControlButton`, same as every other control in
+              this centered cluster, rather than a row folded into
+              `CompactVolumeButton`'s own popover — see that component's own
+              doc comment for the "why" this reverted. Its own separator (a
+              leftover from when this sat in the old trailing slot next to
+              Volume/Timer) is dropped now that it's just another icon in
+              this centered decorative cluster, matching the reference
+              screenshot's own undivided middle group. `onToggleTranscript`
+              omitted entirely still hides this trigger. */}
+          {onToggleTranscript && (
+            <Tooltip content={transcriptOpen ? "Hide transcript" : "Show transcript"} placement="top" asLabel>
+              <CompactCallControlButton
+                icon={<FileText className="h-4 w-4" strokeWidth={1.5} />}
+                active={transcriptOpen}
+                onClick={onToggleTranscript}
+              />
+            </Tooltip>
+          )}
+          <CompactVolumeButton volume={volume} onVolumeChange={setVolume} />
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Divider — separates the centered decorative cluster from the
+              darker Mute/Video pair and the End Call button, matching the
+              one visible divider in the reference screenshot (it sits right
+              before the visibly darker icons there too). Unconditional
+              (unlike the dividers this bar used to gate on
+              `onToggleTranscript`/`elapsedSeconds`) since Mute is always
+              rendered. */}
+          <span aria-hidden="true" className="h-4 w-px bg-lyra-border-subtle" />
+          {/* Mute — moved out of the centered cluster above and given
+              `strong` (see `CompactCallControlButton`'s own doc comment for
+              what that darkens) per the reference screenshot, which shows
+              this icon visibly darker than the rest of the bar. Behavior
+              unchanged. */}
+          <Tooltip content={muted ? "Unmute" : "Mute"} placement="top" asLabel>
+            <CompactCallControlButton
+              icon={muted ? <MicOff className="h-4 w-4" strokeWidth={1.5} /> : <Mic className="h-4 w-4" strokeWidth={1.5} />}
+              active={muted}
+              strong
+              // Per explicit request ("make the mute / video buttons
+              // outline icon buttons") — see `CompactCallControlButton`'s
+              // own `variant` doc comment.
+              variant="outline"
+              onClick={() => setMuted((m) => !m)}
+            />
+          </Tooltip>
+          {/* Add video — same `strong` darkening as Mute per the reference
+              screenshot (only visible in practice where `showAddVideo` is
+              true, i.e. Phase 2 — Phase 1 hides this button entirely, see
+              `showAddVideo`'s own doc comment above).
+              Per an explicit bug report ("the video button state is
+              backwards - a line through it indicates no video"): the
+              icon swap here had the slashed/plain `VideoOff`/`Video` pair
+              inverted relative to every other toggle in this bar (compare
+              Mute just above: the SLASHED `MicOff` shows when muted is
+              OFF-state, the plain `Mic` when it's on) — this button was
+              instead showing the slashed `VideoOff` glyph while video WAS
+              added (the on-state) and the plain camera while it wasn't.
+              Swapped so slashed = off (no video), plain = on (video added),
+              matching Mute's own convention; `active`/tooltip/click
+              behavior below are unchanged, only which icon renders for
+              which state. */}
           {showAddVideo && (
             <Tooltip content={videoAdded ? "Remove video" : "Add video"} placement="top" asLabel>
               <CompactCallControlButton
-                icon={videoAdded ? <VideoOff className="h-4 w-4" strokeWidth={1.5} /> : <Video className="h-4 w-4" strokeWidth={1.5} />}
+                icon={videoAdded ? <Video className="h-4 w-4" strokeWidth={1.5} /> : <VideoOff className="h-4 w-4" strokeWidth={1.5} />}
                 active={videoAdded}
+                strong
+                // Per explicit request ("make the mute / video buttons
+                // outline icon buttons") — see `CompactCallControlButton`'s
+                // own `variant` doc comment.
+                variant="outline"
                 onClick={() => {
                   // Real window when wired; decorative local fallback
                   // otherwise — see `onToggleVideo`'s own doc comment above.
@@ -545,76 +762,31 @@ export function VoiceCallControls({
               />
             </Tooltip>
           )}
-          <Tooltip content="Hang Up" placement="top" asLabel>
-            <CompactCallControlButton icon={<PhoneOff className="h-4 w-4" strokeWidth={1.5} />} critical onClick={onHangUp} />
-          </Tooltip>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {/* Transcript — per explicit follow-up request ("take the
-              transcript button out of the volume dropdown and put it to
-              the left of the volume button"): its own plain
-              `CompactCallControlButton` again, same as every other main
-              control in the leading cluster above, rather than a row folded
-              into `CompactVolumeButton`'s own popover — see that
-              component's own doc comment for the "why" this reverted.
-              `onToggleTranscript` omitted entirely hides this trigger, same
-              as the wide rendering's own matching icon further down. */}
-          {onToggleTranscript && (
-            <>
-              {/* Separator — per explicit follow-up request ("add a
-                  separator to the left of the transcript icon"): same
-                  divider style every other separator in this bar uses
-                  (`h-4 w-px bg-lyra-border-subtle`), gated on the same
-                  `onToggleTranscript` check as the transcript button itself
-                  just after it, so there's no dangling divider when that
-                  button is hidden. */}
-              <span aria-hidden="true" className="h-4 w-px bg-lyra-border-subtle" />
-              <Tooltip content={transcriptOpen ? "Hide transcript" : "Show transcript"} placement="top" asLabel>
-                <CompactCallControlButton
-                  icon={<FileText className="h-4 w-4" strokeWidth={1.5} />}
-                  active={transcriptOpen}
-                  onClick={onToggleTranscript}
-                />
-              </Tooltip>
-            </>
-          )}
-          <CompactVolumeButton volume={volume} onVolumeChange={setVolume} />
-          {/* Timer — per explicit follow-up request ("show the numbers in
-              the timer and move the timer to the far right after volume,
-              add a separator between volume and the timer"): now trails
-              volume+transcript here instead of leading the whole bar in its
-              own slot (see this branch's own top comment), and shows its
-              actual "MM:SS" digits (`formatElapsedTime`) next to the Clock
-              icon rather than just the bare icon a hover/focus `Tooltip`
-              used to be the only way to read it through — same digits the
-              wide rendering below already shows inline, just reused here
-              too now. Divider matches the wide rendering's own trailing-
-              timer separator further down (`h-4 w-px bg-lyra-border-subtle`)
-              exactly, and is gated on the same `elapsedSeconds !== undefined`
-              check as the timer itself, so no dangling divider with nothing
-              after it.
-              Per a later explicit follow-up request ("make the width of the
-              timer fixed so it doesn't shrink/expand depending on the
-              numbers"): the digits alone (not the icon) get a fixed
-              `w-[34px]` — comfortably fits "MM:SS" (5 fixed-width
-              characters via `tabular-nums`, so every digit occupies the
-              same width a proportional font wouldn't guarantee) without
-              ever needing to grow past an hour-long call — and `text-right`
-              so they stay flush against the icon as digit count changes,
-              rather than the whole card's width/layout shifting a few
-              pixels every second as e.g. "9:59" ticks over to "10:00". */}
-          {elapsedSeconds !== undefined && (
-            <>
-              <span aria-hidden="true" className="h-4 w-px bg-lyra-border-subtle" />
-              <span
-                className="flex items-center gap-1 lyra-body-sm text-lyra-fg-secondary"
-                aria-label={`Call duration ${formatElapsedTime(elapsedSeconds)}`}
-              >
-                <Clock className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-                <span className="w-[34px] shrink-0 text-right tabular-nums">{formatElapsedTime(elapsedSeconds)}</span>
-              </span>
-            </>
-          )}
+          {/* End Call — per explicit request ("make the leave button big
+              and red and have it say 'end call'"): this used to be a plain
+              icon-only `CompactCallControlButton` with `critical` styling
+              (a small red PhoneOff glyph, label only reachable via
+              `Tooltip`) same as every other control in this bar. It's now a
+              real lyra-ui `Button` instead — `variant="destructive"` is
+              this design system's own solid-red/filled treatment (see
+              button.tsx: `bg-lyra-bg-destructive` + `text-lyra-fg-on-
+              primary`, the same token pair every other destructive action
+              in this app already uses). Label is now always-visible text
+              ("End Call") next to the icon instead of hidden behind a hover
+              `Tooltip`, so no `Tooltip` wrapper here anymore — a `Button`
+              with visible text content already has its own accessible
+              name. Size was originally `lg` (h-9) to read as "big" against
+              the surrounding h-8 icon buttons; per an explicit follow-up
+              request ("make the red button smaller") this is now `default`
+              (h-8) instead — still an existing lyra-ui size tier, not a
+              one-off height, and now matches the row's own h-8 icon
+              buttons exactly rather than standing taller than them, while
+              the destructive red fill/text and visible label still set it
+              apart as the one non-decorative, "ends the call" action here. */}
+          <Button variant="destructive" size="default" className="shrink-0 gap-1.5" onClick={onHangUp}>
+            <PhoneOff className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+            End Call
+          </Button>
         </div>
       </div>
     </div>

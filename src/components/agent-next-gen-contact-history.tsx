@@ -23,6 +23,7 @@ import {
   TableFooter,
   VoiceDirectionIcon,
   SmsDirectionIcon,
+  formatPhoneForDisplay,
 } from "@nicecxone/lyra-ui";
 import { CREATE_NEW_CUSTOMERS } from "@nicecxone/lyra-ui/customers-data";
 import { type Interaction } from "@/components/agent-next-gen-interaction-dashboard";
@@ -344,9 +345,14 @@ export interface ContactHistoryEntry {
  */
 export function contactHistoryDisplayIdentity(entry: ContactHistoryEntry): string {
   if (entry.channelType === "chat") return entry.name;
-  if (entry.channelType === "whatsapp") return entry.whatsappHandle ?? entry.name;
+  // `formatPhoneForDisplay` normalizes `whatsappHandle`/`phone` for display
+  // regardless of which of this app's several coexisting raw mock-data
+  // formats (E.164 with/without spaces, bare US-formatted) produced the
+  // underlying value — see that function's own doc comment. It's a no-op
+  // for a non-phone-shaped WhatsApp handle, so this is safe unconditionally.
+  if (entry.channelType === "whatsapp") return formatPhoneForDisplay(entry.whatsappHandle) || entry.name;
   if (entry.channelType === "email") return entry.email ?? entry.name;
-  return entry.phone ?? entry.name;
+  return formatPhoneForDisplay(entry.phone) || entry.name;
 }
 
 /** One turn in a Contact History row's synthesized chat/SMS/WhatsApp

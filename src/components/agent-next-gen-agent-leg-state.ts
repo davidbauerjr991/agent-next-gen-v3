@@ -19,21 +19,21 @@
 // the agent switches to) picks up right where this one left off.
 //
 // IMPORTANT — deliberately in-memory ONLY, never `localStorage`. An earlier
-// version of this module persisted `cache` to `localStorage`, which is what
-// caused a real, reported bug: "it's still showing connected on initial log
-// in - it should be disconnected." `localStorage` survives an actual browser
-// reload/new tab, not just an in-app tier switch — so once the agent leg had
-// ever been connected once, EVERY future fresh login (including a totally
-// new session) kept reading that stale `"connected"` value back, with no way
-// to distinguish "the agent just switched tiers a moment ago" from "this is
-// a brand new login that's never touched the leg." A plain in-memory module
-// singleton fixes both halves of the original request at once: `App.tsx`'s
-// own top-level `App` component never unmounts across a tier switch (Premium
-// → Advanced → Basic just swaps which page component it renders — see
-// App.tsx's own hash-router), so this still correctly survives every
-// in-session switch; but a genuine browser reload creates a fresh JS module
-// instance, resetting `cache` back to `"disconnected"` — exactly the "fresh
-// login always starts disconnected" behavior needed. See
+// version of this module persisted `cache` to `localStorage`, which caused a
+// real, reported bug back when a fresh login was supposed to start
+// disconnected: `localStorage` survives an actual browser reload/new tab, not
+// just an in-app tier switch, so once the agent leg had ever been connected
+// once, every future fresh login kept reading that stale value back, with no
+// way to distinguish "the agent just switched tiers a moment ago" from "this
+// is a brand new login." A plain in-memory module singleton still fixes that
+// same class of bug today, just aimed at the opposite default (see `cache`'s
+// own doc comment below for the current, connected-by-default behavior):
+// `App.tsx`'s own top-level `App` component never unmounts across a tier
+// switch (Premium → Advanced → Basic just swaps which page component it
+// renders — see App.tsx's own hash-router), so a real connect/disconnect
+// still correctly survives every in-session switch; a genuine browser reload
+// creates a fresh JS module instance, resetting `cache` back to its default
+// regardless of whatever the leg was doing in a previous tab/session. See
 // `consumeInitialAgentLegAnnouncement` below for the matching "announce once
 // per login, not on every tier switch" half of the same fix.
 //
@@ -55,11 +55,25 @@
 
 export type AgentLegSettledStatus = "disconnected" | "connected";
 
-// Always starts `"disconnected"` — matches `AgentProfile`'s own pre-existing
-// default, and (per the fix above) is never seeded from `localStorage`, so
-// every genuinely fresh browser session starts here regardless of what any
-// earlier session left the leg in.
-let cache: AgentLegSettledStatus = "disconnected";
+// Always starts `"connected"` — per explicit request ("have the agent leg
+// connected when the app loads - only display the toast that it's
+// disconnected if the user purposely disconnects from the status menu").
+// This used to start `"disconnected"` (matching `AgentProfile`'s own
+// pre-existing default), with each page announcing that on first mount via
+// `consumeInitialAgentLegAnnouncement`/`fireAgentLegStatusToast` below — a
+// deliberate "you're not connected, here's a toast" landing experience. That
+// announce-on-login machinery is left in place (still only ever fires for a
+// `"disconnected"` initial status, never `"connected"` — see
+// `consumeInitialAgentLegAnnouncement`'s own doc comment), but is now
+// effectively dormant on a genuine fresh login: starting `"connected"` means
+// there's nothing disconnected to announce. The toast the agent actually
+// sees now comes from exactly one place — `AgentProfile`'s own real
+// connect/disconnect flow (`onAgentLegStatusChange`, fired by
+// `handleAgentLegToggle` when the agent clicks the leg row in their own
+// status menu) — never automatically on load. (Per the fix above) this is
+// never seeded from `localStorage`, so every genuinely fresh browser session
+// starts here regardless of what any earlier session left the leg in.
+let cache: AgentLegSettledStatus = "connected";
 
 /** Reads the agent leg's current settled status for THIS browser tab's
  *  session — call once at mount to seed `AgentProfile`'s
@@ -78,10 +92,17 @@ export function saveAgentLegStatus(status: AgentLegSettledStatus) {
 }
 
 // Whether the "you're not connected" toast has already been shown once in
-// this browser tab's lifetime. Per explicit request: "I want it to display a
-// not connected toast [on login] but if connected, keep it connected when
-// going to premium, advanced, basic (and likewise keep it disconnected but
-// don't fire the toast again)." Same in-memory-module-singleton reasoning as
+// this browser tab's lifetime. Per the original explicit request behind this
+// mechanism: "I want it to display a not connected toast [on login] but if
+// connected, keep it connected when going to premium, advanced, basic (and
+// likewise keep it disconnected but don't fire the toast again)." `cache`
+// above now defaults to `"connected"` instead of `"disconnected"` (per a
+// later explicit request), which leaves this flag/function effectively
+// dormant on a genuine fresh login — there's nothing disconnected to
+// announce — but it's kept rather than removed: it's still exactly correct
+// if `cache`'s own default ever changes back, and nothing about "don't
+// re-announce on a tier switch" stopped being true. Same in-memory-module-
+// singleton reasoning as
 // `cache` above — survives every in-session tier switch, resets on a real
 // reload. Deliberately consumed only from inside a mount-only `useEffect` in
 // each page, never a `useState` lazy initializer — React 18 StrictMode (this

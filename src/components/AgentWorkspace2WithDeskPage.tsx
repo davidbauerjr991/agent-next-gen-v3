@@ -455,11 +455,19 @@ interface InteractionNavCardProps extends InteractionNavItemProps {
    * interaction has a live voice call the agent has navigated away from
    * (see `findLiveVoiceThread`'s own doc comment, above, for the actual
    * derivation — `interaction.id !== activeInteractionId` at the `.map()`
-   * call site below). `InteractionNavItem` (lyra-ui, read-only) has no
-   * prop for this, so `OnHoldBadge.tsx`'s own two renderings are composited
-   * in here instead — a corner badge on the collapsed tile, a pill folded
-   * into `headerAction` on the expanded card (see this component's own
-   * body for both).
+   * call site below). Originally composited `OnHoldBadge.tsx`'s own two
+   * renderings in here (a corner badge on the collapsed tile, a pill folded
+   * into `headerAction` on the expanded card) since `InteractionNavItem`
+   * had no prop for this at all — per later explicit follow-up ("move the
+   * chip to the bottom right (replace the timer)... make the ENTIRE card
+   * background yellow and give the entire card background a warning
+   * border"), the header pill is gone (the chip lives at the bottom right
+   * of the card instead now, replacing that channel row's own timer — see
+   * `elapsedOverride`'s own doc comment, channel-row.tsx/
+   * AgentWorkspace2WithDeskPage.tsx) and this now ALSO forwards straight
+   * through to `InteractionNavItem`'s own same-named `onHold` prop, which
+   * paints the whole expanded card's background/border instead.
+   * `OnHoldCornerBadge` (collapsed rail) is untouched either way.
    */
   onHold?: boolean;
 }
@@ -472,24 +480,9 @@ function InteractionNavCard({
   headerAction,
   ...itemProps
 }: InteractionNavCardProps) {
-  // Folds the "On Hold" pill in ahead of whatever `headerAction` this card
-  // already had (typically an "Add Channel" `+` trigger) rather than
-  // replacing it — both matter at once (an agent might still want to add a
-  // channel to a call they've put down to work another interaction), and
-  // `InteractionNavItem`'s header row already renders this whole slot as a
-  // `shrink-0 gap-0.5` row, so two items here read as one coherent cluster
-  // rather than colliding.
-  const combinedHeaderAction = onHold ? (
-    <>
-      <OnHoldPill />
-      {headerAction}
-    </>
-  ) : (
-    headerAction
-  );
   return !expanded ? (
     <div className="relative">
-      <InteractionNavItem expanded={expanded} {...itemProps} headerAction={combinedHeaderAction} />
+      <InteractionNavItem expanded={expanded} onHold={onHold} {...itemProps} headerAction={headerAction} />
       {currentChannelType && showChannelBadge && (
         <CollapsedChannelBadge type={currentChannelType} severity={badgeSeverity} />
       )}
@@ -499,7 +492,7 @@ function InteractionNavCard({
       {onHold && <OnHoldCornerBadge />}
     </div>
   ) : (
-    <InteractionNavItem expanded={expanded} {...itemProps} headerAction={combinedHeaderAction} />
+    <InteractionNavItem expanded={expanded} onHold={onHold} {...itemProps} headerAction={headerAction} />
   );
 }
 
@@ -2220,11 +2213,21 @@ export function AgentWorkspace2WithDeskPage({
   // for the active interaction's own compact call-controls bar (record
   // header, below) AND for `InteractionNavCard`'s "On Hold" badge on every
   // OTHER interaction that still has one running (further down).
+  // Per explicit request ("when a call is ended do not set the status to
+  // closed - keep it at whatever status it currently is - there may be
+  // after call work to do"): this used to check
+  // `interaction.threadStatuses?.[voiceThread.id] === "Closed"` — Hang Up
+  // set that status directly, so "the call ended" and "the agent
+  // dispositioned this channel as Closed" were the same event. Those
+  // aren't really the same thing (a real disposition should wait for the
+  // agent to actually finish after-call work), so Hang Up now sets the
+  // dedicated `Interaction.voiceCallEnded` flag instead of touching
+  // `threadStatuses` at all — see that field's own doc comment
+  // (agent-next-gen-interaction-dashboard.tsx) for the full reasoning and
+  // for where it gets reset on a fresh call.
   const findLiveVoiceThread = (interaction: Interaction) => {
-    if (interaction.closed) return undefined;
-    const voiceThread = interaction.threads.find((c) => c.type === "voice");
-    if (!voiceThread) return undefined;
-    return interaction.threadStatuses?.[voiceThread.id] === "Closed" ? undefined : voiceThread;
+    if (interaction.closed || interaction.voiceCallEnded) return undefined;
+    return interaction.threads.find((c) => c.type === "voice");
   };
   // This interaction's own voice thread, regardless of `currentThreadId`/
   // whichever tab is selected (unlike `activeChannel` above) — `undefined`
@@ -2365,12 +2368,35 @@ export function AgentWorkspace2WithDeskPage({
   // `<InteractionTranscript>`'s own `customerIdentified` prop instead, keyed
   // off `activeChannelType` (the transcript always shows the ACTIVE
   // channel's own messages) rather than the card's own `currentChannelType`.
+  // Per further explicit bug report/screenshot ("compact cards are still
+  // showing numbers instead of user avatars for unknown customers"): the
+  // `(!id.startsWith("history:") || chat)` shape above only ever applied
+  // its "non-chat channel = no real name" restriction to `history:`-
+  // prefixed ids — every OTHER id (including `handleOpenAssignmentFrom
+  // Notification`'s and `handleOpenInteractionRow`'s, both bare
+  // `CREATE_NEW_CUSTOMERS`/`record.caseId` ids with no special prefix at
+  // all) fell through that `||` as unconditionally identified, regardless
+  // of channel. Both of those handlers follow the exact same "chat gets
+  // the real name, everything else gets the raw address" rule `history:`
+  // already does (see either handler's own `customerName:` doc comment) —
+  // in fact EVERY `customerName:` assignment in this whole file follows
+  // it, `adhoc:`/`quickdial:`/`redial:` included (those three just never
+  // reach chat at all, so their own unconditional exclusion above already
+  // covers them). So the real rule was never "just `history:`, unless
+  // chat" — it's "chat, period" for anything not already caught by the
+  // three unconditional exclusions above. Generalizing the trailing
+  // condition to plain `activeChannelType === "chat"` fixes the
+  // notification/interaction-row case (a voice/email/sms card no longer
+  // shows `getInitials` garbage off its raw address, e.g. "(5" off a
+  // phone number) without changing `history:`'s own already-correct
+  // behavior at all — `history:` non-chat still lands on `false` here
+  // exactly as before, just via the simpler direct check.
   const activeInteractionCustomerIdentified =
     !!activeInteraction &&
     !activeInteraction.id.startsWith("adhoc:") &&
     !activeInteraction.id.startsWith("quickdial:") &&
     !activeInteraction.id.startsWith("redial:") &&
-    (!activeInteraction.id.startsWith("history:") || activeChannelType === "chat");
+    activeChannelType === "chat";
   // Per explicit follow-up request (superseding the customer-identity
   // version this used to be — see git history for that prior condition):
   // now keyed purely on how many channels/threads this interaction
@@ -3336,6 +3362,37 @@ export function AgentWorkspace2WithDeskPage({
      another. */
   const [selectedContactHistoryEntry, setSelectedContactHistoryEntry] = useState<ContactHistoryEntry | null>(null);
 
+  /* Per explicit request ("when the redial button is clicked open a popover
+     that displays the number and the ability to select a skill - then make
+     sure the skill name is in the new interactionNavItem that launches -
+     use the existing popover"): clicking Redial no longer dials
+     immediately — it opens the SAME Dial Pad popover `outboundConfig`'s own
+     "+" New Outbound button already renders
+     (`CreateNewOutboundConfig.dialpadRequest`, create-new.tsx), pre-filled
+     with this entry's own number, so the agent still picks a skill there
+     before the call actually starts. `redialEntry` remembers WHICH entry
+     this request is for, so `handleDialpadSubmit` (below,
+     `handleRedial`'s own doc comment) can tell a completed redial apart
+     from an ordinary New Outbound dial.
+     `anchorEl`/`customerName`/`phoneOptions` added per explicit follow-up
+     request ("don't close the interior panel... simply open the popover
+     (place it on top of the redial button)... If it is an existing
+     customer, display the customer name and an ability to select from any
+     of the phone numbers available") — see `handleRedialButtonClick`'s own
+     doc comment for how each is filled in. Premium tier only: Phase 1
+     (AgentNextGenPage.tsx) keeps the plain single-number popover exactly as
+     before — per explicit instruction, this richer picker is scoped to
+     here, where `CREATE_NEW_CUSTOMERS` is a real "customer database" each
+     redialable entry can actually resolve back to (Phase 1's Contact
+     History entries have no such backing database). */
+  const [dialpadRequest, setDialpadRequest] = useState<{
+    phoneNumber: string;
+    anchorEl?: HTMLElement | null;
+    customerName?: string;
+    phoneOptions?: { value: string; label: string }[];
+  } | null>(null);
+  const [redialEntry, setRedialEntry] = useState<ContactHistoryEntry | null>(null);
+
   /* ── Live queue simulation ──
      The home tab's queue widgets should look "live" — wait time ticks up
      like a real clock, and Contacts fluctuates a bit over time — without
@@ -3811,10 +3868,13 @@ export function AgentWorkspace2WithDeskPage({
   // selects it by hand, only this effect ever sets it, exactly the way the
   // request specified ("do not add this as a selectable status").
   // `isOnVoiceCall` — true whenever ANY still-open (`!closed`) interaction
-  // has a voice `Thread` whose own `threadStatuses` entry isn't `"Closed"`
-  // — not just the interaction currently being VIEWED, so switching over to
-  // check on a different customer's chat mid-call doesn't incorrectly clear
-  // "Working" the instant the voice call scrolls out of view.
+  // has a voice `Thread` and hasn't had its call hung up yet
+  // (`!voiceCallEnded` — see that field's own doc comment, agent-next-gen-
+  // interaction-dashboard.tsx, for why this is no longer the same check as
+  // `threadStatuses`'s own "Closed" value) — not just the interaction
+  // currently being VIEWED, so switching over to check on a different
+  // customer's chat mid-call doesn't incorrectly clear "Working" the
+  // instant the voice call scrolls out of view.
   // `preCallStatusRef` remembers whatever status was active the moment the
   // call started, so hanging up restores it (Available/Unavailable/a
   // specific reason code) instead of always falling back to one hardcoded
@@ -3826,7 +3886,7 @@ export function AgentWorkspace2WithDeskPage({
   // starting/ending, not something that should re-fire just because
   // `agentStatus` itself changed for some unrelated reason.
   const isOnVoiceCall = interactions.some(
-    (i) => !i.closed && i.threads.some((t) => t.type === "voice" && i.threadStatuses?.[t.id] !== "Closed")
+    (i) => !i.closed && !i.voiceCallEnded && i.threads.some((t) => t.type === "voice")
   );
   const preCallStatusRef = useRef<AgentStatus | null>(null);
   useEffect(() => {
@@ -4026,6 +4086,14 @@ export function AgentWorkspace2WithDeskPage({
           // status. A genuinely new channel (`chIdx === -1`) has no entry
           // to clear in the first place, so this is a no-op there.
           threadStatuses: withoutChannelStatus(interaction.threadStatuses, newChannel.id),
+          // Same "clear stale per-call state on restart" moment as
+          // `threadStatuses` just above, for the dedicated `voiceCallEnded`
+          // flag (see its own doc comment, agent-next-gen-interaction-
+          // dashboard.tsx) — only when the channel actually being
+          // started/restarted here is itself voice, since this handler
+          // also opens sms/email/whatsapp/chat and those should never
+          // touch this interaction's own voice-call state.
+          voiceCallEnded: newChannel.type === "voice" ? undefined : interaction.voiceCallEnded,
           // NOTE: `liveMessages` is deliberately left untouched here (no
           // `withoutLiveMessages` call) — per explicit correction, reopening
           // a closed channel must NOT wipe its prior messages. They stay in
@@ -4107,7 +4175,7 @@ export function AgentWorkspace2WithDeskPage({
     return () => document.removeEventListener("click", onDocumentClick);
   }, []);
 
-  const handleQuickDial = (phoneNumber: string) => {
+  const handleQuickDial = (phoneNumber: string, skillId: string) => {
     // No contact record for a quick-dialed number — key the card off the
     // number itself so redialing the same number restarts its card rather
     // than stacking up duplicates.
@@ -4120,18 +4188,19 @@ export function AgentWorkspace2WithDeskPage({
     // as `handleStartCall`'s own `interactionId` — a fresh one only when
     // `isNewInteraction`.
     const interactionId = interactions.find((i) => i.id === id)?.interactionId ?? generateInteractionId();
-    // Per explicit request/bug report: a quick-dialed number has no
-    // directory contact AND no skill picker step (the dial pad screen just
-    // dials — see `create-new.tsx`'s own dialpad group), so unlike
-    // `handleStartCall`'s `newChannel.preview` (always the AGENT-picked
-    // Outbound Skill's label), this had nothing to set `preview` to at
-    // all — the resulting card's channel row rendered with no skill line
-    // whatsoever. Falls back to the first configured skill (same "first
-    // skill, not a blank" default idiom `agent-next-gen-customers-table.tsx`
-    // already uses for `skillId`), so a call launched with no real
-    // customer/agent/skill association still shows SOME skill rather than
-    // none.
-    const skillLabel = OUTBOUND_CONFIG.skillOptions[0]?.label;
+    // Per explicit request/bug report: the dial pad screen (create-new.tsx's
+    // own dialpad group) DOES have a real "Select outbound skill" field —
+    // it just used to be entirely decorative, since `onQuickDial` had no
+    // parameter to carry the chosen skill back through at all, so this
+    // always fell back to the first configured skill regardless of what the
+    // agent actually picked (see `CreateNewOutboundConfig.onQuickDial`'s own
+    // doc comment, create-new.tsx, for the fix on that end). Still falls
+    // back to the first skill if `skillId` doesn't resolve to a known one
+    // (e.g. `skillOptions` changed since) — same "first skill, not a blank"
+    // default idiom `agent-next-gen-customers-table.tsx` already uses for
+    // `skillId`, so a call launched with no real skill match still shows
+    // SOME skill rather than none.
+    const skillLabel = OUTBOUND_CONFIG.skillOptions.find((s) => s.value === skillId)?.label ?? OUTBOUND_CONFIG.skillOptions[0]?.label;
     // Voice has no message concept at all, so `messageCount` is left
     // undefined here (not `0`) — see `ChannelTabProps.messageCount`'s own
     // doc comment for why that's a deliberate omission, not an oversight.
@@ -4173,10 +4242,14 @@ export function AgentWorkspace2WithDeskPage({
       // in particular matters here since `newChannel.id` is always the same
       // literal `"voice"` — without clearing it, redialing the same number
       // again would reopen still showing whatever was said on the PREVIOUS
-      // call under that reused id.
+      // call under that reused id. `voiceCallEnded` reset the same way and
+      // for the same reason (see its own doc comment, agent-next-gen-
+      // interaction-dashboard.tsx) — unconditional here since this handler
+      // only ever creates a voice channel, unlike `handleStartCall`'s
+      // type-gated reset.
       return prev.map((interaction, i) =>
         i === idx
-          ? { ...interaction, threads: [newChannel], currentThreadId: newChannel.id, threadStatuses: undefined, liveMessages: undefined }
+          ? { ...interaction, threads: [newChannel], currentThreadId: newChannel.id, threadStatuses: undefined, liveMessages: undefined, voiceCallEnded: undefined }
           : interaction
       );
     });
@@ -4248,7 +4321,7 @@ export function AgentWorkspace2WithDeskPage({
     return known ?? synthesizeChannelAddress(channelType, entry.caseId, entry.name);
   };
 
-  const handleRedial = (entry: ContactHistoryEntry) => {
+  const handleRedial = (entry: ContactHistoryEntry, skillId: string) => {
     const id = entry.customerId ?? `history:${entry.caseId}`;
     // Read before `setInteractions` below — see `handleStartCall`'s own
     // `isNewInteraction` comment for why.
@@ -4269,10 +4342,23 @@ export function AgentWorkspace2WithDeskPage({
     // consistent with every other handler" than something this specific
     // channel strictly needs today.
     const voiceAddress = knownOrSynthesizedAddress(entry, "voice");
+    // Per explicit request ("when the redial button is clicked open a
+    // popover that displays the number and the ability to select a skill -
+    // then make sure the skill name is in the new interactionNavItem that
+    // launches"): this used to set no `preview` at all — a redial had no
+    // skill-picker step of its own, so unlike `handleStartCall`'s
+    // `newChannel.preview`/`handleQuickDial`'s own (now-fixed) `skillLabel`,
+    // the resulting card's channel row rendered with no skill line
+    // whatsoever. `skillId` now comes from that same dialpad-screen skill
+    // picker (see `handleRedialButtonClick`/`handleDialpadSubmit` below) —
+    // same "first skill, not a blank" fallback idiom `handleQuickDial`
+    // above already uses for an unresolved id.
+    const skillLabel = OUTBOUND_CONFIG.skillOptions.find((s) => s.value === skillId)?.label ?? OUTBOUND_CONFIG.skillOptions[0]?.label;
     const newChannel: Thread = {
       id: "voice",
       type: "voice",
       startTick: clockTick,
+      preview: skillLabel,
       value: voiceAddress,
       addressLabel: voiceAddress,
       contactId: generateContactId(),
@@ -4288,15 +4374,93 @@ export function AgentWorkspace2WithDeskPage({
       if (idx === -1) return [...prev, { id, interactionId, customerName: entry.name, customerId: entry.caseId, threads: [newChannel], currentThreadId: newChannel.id, startedFresh: true }];
       // Same reasoning as `handleQuickDial` above — `threads: [newChannel]`
       // wholesale-replaces every previous channel, so `threadStatuses`/
-      // `liveMessages` reset entirely rather than being selectively cleared.
+      // `liveMessages`/`voiceCallEnded` reset entirely rather than being
+      // selectively cleared.
       return prev.map((interaction, i) =>
         i === idx
-          ? { ...interaction, threads: [newChannel], currentThreadId: newChannel.id, threadStatuses: undefined, liveMessages: undefined }
+          ? { ...interaction, threads: [newChannel], currentThreadId: newChannel.id, threadStatuses: undefined, liveMessages: undefined, voiceCallEnded: undefined }
           : interaction
       );
     });
     switchActiveInteraction(id);
     if (isNewInteraction) setSidePanelOpen(false);
+  };
+
+  // Redial button's own onClick (Contact History summary panel's footer,
+  // below) — per the explicit request quoted on `dialpadRequest`'s own doc
+  // comment above, this no longer calls `handleRedial` directly. It instead
+  // opens the existing Dial Pad popover pre-filled with this entry's
+  // number, and remembers the entry so `handleDialpadSubmit` (just below)
+  // can finish the job once a skill is actually picked there.
+  //
+  // `anchorEl` (the Redial button's own DOM node, read via the click
+  // event's `currentTarget` at the call site below) repositions the
+  // popover there instead of the "+" New Outbound trigger — per explicit
+  // follow-up request ("place it on top of the redial button").
+  //
+  // `customer` — looked up the same way `handleOpenInteractionRow`'s own
+  // doc comment above describes (a REAL `CREATE_NEW_CUSTOMERS`/
+  // `createdCustomerRecords` record, found via `entry.customerId`, not the
+  // synthetic `history:`-prefixed fallback `handleRedial` itself falls back
+  // to) — when found, its own `name`/`phones` are threaded through as
+  // `customerName`/`phoneOptions`, so the popover shows the customer's name
+  // and a "Select Phone" dropdown of every number on file for them instead
+  // of just this one entry's own address (per explicit follow-up request:
+  // "If it is an existing customer, display the customer name and an
+  // ability to select from any of the phone numbers available"). No
+  // backing customer record (the 5 hand-authored `CONTACT_HISTORY` fixture
+  // rows that never got one, or any other ad-hoc entry) falls back to the
+  // plain single-number popover exactly as before.
+  const handleRedialButtonClick = (entry: ContactHistoryEntry, anchorEl: HTMLElement | null) => {
+    setRedialEntry(entry);
+    const customer = entry.customerId ? customerDirectoryPool.find((c) => c.id === entry.customerId) : undefined;
+    setDialpadRequest(
+      customer
+        ? {
+            phoneNumber: customer.phones[0]?.value ?? customer.firstPhone,
+            anchorEl,
+            customerName: customer.name,
+            phoneOptions: customer.phones,
+          }
+        : { phoneNumber: knownOrSynthesizedAddress(entry, "voice"), anchorEl }
+    );
+  };
+
+  // The single `onQuickDial` handler passed to `<CreateNew>` below — fires
+  // for EVERY dialpad submission, not just a redial's, so this has to tell
+  // the two apart itself. `CreateNew` has no dismiss/cancel callback of its
+  // own (create-new.tsx), so a `redialEntry` set by the click above could
+  // otherwise leak into a later, unrelated dial if the agent cancelled the
+  // popover and dialed something else afterward — reading AND clearing it
+  // here (regardless of which branch runs) closes that gap, and comparing
+  // normalized digits (rather than trusting the pending entry blindly)
+  // means only a submission that actually matches the redialed number is
+  // ever treated as completing that redial. Checks every one of the
+  // resolved customer's own `phones` (not just the entry's single address)
+  // when one was found — the agent may well have picked a DIFFERENT number
+  // than the one this popover opened pre-filled with (`handleRedialButtonClick`'s
+  // own "Select Phone" dropdown, above), and any of that same customer's
+  // numbers still correctly counts as completing this redial.
+  const handleDialpadSubmit = (phoneNumber: string, skillId: string) => {
+    const pendingEntry = redialEntry;
+    setRedialEntry(null);
+    const normalize = (raw: string) => {
+      const digits = raw.replace(/\D/g, "");
+      return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+    };
+    if (pendingEntry) {
+      const customer = pendingEntry.customerId
+        ? customerDirectoryPool.find((c) => c.id === pendingEntry.customerId)
+        : undefined;
+      const candidateNumbers = customer
+        ? customer.phones.map((p) => p.value)
+        : [knownOrSynthesizedAddress(pendingEntry, "voice")];
+      if (candidateNumbers.some((n) => normalize(n) === normalize(phoneNumber))) {
+        handleRedial(pendingEntry, skillId);
+        return;
+      }
+    }
+    handleQuickDial(phoneNumber, skillId);
   };
 
   // Record header's "+" Add Channel fallback (`AddChannelAdHocButton`,
@@ -4363,6 +4527,10 @@ export function AgentWorkspace2WithDeskPage({
           threads,
           currentThreadId: newChannel.id,
           threadStatuses: withoutChannelStatus(interaction.threadStatuses, newChannel.id),
+          // Same type-gated reset as `handleStartCall`'s own — see that
+          // call site's doc comment — since this ad-hoc "+" flow can also
+          // add a voice channel, not just sms/email/whatsapp/chat.
+          voiceCallEnded: newChannel.type === "voice" ? undefined : interaction.voiceCallEnded,
         };
       })
     );
@@ -6578,47 +6746,32 @@ export function AgentWorkspace2WithDeskPage({
       <div ref={bodyContainerRef} className="flex flex-1 min-h-0 overflow-hidden">
 
         <LeftNav
-          // Home and Settings used to be one `buildNavItems(...)` array
-          // passed straight through as `items`, rendered together as a
-          // single rail. Per explicit request ("match the left nav in
-          // premium and advanced to 2.0") this now mirrors 2.0's own
-          // restructuring exactly — `homeNavItem` goes into `items` (below,
-          // with `itemsFirst`), `settingsNavItem` into `footer` (further
-          // down) — still built from the one shared `buildNavItems` helper
-          // to avoid duplicating its icon/active-state/handler logic here.
-          // See `AgentNextGenPage.tsx`'s own copy of this exact block for
-          // the full history/reasoning; kept identical here on purpose.
-          items={(() => {
-            const [homeNavItem] = buildNavItems(
-              Boolean(activeInteraction),
-              // Per explicit follow-up request, Home no longer resets
-              // `showAllContacts`/`selectedAllContactsRecord` — see that
-              // state's own doc comment for why "Home" now always resumes
-              // whatever was showing there before the agent navigated away
-              // (plain dashboard or All Contacts), instead of forcing back
-              // to the plain dashboard every time.
-              () => { switchActiveInteraction(null); setShowSettings(false); },
-              showSettings,
-              // Same follow-up — opening Settings no longer discards All
-              // Contacts' own state either; it just takes visual priority
-              // while showing (this ternary branch is checked first), and
-              // All Contacts reappears exactly as left once Settings closes.
-              () => { setShowSettings(true); switchActiveInteraction(null); }
-            );
-            return [homeNavItem];
-          })()}
+          // Per further explicit follow-up request ("move the home button
+          // li to the bottom above the settings button"): reverses the
+          // Home/Settings split below — `items` (the sticky-top box) no
+          // longer holds Home at all now; `footer` holds BOTH Home and
+          // Settings together, Home first, the exact "one shared
+          // `buildNavItems(...)` pair" shape Premium/Advanced still use
+          // unmodified (see `footer`'s own doc comment further down —
+          // that's also where Home and Settings both lived before the
+          // earlier "match the left nav in premium and advanced to 2.0"/
+          // "move home above assignments" requests split them across
+          // `items`/`footer` in the first place). See `AgentNextGenPage.tsx`'s
+          // own copy of this exact block for the full history; kept
+          // identical here on purpose.
+          items={[]}
           open={navOpen}
           onToggle={() => setNavOpen((v) => !v)}
           overlay={isNavNarrow}
-          // `itemsFirst` — Home (now the sole entry in `items`) renders
-          // ABOVE `header` (the "Assignments" caption + empty-state/cards),
-          // `sticky top-0` within the shared scroll region, directly under
-          // `pinnedHeader` ("New Outbound"). Settings goes to `footer`
-          // instead (see below), genuinely pinned to the true bottom of
-          // the rail rather than sharing this sticky-top spot with Home.
+          // `itemsFirst` stays truthy solely to keep `stickyCaption`
+          // (below) rendering at all — left-nav.tsx's own doc comment:
+          // "only meaningful combined with itemsFirst, ... ignored when
+          // itemsFirst is falsy" — even though `items` itself is now empty
+          // (Home having moved to `footer`, below). The sticky-top box
+          // `itemsFirst` creates now holds only the "Assignments" caption.
           itemsFirst
           // Lets `header` (the caption/cards region) grow to fill
-          // whatever height Home+"New Outbound" don't use, so the
+          // whatever height "New Outbound" doesn't use, so the
           // "Your assignment queue is empty" message can be vertically
           // centered in that leftover space instead of sitting flush
           // under the caption — see the centering wrapper around
@@ -6629,9 +6782,9 @@ export function AgentWorkspace2WithDeskPage({
           // ("fix the assignments header under the home button so it
           // doesn't scroll"), mirrored from 2.0 (`AgentNextGenPage.tsx` —
           // see that file's own comment on this same prop for the fuller
-          // writeup): rendered via `stickyCaption` now, the same sticky-top
-          // box as `items` (Home), so it stays pinned with Home instead of
-          // scrolling away with the cards under it.
+          // writeup): rendered via `stickyCaption`, the sticky-top box
+          // `itemsFirst` creates — now holding only this caption, Home
+          // having moved to `footer`.
           stickyCaption={
             <AssignmentsSectionCaption
               expanded={navOpen}
@@ -6646,20 +6799,24 @@ export function AgentWorkspace2WithDeskPage({
               allExpanded={channelsAllExpanded}
               onToggleAllExpanded={handleToggleAllChannelsExpanded}
               // See `AssignmentsSectionCaption`'s own doc comment on
-              // `compact` — see 2.0's own copy for the full reasoning.
+              // `compact` — see 2.0's own copy for the full reasoning;
+              // still applies now that Home no longer shares the box.
               compact
             />
           }
-          // Settings — genuinely pinned to the TRUE bottom of the nav (not
-          // just `sticky bottom-0`, which only holds once the card list
-          // actually overflows; short lists used to leave it sitting right
-          // after the cards with empty space below). `footer` renders as a
-          // sibling AFTER the whole scrollable region entirely — always at
-          // the aside's real bottom edge regardless of how much content is
-          // above it — so no flex/`mt-auto` trick is needed here. `NavRail`
-          // (exported from left-nav.tsx) renders the single Settings
-          // `NavItem` with the exact same TreeMenu/icon-only styling
-          // `items` itself uses.
+          // Home + Settings — per further explicit follow-up request
+          // ("move the home button li to the bottom above the settings
+          // button"), both render together again in `footer`, Home first,
+          // genuinely pinned to the TRUE bottom of the nav (not just
+          // `sticky bottom-0`, which only holds once the card list
+          // actually overflows; a short list used to leave a Home-less
+          // Settings sitting right after the cards with empty space
+          // below). `footer` renders as a sibling AFTER the whole
+          // scrollable region entirely — always at the aside's real
+          // bottom edge regardless of how much content is above it.
+          // `NavRail` (exported from left-nav.tsx) renders both `NavItem`s
+          // with the exact same TreeMenu/icon-only styling `items` itself
+          // uses.
           footer={
             // `expanded={navOpen}` passed explicitly, NOT left to
             // `injectExpanded` — `left-nav.tsx`'s INLINE (non-overlay)
@@ -6672,15 +6829,17 @@ export function AgentWorkspace2WithDeskPage({
             // (in `header`) already take `expanded={navOpen}` explicitly.
             <NavRail
               expanded={navOpen}
-              items={(() => {
-                const [, settingsNavItem] = buildNavItems(
-                  Boolean(activeInteraction),
-                  () => { switchActiveInteraction(null); setShowSettings(false); },
-                  showSettings,
-                  () => { setShowSettings(true); switchActiveInteraction(null); }
-                );
-                return [settingsNavItem];
-              })()}
+              // Passed straight through as the full `buildNavItems(...)`
+              // pair (Home first, then Settings) — the same shape
+              // Premium/Advanced already use unmodified — rather than
+              // destructuring just one element out of it, now that both
+              // live here together.
+              items={buildNavItems(
+                Boolean(activeInteraction),
+                () => { switchActiveInteraction(null); setShowSettings(false); },
+                showSettings,
+                () => { setShowSettings(true); switchActiveInteraction(null); }
+              )}
             />
           }
           // "New Outbound" itself has moved several times now: started as
@@ -6711,7 +6870,13 @@ export function AgentWorkspace2WithDeskPage({
                 // the exclusion is applied here instead.
                 groups: outboundConfig.groups.filter((group) => !HIDDEN_OUTBOUND_GROUP_IDS.includes(group.id)),
                 onStartCall: handleStartCall,
-                onQuickDial: handleQuickDial,
+                // Per explicit request — see `dialpadRequest`'s own doc
+                // comment above for why this is `handleDialpadSubmit`
+                // (which tells a completed redial apart from an ordinary
+                // dial) rather than `handleQuickDial` directly.
+                onQuickDial: handleDialpadSubmit,
+                dialpadRequest,
+                onDialpadRequestHandled: () => setDialpadRequest(null),
               }}
               expanded={navOpen}
             />
@@ -6868,6 +7033,26 @@ export function AgentWorkspace2WithDeskPage({
                   // it's not trying to distinguish those two cases.
                   const slaSuppressed = isClosed || interaction.threadStatuses?.[c.id] === "Resolved";
                   const effectiveAwaitingResponse = !slaSuppressed && (c.awaitingResponse ?? false);
+                  // This specific channel row IS the card's own live
+                  // (not-hung-up) voice thread, and the card itself has been
+                  // navigated away from — same `findLiveVoiceThread`/
+                  // `activeInteractionId` derivation `InteractionNavCard`'s
+                  // own `onHold` prop below already uses (identity-compared
+                  // via `c ===`, not `c.id ===`, since a quickdial/redial
+                  // voice `Thread.id` is the literal constant `"voice"` and
+                  // isn't reliably unique — see `findLiveVoiceThread`'s own
+                  // doc comment). Drives `elapsedOverride` just below —
+                  // per explicit request ("have the on hold chip replace the
+                  // timer in hold calls"), so this row's own running timer
+                  // doesn't keep ticking right next to the header's already-
+                  // shown `OnHoldPill` once the call itself is on hold.
+                  // `|| c.heldByAgent` — per a later explicit request
+                  // ("putting an active call on hold from the call controls
+                  // should ... add an on hold chip to the interactionNavItem")
+                  // — same wiring as Phase 1's identical call site,
+                  // AgentNextGenPage.tsx (see `Thread.heldByAgent`'s own doc
+                  // comment, agent-next-gen-interaction-dashboard.tsx).
+                  const channelOnHold = c.type === "voice" && c === findLiveVoiceThread(interaction) && (interaction.id !== activeInteractionId || !!c.heldByAgent);
                   return {
                     id: c.id,
                     type: c.type,
@@ -6915,6 +7100,12 @@ export function AgentWorkspace2WithDeskPage({
                       : effectiveAwaitingResponse
                       ? formatElapsedTime(channelAwaitingWaitSeconds(c))
                       : formatElapsedTime(clockTick - c.startTick),
+                    // See `channelOnHold` just above — replaces this row's
+                    // clock+timer with the same `OnHoldPill` chip
+                    // (`OnHoldBadge.tsx`) the card's own header already
+                    // shows, rather than leaving `elapsed` (still computed
+                    // normally above) visibly ticking underneath it.
+                    elapsedOverride: channelOnHold ? <OnHoldPill /> : undefined,
                     preview: c.preview,
                     current: c.id === currentId,
                     // See `effectiveAwaitingResponse` above — not read
@@ -6957,6 +7148,29 @@ export function AgentWorkspace2WithDeskPage({
                     // `removeVariant` default). See `InteractionChannel.
                     // removeVariant`'s own doc comment, channel-row.tsx.
                     removeVariant: isNewOutboundThread ? "delete-draft" : "close",
+                    // Per explicit request ("add an end call solid red icon
+                    // to the right of the outcome check buttons in active
+                    // call interactionNavitems") — same wiring as
+                    // AgentNextGenPage.tsx's own `channels` builder (see its
+                    // doc comment there for the full reasoning): live (not
+                    // closed, not yet hung up) voice channel only, including
+                    // while it's on hold, reusing the exact `voiceCallEnded`
+                    // flag/state update the record-header's own "End Call"
+                    // button sets below (`onHangUp`).
+                    onEndCall:
+                      c.type === "voice" && !interaction.closed && !interaction.voiceCallEnded
+                        ? () => {
+                            setInteractions((prev) =>
+                              prev.map((i) =>
+                                i.id === interaction.id ? { ...i, voiceCallEnded: true } : i
+                              )
+                            );
+                            if (interaction.id === activeInteractionId) {
+                              setVoiceVideoWindowOpen(false);
+                              setVoiceVideoFullScreen(false);
+                            }
+                          }
+                        : undefined,
                     // Wires "Outcome" to a real popover (see
                     // `ChannelOutcomeConfig`'s own doc comment,
                     // channel-row.tsx) — harmless to always pass even on a
@@ -7145,11 +7359,28 @@ export function AgentWorkspace2WithDeskPage({
                     // `adhoc:`/`quickdial:` card already correctly got —
                     // fixed without regressing chat-channel history reopens,
                     // which have a real name and should keep showing initials.
+                    // Per further explicit bug report/screenshot ("compact
+                    // cards are still showing numbers instead of user
+                    // avatars for unknown customers"): generalized from
+                    // `(!id.startsWith("history:") || chat)` to plain
+                    // `currentChannelType === "chat"` — that narrower form
+                    // only restricted `history:` ids; every OTHER id
+                    // (notably `handleOpenAssignmentFromNotification`'s and
+                    // `handleOpenInteractionRow`'s, both bare directory-
+                    // customer ids with no special prefix) fell through as
+                    // unconditionally identified regardless of channel,
+                    // even though both handlers follow this file's own
+                    // universal "chat gets the real name, every other
+                    // channel gets the raw address" rule (see either
+                    // handler's own `customerName:` doc comment) — the same
+                    // rule `history:` was already special-cased for. Plain
+                    // `chat` covers all of them at once; `history:` non-chat
+                    // still lands on `false` exactly as before.
                     customerIdentified={
                       !interaction.id.startsWith("adhoc:") &&
                       !interaction.id.startsWith("quickdial:") &&
                       !interaction.id.startsWith("redial:") &&
-                      (!interaction.id.startsWith("history:") || currentChannelType === "chat")
+                      currentChannelType === "chat"
                     }
                     active={activeInteractionId === interaction.id}
                     // Exits fullscreen directly here (not just via the
@@ -8030,6 +8261,16 @@ export function AgentWorkspace2WithDeskPage({
                         in the record header's own `actions` slot above,
                         floated to the far right per the latest explicit
                         follow-up request (see that slot's own doc comment). */}
+                    {/* Portal target for the session row — see this file's
+                        own `sessionRowHeaderRef` doc comment above
+                        (mirrors `AgentNextGenPage.tsx`'s identical
+                        mechanism). Plain and unstyled on purpose:
+                        `TranscriptSessionSeparator`'s own portaled content
+                        supplies its own `px-6`/`border-b` so it reads as a
+                        continuation of this same bordered header box (this
+                        `PageHeader` above stays `bordered={false}` for
+                        exactly that reason — see its own comment). */}
+                    <div ref={sessionRowHeaderRef} />
                     {/* Call controls — per explicit follow-up request/bug
                         report ("in phase 2 when the container shrinks to
                         wrap the call controls to the next line do not hide
@@ -8038,12 +8279,15 @@ export function AgentWorkspace2WithDeskPage({
                         used to render inline in the `PageHeader` above's own
                         `titleSuffix` (see that prop's own doc comment,
                         further up, for why that squeezed the customer name
-                        to nothing once space ran out) — it now gets its own
-                        full-width row here instead, directly below the
-                        WHOLE header (name + channel toggles/actions) and
-                        above the session row, same placement Phase 1
-                        (`AgentNextGenPage.tsx`) already uses for the exact
-                        same reason.
+                        to nothing once space ran out) — it then got its own
+                        full-width row directly below the WHOLE header (name
+                        + channel toggles/actions) and above the session row.
+                        Per a further explicit follow-up request ("move the
+                        call controls below the session row and reduce the
+                        padding-top to 8px"), it now renders directly BELOW
+                        the session row portal target just above instead —
+                        same placement Phase 1 (`AgentNextGenPage.tsx`)
+                        already uses for the exact same reason.
                         Per a still-later explicit follow-up request/
                         reference screenshot ("for both 1 and 2 have the call
                         controls look like this"): `stretch` (see that
@@ -8059,14 +8303,81 @@ export function AgentWorkspace2WithDeskPage({
                          right) so this bar's left/right edges line up with
                          those instead of sitting slightly indented (was
                          `px-4`/16px). Same fix as Phase 1's identical call
-                         site, AgentNextGenPage.tsx. */
-                      <div className="shrink-0 bg-lyra-bg-surface-base px-6 pt-4 pb-0">
+                         site, AgentNextGenPage.tsx. `pt-2` (8px, was
+                         `pt-4`/16px) — per the same further explicit
+                         follow-up request that moved this row below the
+                         session row. */
+                      <div className="shrink-0 bg-lyra-bg-surface-base px-6 pt-2 pb-0">
+                        {/* No more separate "dialing" bar here — per
+                            explicit request ("instead of using the call
+                            controls strip for the dialing animation, just
+                            transition the start interaction or dial number
+                            buttons to a connecting and then when the call
+                            is connected open the assignment"), same fix as
+                            Phase 1's identical call site, AgentNextGenPage.tsx
+                            — that window now happens entirely on the button
+                            that started the call (create-new.tsx's
+                            `ConnectingButtonContent`/`CONNECTING_DURATION_MS`),
+                            so this interaction/bar doesn't even open/mount
+                            until AFTER the call has already connected. */}
                         <VoiceCallControls
                           stretch
                           className="px-0 py-0 bg-transparent"
+                          // Per explicit request ("putting an active call on
+                          // hold from the call controls should turn the on
+                          // hold button warning color and add an on hold
+                          // chip to the interactionNavItem") — same wiring
+                          // as Phase 1's identical call site,
+                          // AgentNextGenPage.tsx (see `Thread.heldByAgent`'s
+                          // own doc comment for the full reasoning).
+                          onHold={activeInteractionVoiceThread.heldByAgent}
+                          onHoldChange={(next) => {
+                            setInteractions((prev) =>
+                              prev.map((interaction) =>
+                                interaction.id === activeInteraction.id
+                                  ? {
+                                      ...interaction,
+                                      threads: interaction.threads.map((c) =>
+                                        c.id === activeInteractionVoiceThread.id
+                                          ? { ...c, heldByAgent: next }
+                                          : c
+                                      ),
+                                    }
+                                  : interaction
+                              )
+                            );
+                          }}
                           onHangUp={() => {
+                            // Per explicit request ("when a call is ended
+                            // do not set the status to closed - keep it at
+                            // whatever status it currently is - there may
+                            // be after call work to do"): this used to
+                            // call `handleInteractionStatusChange(...,
+                            // "Closed")` — a real disposition change, same
+                            // as the agent picking "Closed" from the status
+                            // popover themselves. That's no longer right:
+                            // ending the call shouldn't ALSO silently
+                            // finalize the channel's disposition before
+                            // after-call work has happened. This now sets
+                            // the dedicated `voiceCallEnded` flag instead
+                            // (see that field's own doc comment,
+                            // agent-next-gen-interaction-dashboard.tsx) —
+                            // it still hides this call-controls bar/clears
+                            // the auto-"Working" status exactly like before
+                            // (see `findLiveVoiceThread`/`isOnVoiceCall`
+                            // above), just without touching
+                            // `threadStatuses` at all, so whatever status
+                            // this channel already had (typically "Open")
+                            // is exactly what's still there for the agent
+                            // to actually disposition afterward.
                             if (activeInteractionVoiceThread) {
-                              handleInteractionStatusChange(activeInteraction.id, activeInteractionVoiceThread.id, "Closed");
+                              setInteractions((prev) =>
+                                prev.map((interaction) =>
+                                  interaction.id === activeInteraction.id
+                                    ? { ...interaction, voiceCallEnded: true }
+                                    : interaction
+                                )
+                              );
                             }
                             setVoiceVideoWindowOpen(false);
                             setVoiceVideoFullScreen(false);
@@ -8093,16 +8404,6 @@ export function AgentWorkspace2WithDeskPage({
                         />
                       </div>
                     )}
-                    {/* Portal target for the session row — see this file's
-                        own `sessionRowHeaderRef` doc comment above
-                        (mirrors `AgentNextGenPage.tsx`'s identical
-                        mechanism). Plain and unstyled on purpose:
-                        `TranscriptSessionSeparator`'s own portaled content
-                        supplies its own `px-6`/`border-b` so it reads as a
-                        continuation of this same bordered header box (this
-                        `PageHeader` above stays `bordered={false}` for
-                        exactly that reason — see its own comment). */}
-                    <div ref={sessionRowHeaderRef} />
                     </>
                   )}
                   {/* Body row: transcript+composer column. Customer
@@ -8224,6 +8525,13 @@ export function AgentWorkspace2WithDeskPage({
                           // comment on `Thread`) — a real Contact id is
                           // always preferred when one exists.
                           contactId={activeChannel?.contactId ?? activeInteraction.customerId}
+                          // Per explicit request ("display the number in
+                          // the session row instead of the contact ID —
+                          // display email/whatsapp handle/etc. for phase
+                          // 2"): see `InteractionTranscript`'s own
+                          // `channelAddressLabel` prop doc comment
+                          // (agent-next-gen-transcript.tsx).
+                          channelAddressLabel={activeChannel?.addressLabel}
                           skillLabel={activeChannel?.preview}
                           // Per-Thread — see `Thread.startedFresh`'s own doc
                           // comment for why this reads the ACTIVE channel's
@@ -8420,8 +8728,23 @@ export function AgentWorkspace2WithDeskPage({
                           // channel — dismiss just the channel while others
                           // remain open, or the whole interaction once this
                           // is the last one.
+                          // Per explicit request ("when a voice call is
+                          // active - do not have the unassign and dismiss
+                          // button - the agent should not be able to
+                          // terminate the call at this time - just have the
+                          // outcome button. When the call is hung up, then
+                          // you can add the unassign and dismiss button") —
+                          // same condition AgentNextGenPage.tsx's own LeftNav
+                          // `ChannelRow` applies to its `showDismissButton`
+                          // (`!(c.type === "voice" && !interaction.closed &&
+                          // !interaction.voiceCallEnded)`), applied here too:
+                          // this prop feeds `TranscriptSessionSeparator`'s
+                          // `onDismiss` (agent-next-gen-transcript.tsx) — the
+                          // record header's own copy of this button — which
+                          // previously stayed visible during a live call.
                           onDismissChannel={
-                            activeChannel
+                            activeChannel &&
+                            !(activeChannelType === "voice" && !activeInteraction.closed && !activeInteraction.voiceCallEnded)
                               ? () => {
                                   if (activeInteraction.threads.length > 1) {
                                     handleDismissChannel(activeInteraction.id, activeChannel);
@@ -9054,26 +9377,36 @@ export function AgentWorkspace2WithDeskPage({
                     closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
                     // Redial/Re-open — per explicit request, these now live
                     // here (the summary panel) instead of directly on the
-                    // Contact History row; either one reopens the contact as
-                    // a live assignment in the left nav (the row's own
-                    // previous click behavior — see `handleRedial`/
-                    // `handleReopenContactHistoryEntry`'s own doc comments),
-                    // then closes this panel since there's nothing left here
-                    // to look at once that's happened. Mutually exclusive by
-                    // channel type, per explicit request — a voice contact
+                    // Contact History row. Mutually exclusive by channel
+                    // type, per explicit request — a voice contact
                     // (`entry.redial`) only ever gets "Redial" (starting a
                     // literal fresh call is the only thing "reopening" a
                     // call can mean), never "Re-open" alongside it; every
                     // other channel type only ever gets "Re-open" (nothing
                     // to "redial" on a chat/SMS/email/WhatsApp contact).
+                    //
+                    // Re-open still reopens the contact as a live assignment
+                    // in the left nav (`handleReopenContactHistoryEntry`'s
+                    // own doc comment) and closes this panel immediately,
+                    // since there's nothing left here to look at once that's
+                    // happened. Redial no longer does either of those things
+                    // directly — per explicit follow-up request ("don't
+                    // close the interior panel of the contact history when
+                    // redial is clicked, simply open the popover"),
+                    // `handleRedialButtonClick` only opens the Dial Pad
+                    // popover (anchored on this very button — its own
+                    // `e.currentTarget`, passed through as `anchorEl`, see
+                    // `dialpadRequest`'s own doc comment above) and leaves
+                    // this panel open; the actual reopen-as-live-assignment
+                    // only happens once the agent picks a skill and submits
+                    // there (`handleDialpadSubmit`/`handleRedial`).
                     footer={
                       selectedContactHistoryEntry ? (
                         selectedContactHistoryEntry.redial ? (
                           <Button
                             variant="outline"
-                            onClick={() => {
-                              handleRedial(selectedContactHistoryEntry);
-                              setSelectedContactHistoryEntry(null);
+                            onClick={(e) => {
+                              handleRedialButtonClick(selectedContactHistoryEntry, e.currentTarget);
                             }}
                           >
                             <PhoneOutgoing className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -9428,6 +9761,13 @@ export function AgentWorkspace2WithDeskPage({
                           // own doc comment above for the full "why".
                           customerIdentified={activeInteractionCustomerIdentified}
                           contactId={activeChannel?.contactId ?? activeInteraction.customerId}
+                          // Per explicit request ("display the number in
+                          // the session row instead of the contact ID —
+                          // display email/whatsapp handle/etc. for phase
+                          // 2"): see `InteractionTranscript`'s own
+                          // `channelAddressLabel` prop doc comment
+                          // (agent-next-gen-transcript.tsx).
+                          channelAddressLabel={activeChannel?.addressLabel}
                           skillLabel={activeChannel?.preview}
                           isFreshLaunch={!!activeChannel?.startedFresh}
                           liveMessages={activeInteraction.liveMessages?.[activeChannelKey] ?? []}

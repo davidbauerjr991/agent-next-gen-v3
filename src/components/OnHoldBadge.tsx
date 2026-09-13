@@ -58,6 +58,12 @@ export function OnHoldPill({ className }: { className?: string }) {
     <span
       aria-label="Call on hold"
       className={cn(
+        // Reverted per explicit follow-up: a prior pass gave this chip
+        // itself a solid `warning-medium` fill + `warning-strong` border,
+        // but the "make it yellow with a warning border" request was
+        // actually meant for the whole card (see `InteractionNavItemProps.
+        // onHold`, interaction-nav-item.tsx) — this chip stays its original
+        // plain, light `warning-subtle` fill with no border.
         "inline-flex shrink-0 items-center gap-1 rounded-full bg-lyra-status-warning-subtle px-2 py-0.5 lyra-body-xs-emphasis text-lyra-status-warning-strong",
         className
       )}

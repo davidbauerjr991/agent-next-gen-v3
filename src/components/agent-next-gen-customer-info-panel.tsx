@@ -43,6 +43,7 @@ import {
   SearchInput,
   ChatMessage,
   InteriorPanel,
+  formatPhoneForDisplay,
 } from "@nicecxone/lyra-ui";
 import { CREATE_NEW_CUSTOMERS, type CreateNewCustomerRecord } from "@nicecxone/lyra-ui/customers-data";
 import { type Thread } from "@/components/agent-next-gen-interaction-dashboard";
@@ -764,7 +765,11 @@ export function buildCustomerHistoryEntries(
   channels: Thread[]
 ): CustomerHistorySessionEntry[] {
   const fields = buildCustomerInfoFields(customerName, recordId, channels);
-  const phone = getFieldValue(fields, "Phone #");
+  // `formatPhoneForDisplay` here (not left raw) — this app's own synthesized
+  // "Phone #" value is stored/round-tripped as "+1 XXX XXX XXXX" (see
+  // `phoneDisplayFromValue`'s own doc comment), not the "(xxx) xxx-xxxx"
+  // display format every History row below should actually show.
+  const phone = formatPhoneForDisplay(getFieldValue(fields, "Phone #"));
   const email = getFieldValue(fields, "Email");
   const { firstName, lastName } = splitCustomerName(customerName);
 
@@ -2560,7 +2565,14 @@ export function CustomerInformationPanelBody({
                               <div className="flex items-start justify-between gap-4">
                                 <Label label={field.label} className="flex-shrink-0" />
                                 <span className="lyra-body-md text-lyra-fg-secondary break-words min-w-0">
-                                  {field.value}
+                                  {/* Only "Phone #" is ever phone-shaped here
+                                      — `formatPhoneForDisplay` is scoped to
+                                      that one field (rather than applied to
+                                      every row unconditionally) so an
+                                      unrelated all-digit value (e.g. a zip
+                                      code) is never mistaken for a phone
+                                      number and reformatted incorrectly. */}
+                                  {field.label === "Phone #" ? formatPhoneForDisplay(field.value) : field.value}
                                 </span>
                               </div>
                             )}
@@ -3513,7 +3525,13 @@ export function DetailsPanelAccordions({
                   </button>
                   <div className="flex flex-col gap-2">
                     {customerFields.map((field) => (
-                      <CustomerHistoryDetailField key={field.label} label={field.label} value={field.value} />
+                      <CustomerHistoryDetailField
+                        key={field.label}
+                        label={field.label}
+                        // Same "Phone #" scoping as the Overview tab's own
+                        // read-only row above — see that span's comment.
+                        value={field.label === "Phone #" ? formatPhoneForDisplay(field.value) : field.value}
+                      />
                     ))}
                   </div>
                 </div>

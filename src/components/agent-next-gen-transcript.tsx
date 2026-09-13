@@ -25,6 +25,7 @@ import {
   Badge,
   QuickReplyVariableForm,
   QuickReplyMenu,
+  SuccessIconSolid,
   type TagVariant,
   type TagPickerOption,
   type DispositionOption,
@@ -36,6 +37,7 @@ import {
   type ChannelDirection,
   VoiceDirectionIcon,
   SmsDirectionIcon,
+  formatPhoneForDisplay,
 } from "@nicecxone/lyra-ui";
 import {
   Copy,
@@ -45,7 +47,6 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
-  CircleCheck,
   UserPlus,
   UserX,
   ArrowDown,
@@ -292,6 +293,19 @@ export const TRANSCRIPT_SESSION_FINGERPRINT_EMAIL: TranscriptSessionFingerprint 
 export interface Contact {
   id: string;
   contactId: string;
+  /** Per explicit request ("display the number in the session row instead
+   *  of the contact ID — display email/whatsapp handle/etc. for phase
+   *  2"): the human-readable reach address for this session (phone number/
+   *  email address/WhatsApp handle — same generic meaning as `Thread.
+   *  addressLabel`, which is exactly where this comes from for the live
+   *  session; see `InteractionTranscript`'s own `channelAddressLabel` prop
+   *  doc comment). Undefined for every static historical mock `Contact`
+   *  (TRANSCRIPT_SESSIONS/_VOICE/_EMAIL — none have a real stored address)
+   *  and for any live channel with no known address of its own (a redialed
+   *  voice call, an ad-hoc/typed contact) — `TranscriptSessionSeparator`
+   *  falls back to the plain "# contactId" display in that case, exactly
+   *  as before this field existed. */
+  addressLabel?: string;
   date: string;
   startTime: string;
   endTime: string;
@@ -1467,8 +1481,36 @@ export function TranscriptSessionSeparator({
                       <span aria-hidden="true">|</span>
                     </>
                   )}
-                  <span aria-hidden="true">#</span>
-                  <span>{session.contactId}</span>
+                  {/* Per explicit request ("display the number in the
+                      session row instead of the contact ID — display
+                      email/whatsapp handle/etc. for phase 2"):
+                      `session.addressLabel` (set from the live channel's
+                      own `Thread.addressLabel` — already a generic "phone
+                      number/email address/WhatsApp handle" string, so this
+                      one field covers every channel type with no extra
+                      per-type branching needed) takes over from the "#
+                      contactId" display whenever it's known. The bare "#"
+                      glyph only makes sense ahead of an actual ID, not a
+                      phone number/email/handle, so it's dropped along with
+                      `contactId` rather than kept as a stray leading
+                      character. Falls back to the exact original "#
+                      contactId" display whenever no address is known
+                      (every historical mock session, an ad-hoc/redialed
+                      channel with nothing stored) — see `Contact.
+                      addressLabel`'s own doc comment. */}
+                  {session.addressLabel ? (
+                    // `formatPhoneForDisplay` normalizes this regardless of
+                    // whether the raw `Thread.addressLabel` this came from
+                    // was ever actually formatted upstream — a no-op for a
+                    // non-phone-shaped address (email/WhatsApp handle), see
+                    // that function's own doc comment.
+                    <span>{formatPhoneForDisplay(session.addressLabel)}</span>
+                  ) : (
+                    <>
+                      <span aria-hidden="true">#</span>
+                      <span>{session.contactId}</span>
+                    </>
+                  )}
                   <span aria-hidden="true">·</span>
                   <span>{session.date}</span>
                 </span>
@@ -1752,7 +1794,18 @@ export function TranscriptSessionSeparator({
                   className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2")}
                   onClick={(e: React.MouseEvent) => e.stopPropagation()}
                 >
-                  <CircleCheck className="h-4 w-4 text-lyra-status-info-strong" strokeWidth={1.5} />
+                  {/* Per explicit request ("make the outcome check button
+                      a solid blue circle"): swaps the outline `CircleCheck`
+                      lucide icon for lyra-ui's own `SuccessIconSolid` (a
+                      filled circle + white checkmark, recolorable via
+                      `text-*` since its circle is `fill="currentColor"`)
+                      — same component `WarningIconSolid` a few hundred
+                      lines up already uses for its own solid badge. Kept
+                      the existing `text-lyra-status-info-strong` blue tint
+                      rather than switching to the icon's "success" green
+                      default, matching the blue this Outcome icon has
+                      always used. */}
+                  <SuccessIconSolid className="h-4 w-4 text-lyra-status-info-strong" />
                 </Button>
               </Popover>
             ) : (
@@ -1764,7 +1817,18 @@ export function TranscriptSessionSeparator({
               // identically (no icon) rather than a static disabled one.
               !isClosed && (
                 <Button variant="icon" size="icon-sm" title="Outcome" className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2")}>
-                  <CircleCheck className="h-4 w-4 text-lyra-status-info-strong" strokeWidth={1.5} />
+                  {/* Per explicit request ("make the outcome check button
+                      a solid blue circle"): swaps the outline `CircleCheck`
+                      lucide icon for lyra-ui's own `SuccessIconSolid` (a
+                      filled circle + white checkmark, recolorable via
+                      `text-*` since its circle is `fill="currentColor"`)
+                      — same component `WarningIconSolid` a few hundred
+                      lines up already uses for its own solid badge. Kept
+                      the existing `text-lyra-status-info-strong` blue tint
+                      rather than switching to the icon's "success" green
+                      default, matching the blue this Outcome icon has
+                      always used. */}
+                  <SuccessIconSolid className="h-4 w-4 text-lyra-status-info-strong" />
                 </Button>
               )
             ))}
@@ -2031,6 +2095,7 @@ export function InteractionTranscript({
   customerName,
   customerIdentified = true,
   contactId,
+  channelAddressLabel,
   skillLabel,
   isFreshLaunch,
   contactOverview,
@@ -2107,6 +2172,19 @@ export function InteractionTranscript({
    *  ID" field literally showed the Customer ID) — now a real, distinct
    *  per-Contact id, generated once at Thread-creation time. */
   contactId: string;
+  /** Per explicit request ("display the number in the session row instead
+   *  of the contact ID — display email/whatsapp handle/etc. for phase
+   *  2"): the active channel's own human-readable reach address
+   *  (`Thread.addressLabel` — already a generic "phone number/email
+   *  address/WhatsApp handle" string covering every channel type) —
+   *  becomes the synthetic "just launched"/reopened session's own
+   *  `Contact.addressLabel` (see that field's own doc comment), which
+   *  `TranscriptSessionSeparator` shows in place of "# contactId" once
+   *  set. Undefined for a channel with no known address (an ad-hoc typed
+   *  contact, a redialed call) — that session's row then falls back to
+   *  the plain "# contactId" display, exactly as before this prop
+   *  existed. */
+  channelAddressLabel?: string;
   /** The active channel's own skill preview (`Thread.preview`), if
    *  any — shown as the synthetic "just launched" session's Skill field. */
   skillLabel?: string;
@@ -2456,6 +2534,7 @@ export function InteractionTranscript({
         {
           id: "session-fresh",
           contactId,
+          addressLabel: channelAddressLabel,
           date: now.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }),
           startTime: now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
           endTime: "—",
@@ -2488,6 +2567,11 @@ export function InteractionTranscript({
     ? (reopenedContacts ?? []).map((entry) => ({
         id: entry.id,
         contactId: entry.contactId,
+        // Same live channel, just reopened — reuses the one active
+        // `channelAddressLabel` rather than needing its own per-reopen
+        // value (`reopenedContacts` entries carry no address of their
+        // own; see this field's own doc comment on `Contact`).
+        addressLabel: channelAddressLabel,
         date: entry.date,
         startTime: entry.startTime,
         endTime: "—",
