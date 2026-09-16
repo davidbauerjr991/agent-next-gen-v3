@@ -644,10 +644,346 @@ function buildContactOverviewInfo(
   };
 }
 
-/** Which of the three top-level views `AgentNextGenPage` is currently
- *  showing — the Desk dashboard, an active interaction's record, or
- *  Settings. */
-type Page = "agent-workspace" | "agent" | "agent-with-desk" | "agent-advanced" | "outbound" | "login";
+/** Same fixed color `ChatMessage` itself already uses for every customer-
+ *  sender avatar (lyra-ui's chat-message.tsx) — per explicit request,
+ *  `buildCustomerContextOverviewInfo` below reuses this exact pair rather
+ *  than a per-customer hashed color, so a customer's Customer Profile
+ *  avatar always matches how that same customer already reads elsewhere
+ *  in the transcript. */
+const CUSTOMER_PROFILE_AVATAR_CLASS_NAME = "bg-lyra-accent-green-soft text-lyra-accent-green-strong";
+const CUSTOMER_PROFILE_TIERS = ["Standard", "Silver", "Gold", "Platinum"];
+const CUSTOMER_PROFILE_TAG_POOLS: string[][] = [
+  ["Loyalty Member"],
+  ["Auto-Pay Enrolled"],
+  ["Premier Service"],
+  ["Multi-Line Account"],
+];
+const NEXT_BEST_ACTION_RETURNING: string[] = [
+  "Confirm their previous issue is fully resolved before wrapping up, and ask if there's anything else they need today.",
+  "Acknowledge the earlier contact and pick up where the last conversation left off.",
+  "Check in on the outcome of their last request and offer any additional help.",
+];
+const NEXT_BEST_ACTION_NEW: string[] = [
+  "Welcome the customer and confirm the reason for today's contact.",
+  "Introduce yourself and get a clear picture of what brought them in today.",
+];
+
+/** Plain-shaped prior-contact case data, extracted by the CALLING page file
+ *  from its own `CONTACT_HISTORY` lookup (agent-next-gen-contact-
+ *  history.tsx) and passed in here as bare fields — never `ContactHistoryEntry`
+ *  itself, per this file's dependency-free rule (see this file's own top
+ *  doc comment: no imports from other app-specific mock data/components/
+ *  types). Lets `buildCustomerContextOverviewInfo` below ground its
+ *  Customer Snapshot/Next Best Action/detailed summary in the customer's
+ *  REAL prior case — per explicit bug report ("the overview you are giving"
+ *  had nothing to do with the actual Contact History record for the same
+ *  customer) — instead of always falling back to the generic hashed pools
+ *  further up this file. Omitted entirely (the existing behavior) when the
+ *  calling page finds no matching Contact History record for the active
+ *  interaction. */
+interface CustomerPriorContactInfo {
+  /** `ContactHistoryEntry.description` — the one-line real case summary. */
+  description: string;
+  /** `ContactHistoryEntry.skillName` — combined with `description` to pick
+   *  a category below (fraud/billing/account-access/sales/shipping) via
+   *  simple keyword matching. */
+  skillName: string;
+  statusLabel?: string;
+  /** A short excerpt pulled from the matched transcript/email body, if any
+   *  — folded into the detailed summary panel so it reads like an actual
+   *  synthesis of the prior conversation, not just a case label. */
+  transcriptExcerpt?: string;
+}
+
+type PriorContactCategory = "fraud" | "billing" | "account-access" | "sales" | "shipping" | "general";
+
+/** Deliberately simple substring/keyword matching against a real prior
+ *  case's own `skillName`/`description` — no NLP or LLM involved, per the
+ *  explicitly-confirmed "Build A now" deterministic-simulation decision
+ *  (real local/LLM-backed integration, Option B, was deferred). Just
+ *  enough to pick a category-appropriate Next Best Action/insight instead
+ *  of one generic line for every customer. */
+function categorizePriorContact(priorContact: CustomerPriorContactInfo): PriorContactCategory {
+  const text = `${priorContact.skillName} ${priorContact.description}`.toLowerCase();
+  if (/fraud|suspicious|unauthorized|dispute[sd]? charge/.test(text)) return "fraud";
+  if (/billing|refund|charge|invoice|payment/.test(text)) return "billing";
+  if (/locked|password|reset|login|technical|2fa|two-factor|authentication/.test(text)) return "account-access";
+  if (/sales|upgrade|plan|subscription/.test(text)) return "sales";
+  if (/shipping|delivery|delay|package|order/.test(text)) return "shipping";
+  return "general";
+}
+
+const PRIOR_CONTACT_NEXT_BEST_ACTION: Record<PriorContactCategory, string> = {
+  fraud:
+    "Verify the customer's identity before discussing account details, confirm whether the flagged transactions have been resolved, and reassure them the account is secured.",
+  billing:
+    "Confirm whether the prior billing issue was fully resolved and check if any related charges still need review.",
+  "account-access":
+    "Confirm the customer can currently log in without issue, and offer to re-verify their security settings if needed.",
+  sales: "Follow up on the plan/upgrade discussed last time and confirm it still fits their needs.",
+  shipping: "Check the status of the delayed order and proactively share an updated delivery estimate.",
+  general: "Acknowledge the earlier contact and pick up where the last conversation left off.",
+};
+
+const PRIOR_CONTACT_INSIGHT: Record<PriorContactCategory, string> = {
+  fraud: "This customer may still be wary about account security given the prior fraud concern — lead with reassurance.",
+  billing: "This customer has a recent billing dispute on file — handle any new charges with extra care.",
+  "account-access": "This customer has had account-access trouble before — a quick access check up front can save time.",
+  sales: "This customer has shown active interest in upgrading — a good candidate for a proactive offer.",
+  shipping: "This customer is waiting on a delayed shipment — a delivery update may be the first thing they ask about.",
+  general: "No special handling notes beyond the summary below.",
+};
+
+/** A real-world city/region/IANA-timezone triple — used to give an
+ *  unidentified caller's "Customer Snapshot" a plausible "where they may
+ *  live" line, per explicit request ("in the customer snapshot add
+ *  information such as where they may live, what time it is where they
+ *  are and any other geographical information"). */
+interface CustomerLocation {
+  city: string;
+  region: string;
+  timeZone: string;
+}
+
+/** A curated (not exhaustive) set of real NANP area codes spanning all 4
+ *  continental US time zones plus Alaska/Hawaii, keyed by the 3-digit area
+ *  code string. `resolveCustomerLocation` below checks a caller's own
+ *  phone number against this table first — a REAL match, when the
+ *  synthetic phone number (`synthesizePhone` above) happens to land on one
+ *  of these — before falling back to a deterministic hashed guess from
+ *  `CUSTOMER_LOCATION_POOL`. Deliberately representative rather than a
+ *  complete NANP area-code list (hundreds of entries) — this only needs to
+ *  be plausible for a demo, not authoritative. */
+const AREA_CODE_LOCATIONS: Record<string, CustomerLocation> = {
+  "212": { city: "New York", region: "NY", timeZone: "America/New_York" },
+  "617": { city: "Boston", region: "MA", timeZone: "America/New_York" },
+  "202": { city: "Washington", region: "DC", timeZone: "America/New_York" },
+  "305": { city: "Miami", region: "FL", timeZone: "America/New_York" },
+  "404": { city: "Atlanta", region: "GA", timeZone: "America/New_York" },
+  "215": { city: "Philadelphia", region: "PA", timeZone: "America/New_York" },
+  "313": { city: "Detroit", region: "MI", timeZone: "America/Detroit" },
+  "704": { city: "Charlotte", region: "NC", timeZone: "America/New_York" },
+  "407": { city: "Orlando", region: "FL", timeZone: "America/New_York" },
+  "412": { city: "Pittsburgh", region: "PA", timeZone: "America/New_York" },
+  "312": { city: "Chicago", region: "IL", timeZone: "America/Chicago" },
+  "214": { city: "Dallas", region: "TX", timeZone: "America/Chicago" },
+  "713": { city: "Houston", region: "TX", timeZone: "America/Chicago" },
+  "615": { city: "Nashville", region: "TN", timeZone: "America/Chicago" },
+  "504": { city: "New Orleans", region: "LA", timeZone: "America/Chicago" },
+  "314": { city: "St. Louis", region: "MO", timeZone: "America/Chicago" },
+  "512": { city: "Austin", region: "TX", timeZone: "America/Chicago" },
+  "414": { city: "Milwaukee", region: "WI", timeZone: "America/Chicago" },
+  "316": { city: "Wichita", region: "KS", timeZone: "America/Chicago" },
+  "601": { city: "Jackson", region: "MS", timeZone: "America/Chicago" },
+  "303": { city: "Denver", region: "CO", timeZone: "America/Denver" },
+  "602": { city: "Phoenix", region: "AZ", timeZone: "America/Phoenix" },
+  "505": { city: "Albuquerque", region: "NM", timeZone: "America/Denver" },
+  "801": { city: "Salt Lake City", region: "UT", timeZone: "America/Denver" },
+  "406": { city: "Billings", region: "MT", timeZone: "America/Denver" },
+  "307": { city: "Cheyenne", region: "WY", timeZone: "America/Denver" },
+  "415": { city: "San Francisco", region: "CA", timeZone: "America/Los_Angeles" },
+  "213": { city: "Los Angeles", region: "CA", timeZone: "America/Los_Angeles" },
+  "619": { city: "San Diego", region: "CA", timeZone: "America/Los_Angeles" },
+  "503": { city: "Portland", region: "OR", timeZone: "America/Los_Angeles" },
+  "206": { city: "Seattle", region: "WA", timeZone: "America/Los_Angeles" },
+  "702": { city: "Las Vegas", region: "NV", timeZone: "America/Los_Angeles" },
+  "916": { city: "Sacramento", region: "CA", timeZone: "America/Los_Angeles" },
+  "907": { city: "Anchorage", region: "AK", timeZone: "America/Anchorage" },
+  "808": { city: "Honolulu", region: "HI", timeZone: "America/Honolulu" },
+};
+
+/** Hash-selectable fallback pool for a caller whose (synthetic) area code
+ *  doesn't land on a real one above — every `AREA_CODE_LOCATIONS` entry
+ *  doubles as a fallback candidate, so "no real match" still produces a
+ *  plausible, internally consistent city rather than no geography at all. */
+const CUSTOMER_LOCATION_POOL: CustomerLocation[] = Object.values(AREA_CODE_LOCATIONS);
+
+/** Pulls a 10-digit NANP number's area code out of a raw address string
+ *  (phone numbers in this app appear in various punctuated forms, e.g.
+ *  `"+1 212 555 0148"`/`"(212) 555-0148"`/a bare `"2125550148""` — see
+ *  `synthesizePhone` above for the shape this app itself generates).
+ *  Returns `undefined` for anything that isn't phone-shaped (a chat
+ *  customer's real name, an email address, etc.) — callers use that to
+ *  skip the "based on the phone number" geography lines entirely rather
+ *  than fabricate one for an address that was never a phone number. */
+function extractAreaCode(rawAddress: string): string | undefined {
+  const digits = rawAddress.replace(/\D/g, "");
+  const tenDigits = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  return tenDigits.length === 10 ? tenDigits.slice(0, 3) : undefined;
+}
+
+/** Resolves a caller's likely location from their raw address (see
+ *  `extractAreaCode` above) — a real `AREA_CODE_LOCATIONS` match when the
+ *  digits land on one, otherwise a `hash`-seeded pick from
+ *  `CUSTOMER_LOCATION_POOL` so the SAME unidentified caller reads back the
+ *  same "may live near ___" city on every render instead of reshuffling.
+ *  `undefined` when `rawAddress` isn't phone-shaped at all. */
+function resolveCustomerLocation(rawAddress: string, hash: number): CustomerLocation | undefined {
+  const areaCode = extractAreaCode(rawAddress);
+  if (!areaCode) return undefined;
+  return AREA_CODE_LOCATIONS[areaCode] ?? CUSTOMER_LOCATION_POOL[hash % CUSTOMER_LOCATION_POOL.length];
+}
+
+/** Turns a resolved `CustomerLocation` into the extra "Customer Snapshot"
+ *  bullet lines a first-time/unidentified caller's card gets appended
+ *  alongside the usual "no prior contact history" line — a plausible city/
+ *  region drawn from the phone number's area code, plus that area's
+ *  current local time (computed live via `Intl.DateTimeFormat`, not
+ *  baked in, so it's always accurate to when the agent is actually
+ *  looking at it). */
+function buildLocationSnapshotLines(location: CustomerLocation): string[] {
+  const timeString = new Intl.DateTimeFormat("en-US", {
+    timeZone: location.timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short",
+  }).format(new Date());
+  return [
+    `Likely located near ${location.city}, ${location.region}, based on the phone number's area code.`,
+    `Local time there is currently ${timeString}.`,
+  ];
+}
+
+/** Deterministic (hashed via `hashSeed`, same convention as
+ *  `buildContactOverviewInfo` right above) mock "Customer Profile"/
+ *  "Customer Snapshot"/"Next Best Action" content — feeds lyra-ui's
+ *  `CustomerContextOverview` (its own `CustomerContextOverviewInfo`, not
+ *  imported here by name per this file's own dependency-direction rule —
+ *  the returned shape just happens to match it structurally), the newer
+ *  replacement for `ContactOverview`/`buildContactOverviewInfo` above that
+ *  only AgentNextGenPage.tsx/AgentWorkspace2WithDeskPage.tsx ("Phase 1"/
+ *  "Phase 2") opt into, per explicit request — see that component's own
+ *  doc comment, lyra-ui's contact-overview.tsx, for the rest of the
+ *  reasoning.
+ *
+ *  `isKnownCustomer` — same real-customer gate `buildContactOverviewInfo`
+ *  already uses (see its own doc comment) for the same reasoning: a
+ *  genuinely brand-new/ad-hoc contact gets no fabricated profile/snapshot,
+ *  only a generic "first contact" Next Best Action. Callers seed this with
+ *  the Interaction's own id, same as `buildContactOverviewInfo`, so the
+ *  same customer reads back the same profile/snapshot on every fresh
+ *  launch instead of reshuffling on every render.
+ *
+ *  `identified` — same distinction `InteractionTranscript`'s own
+ *  `customerIdentified` prop makes (see its own doc comment,
+ *  agent-next-gen-transcript.tsx: an actual identified customer, as
+ *  opposed to a raw, unidentified address like a dialed number standing in
+ *  for one). Per explicit bug report/screenshot (a customer's own PHONE
+ *  NUMBER, not a real name, feeding `initialsFor` and producing a
+ *  meaningless "(5" avatar): when `false`, `customerCard.avatarInitials`/
+ *  `avatarClassName` come back `undefined` — `subtitle`/`tags` still
+ *  populate normally either way (tier/tenure genuinely IS known even when
+ *  the caller hasn't given a real name), only the avatar circle itself is
+ *  suppressed (see lyra-ui's `CustomerContextOverviewInfo.customerCard`,
+ *  its own `avatarInitials` doc comment, for how the component renders
+ *  that). Defaults to `true` so a caller that hasn't threaded its own
+ *  identified signal through yet keeps getting an avatar exactly as
+ *  before.
+ *
+ *  `priorContact` — per explicit request/bug report (a screenshot of the
+ *  real Contact History record for a customer next to this function's own
+ *  generic, unrelated output for the SAME customer): when the calling page
+ *  finds a matching real `CONTACT_HISTORY` case for the active interaction,
+ *  it extracts the plain fields into a `CustomerPriorContactInfo` (see that
+ *  type's own doc comment for why bare fields, not the real entry type) and
+ *  passes it here. When present, `snapshot`/`nextBestAction`/the new
+ *  `detailedSummary` are all grounded in that REAL case (category-aware via
+ *  `categorizePriorContact`) instead of the hashed pools below — feeds the
+ *  new "AI Customer Summary" panel (`onViewCustomerInfo`, per explicit
+ *  request) as well as the Customer Snapshot card itself. Omitted (the
+ *  default) preserves the original fully-hashed behavior verbatim for any
+ *  customer with no real Contact History case on file. */
+function buildCustomerContextOverviewInfo(
+  seed: string,
+  customerName: string,
+  isKnownCustomer: boolean = true,
+  identified: boolean = true,
+  priorContact?: CustomerPriorContactInfo
+): {
+  customerCard?: { avatarInitials?: string; avatarClassName?: string; subtitle: string; tags?: string[] };
+  snapshot?: string[];
+  nextBestAction?: string;
+  /** Fuller AI-style narrative paragraphs for the new "AI Customer
+   *  Summary" side panel (`CustomerAiSummaryPanel`) — always populated for
+   *  a known customer (falls back to a plain "no prior case on file" note
+   *  when there's no real `priorContact` match), `undefined` only for a
+   *  genuinely brand-new/unknown contact (same gate as `customerCard`). */
+  detailedSummary?: string[];
+} {
+  const hash = hashSeed(seed);
+  if (!isKnownCustomer) {
+    // Per explicit follow-up request ("if a new call is made or the
+    // customer does not have any information ... in the customer snapshot
+    // add information such as where they may live, what time it is where
+    // they are and any other geographical information"): `customerName`
+    // IS the raw dialed/caller address for an unidentified contact (see
+    // this function's own `identified` doc comment above — every non-chat
+    // caller gets its raw address here, not a real name), so it doubles as
+    // the phone number to derive a location from. `resolveCustomerLocation`
+    // returns `undefined` for anything not phone-shaped (an unidentified
+    // chat "customer" — an email, a handle) — the plain "no prior contact
+    // history" line is all that case gets, same as before this change.
+    const location = resolveCustomerLocation(customerName, hash);
+    return {
+      nextBestAction: NEXT_BEST_ACTION_NEW[hash % NEXT_BEST_ACTION_NEW.length],
+      snapshot: [
+        "No prior contact history on file — this is a new conversation.",
+        ...(location ? buildLocationSnapshotLines(location) : []),
+      ],
+    };
+  }
+  const tier = CUSTOMER_PROFILE_TIERS[hash % CUSTOMER_PROFILE_TIERS.length];
+  const tenureYears = 1 + (hash % 10);
+  const customerCard = {
+    avatarInitials: identified ? initialsFor(customerName) : undefined,
+    avatarClassName: identified ? CUSTOMER_PROFILE_AVATAR_CLASS_NAME : undefined,
+    subtitle: `${tier} Tier · ${tenureYears} yr${tenureYears === 1 ? "" : "s"} tenure`,
+    tags: CUSTOMER_PROFILE_TAG_POOLS[hash % CUSTOMER_PROFILE_TAG_POOLS.length],
+  };
+
+  if (priorContact) {
+    const category = categorizePriorContact(priorContact);
+    const displayName = identified && customerName ? customerName : "This customer";
+    const snapshot = [
+      priorContact.description,
+      priorContact.statusLabel ? `Case status: ${priorContact.statusLabel}.` : undefined,
+    ].filter((line): line is string => !!line);
+    const detailedSummary = [
+      `${displayName} previously contacted support regarding: ${priorContact.description}`,
+      PRIOR_CONTACT_INSIGHT[category],
+      priorContact.transcriptExcerpt
+        ? `From the prior conversation: "${priorContact.transcriptExcerpt}"`
+        : undefined,
+    ].filter((line): line is string => !!line);
+    return {
+      customerCard,
+      snapshot: snapshot.length > 0 ? snapshot : undefined,
+      nextBestAction: PRIOR_CONTACT_NEXT_BEST_ACTION[category],
+      detailedSummary,
+    };
+  }
+
+  return {
+    customerCard,
+    snapshot: CONTACT_OVERVIEW_SNAPSHOTS[hash % CONTACT_OVERVIEW_SNAPSHOTS.length],
+    nextBestAction: NEXT_BEST_ACTION_RETURNING[hash % NEXT_BEST_ACTION_RETURNING.length],
+    detailedSummary: [
+      "No prior case history is on file for this contact yet — this summary reflects general account patterns only.",
+    ],
+  };
+}
+
+/** Which top-level page the app is currently showing. Per explicit request
+ *  ("remove phase 1 for now ... completely delete the phase 1 files"): the
+ *  plain `"agent"` page (the original `AgentNextGenPage.tsx`, "Phase 1")
+ *  has been removed from this union — that file is deleted, and nothing
+ *  should be able to construct that page id anymore. `"agent-advanced"`
+ *  (`AgentWorkspaceAdvancedPage.tsx`) is now the page labeled "Agent
+ *  Workspace 2.0 | Phase 1" in the app menu (was "Phase 1B" — see
+ *  `buildAppMenuGroups`, agent-next-gen-outbound-data.tsx); `"agent-with-
+ *  desk"` (`AgentWorkspace2WithDeskPage.tsx`) is "Phase 2", untouched. */
+type Page = "agent-workspace" | "agent-with-desk" | "agent-advanced" | "outbound" | "login";
 
 /** Per explicit request ("hide the assignments resolved chip in the home
  *  tab"): gates the green "{n} Assignments resolved today" `Badge` each of
@@ -707,6 +1043,7 @@ export {
   quickReplyFieldDisplayValue,
   hashSeed,
   buildContactOverviewInfo,
+  buildCustomerContextOverviewInfo,
   synthesizePhone,
   splitCustomerName,
   synthesizeChannelAddress,
@@ -721,4 +1058,4 @@ export {
   SHOW_RESOLVED_TODAY_CHIP,
   SHOW_ADD_CHANNEL_HEADER_BUTTON,
 };
-export type { Page };
+export type { Page, CustomerPriorContactInfo };

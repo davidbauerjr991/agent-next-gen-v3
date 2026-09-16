@@ -44,6 +44,8 @@ import {
   ChatMessage,
   InteriorPanel,
   formatPhoneForDisplay,
+  CustomerContextOverview,
+  type CustomerContextOverviewInfo,
 } from "@nicecxone/lyra-ui";
 import { CREATE_NEW_CUSTOMERS, type CreateNewCustomerRecord } from "@nicecxone/lyra-ui/customers-data";
 import { type Thread } from "@/components/agent-next-gen-interaction-dashboard";
@@ -2913,6 +2915,7 @@ export function CustomerInfoHoverPreview({
   matchState,
   copilotExtra,
   onStartInteraction,
+  bodyOverride,
 }: {
   customerName?: string;
   recordId: string;
@@ -2993,6 +2996,13 @@ export function CustomerInfoHoverPreview({
    *  `recordId` right below via `resolveCustomerListRecord`, same as the
    *  docked panel. */
   onStartInteraction: (contact: CreateNewOutboundContact, channel: ChannelType, phone: string, skillId: string) => void;
+  /** Same override as `CustomerInformationSidePanel`'s own identically-
+   *  named prop — see that component's own doc comment for the full "why".
+   *  Advanced passes the SAME `DetailsPanelAccordions` element to both this
+   *  hover preview and the docked panel, so the two never disagree on what
+   *  they show for the same interaction, exactly like every other piece of
+   *  content this preview mirrors from the docked panel. */
+  bodyOverride?: React.ReactNode;
 }) {
   const latestInteraction = useMemo(
     () => buildLatestInteraction(customerName, recordId),
@@ -3084,7 +3094,7 @@ export function CustomerInfoHoverPreview({
         // `undefined` entirely while `matchState` is set — neither match
         // step has a tab list, same as the docked panel.
         tabs={
-          matchState ? undefined : (
+          matchState || bodyOverride ? undefined : (
           <TabList className="px-4" overflowMenu>
             {visibleTabs.map((label) => (
               <Tab
@@ -3118,6 +3128,8 @@ export function CustomerInfoHoverPreview({
               onDraftChange={recordDraft.updateDraft}
             />
           )
+        ) : bodyOverride ? (
+          bodyOverride
         ) : (
           <CustomerInformationPanelBody
             activeTab={activeTab}
@@ -3419,133 +3431,259 @@ function CustomerMatchSearchBody({
   );
 }
 
-/** Per explicit request ("Files gets a placeholder"). */
-const FILES_EMPTY_TEXT = "No files on this interaction yet.";
+/** Per explicit request ("Files gets a placeholder"); text updated to
+ *  match this section's later rename ("Files" → "Artifacts" in the
+ *  Details panel) — constant name kept as-is (internal identifier, not
+ *  user-facing) rather than churned for no reason. */
+const FILES_EMPTY_TEXT = "No artifacts on this interaction yet.";
 
-/* ── DetailsPanelAccordions ──
-   Per explicit request ("when a user clicks 'View Details' — display the
-   accordions instead of the current session details content and rename the
-   panel 'Details'"): what the "Session Details"/"Details" `InteriorPanel`
-   (voice's own "Details" tab, and the plain non-voice panel — see each
-   page's own render site) shows once a session has actually been picked,
-   replacing the single flat `TranscriptSessionDetails` view that used to be
-   the whole panel. Three independently-collapsible single-item
-   `Accordion`s (Session Details/Customer Details/Files, same idiom as the
-   password-reset knowledge-base card and the Overview tab's own
-   accordions) — "Session Details" open by default (`defaultValue` on that
-   one `Accordion`), the other two closed, matching the reference
-   screenshot.
+/* ── useSessionDetailsTabContent ──
+   Per explicit request ("make session details its own tab in the view
+   details panel"): the "Session Details" content, pulled OUT of
+   `DetailsPanelAccordions` below (which used to render it as its own
+   default-open `Accordion` item) into its own panel-tab content — each
+   page's own "Details"/"Transcript" `headerTabs` row gains a "Session
+   Details" tab alongside them (see each page's own render site) rather
+   than nesting this inside the "Details" tab's accordion stack.
 
-   Unlike the EARLIER accordion design this replaces (briefly shipped, then
-   reverted), these accordions are not an idle/default view shown before any
-   click — the panel itself still starts closed and only these accordions'
-   *content* appears once "View Details" is clicked, so `sessionContact` is
-   always the actual clicked/current session (`selectedSessionDetails` /
-   `selectedVoiceDetailsSession` / `currentVoiceSession` — never a
-   synthesized "live" placeholder).
-
-   Customer Details' fields come from `buildCustomerInfoFields` (the same
-   synthesized Phone/Contact #/Email/Balance/Address/City/State/Zip this app
-   already uses for `CustomerInformationPanelBody`'s Overview tab), not the
-   fuller editable `CustomerDetailTabContent` form — this is a compact
-   read-only preview, styled with the same `CustomerHistoryDetailField`
-   label/value rows the Session Details accordion's own
-   `TranscriptSessionDetails` already uses.
-
-   "View All" under Customer Details opens the existing
-   `CustomerInformationSidePanel` dock for the full record
-   (`onViewCustomerDetails`, supplied by the caller) — Session Details and
-   Files render their own "View All" link too (matching the reference
-   screenshot) but currently do nothing yet; there's no separate fuller view
-   for either of those to navigate to anymore, so this is a deliberate stub
-   pending further direction on what those two should do. */
-export function DetailsPanelAccordions({
+   A HOOK, not a plain component — same reasoning `useCustomerDetailsInteriorPanel`
+   above already documents for itself: per further explicit follow-up
+   request ("session detail cancel/save should be fixed to the bottom of
+   the panel like in the customer information edits so they never leave
+   the view of the user"), Save/Cancel need to render in the CALLER's own
+   `SidePanel`'s `footer` slot (outside its scrolling body, so they stay
+   pinned/visible at every scroll position) rather than inline at the
+   bottom of the scrolling form the way they used to — a plain component
+   returning one render tree has no way to split itself across two
+   different slots on an element it doesn't own. Returning `{ body, footer
+   }` as plain values lets the caller spread `footer` into its existing
+   `SidePanel` call's own `footer` prop (only while THIS tab is showing —
+   see each page's own render site) and `body` into that tab's content,
+   exactly like `useCustomerDetailsInteriorPanel` already does one level up
+   for the whole panel. Reuses the exact same `CustomerRecordSaveFooter`
+   Save/Cancel footer the Customer Overview/Customer Information edits
+   already use, for a visually identical "fixed to the bottom" treatment. */
+export function useSessionDetailsTabContent({
   sessionContact,
-  customerName,
-  customerId,
-  channels,
-  showCustomerDetails = true,
-  onViewCustomerDetails,
 }: {
   /** The actual session "View Details" was clicked on (or the current
-   *  in-progress one for voice) — never synthesized. */
-  sessionContact: Contact;
-  customerName?: string;
-  customerId: string;
-  channels: Thread[];
-  /** Per explicit request ("remove the customer details accordion from
-   *  phase 1") — hides the whole "Customer Details" section (Phase 1's own
-   *  call sites pass `false`). Default `true`: every other consumer (Phase
-   *  2) is unaffected. */
-  showCustomerDetails?: boolean;
-  /** Only meaningful while `showCustomerDetails` is true — omit for a
-   *  caller that passes `showCustomerDetails={false}`. */
-  onViewCustomerDetails?: () => void;
-}) {
-  const customerFields = useMemo(
-    () => buildCustomerInfoFields(customerName, customerId, channels),
-    [customerName, customerId, channels]
-  );
+   *  in-progress one for voice) — `null` while none has been picked yet
+   *  (e.g. the first render or two after the panel mounts, before the
+   *  transcript's own `onCurrentSessionChange` has fired even once): `body`
+   *  falls back to a plain placeholder and `footer` stays `undefined`
+   *  (nothing to save with no session loaded). */
+  sessionContact: Contact | null;
+}): { body: React.ReactNode; footer: React.ReactNode } {
   const viewAllLinkClassName = "lyra-body-sm-emphasis text-lyra-status-info-strong text-left hover:underline w-fit";
+
+  // Per explicit request ("make the View All say 'Edit' and when edit is
+  // clicked make the session details editable like the customer overview
+  // accordion"): same Pencil-icon "Edit" button/vertical-Input-fields idiom
+  // the Customer Overview accordion already established
+  // (`allowOverviewEdit`/`overviewEditing`'s own render site, this file).
+  // Deliberately self-contained LOCAL state here rather than lifted to
+  // page-level state the way Customer Overview's `overviewEditing`/
+  // `recordDraft` are: unlike a real customer record, a session's own
+  // Contact ID/Date/Start/End/Channel/Skill/Agent/Status fields have no
+  // backing store anywhere in this app to persist a change to
+  // (`TRANSCRIPT_SESSIONS`/`_VOICE`/`_EMAIL`, agent-next-gen-transcript.tsx,
+  // are static mock data) — so "Save" just commits the locally-edited draft
+  // into this same local state, which the read-only view below renders
+  // from too, rather than writing through to any real interaction/session
+  // record.
+  const [sessionEditing, setSessionEditing] = useState(false);
+  const [sessionDraft, setSessionDraft] = useState(sessionContact);
+  useEffect(() => {
+    setSessionDraft(sessionContact);
+    setSessionEditing(false);
+    // Keyed on the session's own id, not the whole `sessionContact` object —
+    // the caller rebuilds that object fresh on every render (e.g. the
+    // `sessionWithCurrentStatus` patch in agent-next-gen-transcript.tsx), so
+    // resetting on reference equality alone would wipe out an in-progress
+    // edit the instant anything else on the page re-rendered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionContact?.id]);
+  // Same eight fields `TranscriptSessionDetails` itself reads, just as a
+  // {key, label} list this loop can walk to build one `Input` per field
+  // while editing — `key` is a real `Contact` field name so `sessionDraft[
+  // key]`/the `setSessionDraft` updater below stay type-safe without a
+  // parallel hand-maintained union.
+  const sessionEditFields: Array<{ key: keyof Pick<Contact, "contactId" | "date" | "startTime" | "endTime" | "channel" | "skill" | "agent" | "status">; label: string }> = [
+    { key: "contactId", label: "Contact ID" },
+    { key: "date", label: "Date" },
+    { key: "startTime", label: "Start" },
+    { key: "endTime", label: "End" },
+    { key: "channel", label: "Channel" },
+    { key: "skill", label: "Skill" },
+    { key: "agent", label: "Agent" },
+    { key: "status", label: "Status" },
+  ];
+
+  if (!sessionContact || !sessionDraft) {
+    return {
+      body: (
+        <p className="lyra-body-md text-lyra-fg-secondary px-4 pt-3 pb-4">
+          Select "View Details" on a session to see its details here.
+        </p>
+      ),
+      footer: undefined,
+    };
+  }
+
+  return {
+    body: (
+      <div className="flex flex-col gap-3 p-4 overflow-y-auto">
+        {/* Hidden while editing — Save/Cancel (now in the panel's own fixed
+            footer, not inline here) are the only way back out once editing
+            starts. */}
+        {!sessionEditing && (
+          <button
+            type="button"
+            className={cn(viewAllLinkClassName, "inline-flex items-center gap-1.5")}
+            onClick={() => setSessionEditing(true)}
+          >
+            <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+            Edit
+          </button>
+        )}
+        {sessionEditing ? (
+          <div className="flex flex-col gap-3">
+            {/* Standard, vertical (label-above-field) form fields — same
+                layout switch Customer Overview's own editing state uses in
+                place of its read-only "label left, value right" row (see
+                that accordion's own doc comment on `overviewEditing`). */}
+            {sessionEditFields.map(({ key, label }) => (
+              <Input
+                key={key}
+                label={label}
+                value={sessionDraft[key]}
+                onChange={(e) => setSessionDraft((prev) => (prev ? { ...prev, [key]: e.target.value } : prev))}
+              />
+            ))}
+          </div>
+        ) : (
+          <TranscriptSessionDetails session={sessionDraft} plain />
+        )}
+      </div>
+    ),
+    footer: sessionEditing ? (
+      <CustomerRecordSaveFooter
+        onSave={() => setSessionEditing(false)}
+        onCancel={() => {
+          setSessionDraft(sessionContact);
+          setSessionEditing(false);
+        }}
+      />
+    ) : undefined,
+  };
+}
+
+/* ── DetailsPanelAccordions ──
+   What the "Details" tab of the "Session Details"/"Details"/"Transcript"
+   `InteriorPanel` (voice's own header tabs, and the plain non-voice panel —
+   see each page's own render site) shows once a session has actually been
+   picked. Originally three stacked `Accordion`s (Session Details/Customer
+   Details/Files); per explicit follow-up request ("add these to the
+   details tab and make session details its own tab in the view details
+   panel", with a screenshot of the Customer Profile/Customer Snapshot
+   cards), Session Details moved out into its own tab (see
+   `useSessionDetailsTabContent` above) and Customer Details' old raw
+   Phone/Contact #/Email/Balance/Address/City/State/Zip field list was
+   replaced with the SAME `CustomerContextOverview` (lyra-ui) cards the
+   main transcript column's own Contact Overview already shows — real,
+   Contact-History-grounded content (`buildCustomerContextOverviewInfo`,
+   agent-next-gen-shared-utils.ts) instead of a flat synthesized field
+   list, reusing whatever the caller already computed for its own Contact
+   Overview rather than a second, parallel data source. `showNextBestAction
+   ={false}` — Next Best Action already has its own, more prominent home at
+   the top of the main transcript column; repeating it in this side panel
+   would just be noise (see that prop's own doc comment,
+   lyra-ui/contact-overview.tsx). The last section stays a plain stub
+   `Accordion` — still no destination defined for its own "View All" link
+   — renamed "Files" → "Artifacts" per a later explicit request (see that
+   item's own inline comment, and `FILES_EMPTY_TEXT`'s doc comment). */
+export function DetailsPanelAccordions({
+  customerName,
+  customerContextOverview,
+  showCustomerContextOverview = true,
+  onViewCustomerInfo,
+  onViewInteractionHistory,
+}: {
+  customerName?: string;
+  /** Same object each page already builds via `buildCustomerContextOverviewInfo`
+   *  for its own main-column Contact Overview — passed straight through
+   *  rather than recomputed here, so the two never disagree. */
+  customerContextOverview?: CustomerContextOverviewInfo;
+  /** Per explicit request ("remove the customer details accordion from
+   *  phase 1") — hides the whole Customer Profile/Snapshot section (Phase
+   *  1's own call sites pass `false`). Default `true`: every other
+   *  consumer (Phase 2) is unaffected. Renamed from the old
+   *  `showCustomerDetails` now that this section is `CustomerContextOverview`
+   *  cards rather than the old field-list "Customer Details" accordion. */
+  showCustomerContextOverview?: boolean;
+  /** Wired to the SAME docked Customer Information panel the main Contact
+   *  Overview's own "View customer info" link opens (see each page's own
+   *  `onViewCustomerInfo` render-site doc comment) — omit to hide the link
+   *  (same as `CustomerContextOverview` itself already does). */
+  onViewCustomerInfo?: () => void;
+  onViewInteractionHistory?: () => void;
+}) {
+  const viewAllLinkClassName = "lyra-body-sm-emphasis text-lyra-status-info-strong text-left hover:underline w-fit";
+
+  // Files joins the same staggered fade/slide-up entrance
+  // `CustomerContextOverview` drives for its own Customer Profile/
+  // Snapshot cards (lyra-ui/contact-overview.tsx: 200ms + i*260ms per
+  // section, 700ms duration) — continuing that sequence at the next
+  // index so Files fades in right after Customer Profile (i=0) and
+  // Customer Snapshot (i=1) have, or at the first slot's own timing
+  // when those are hidden (`showCustomerContextOverview={false}`,
+  // Phase 1) since there's nothing ahead of it to follow.
+  const filesEntranceIndex = showCustomerContextOverview && customerContextOverview ? 2 : 0;
+  const [filesEntered, setFilesEntered] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setFilesEntered(true), 200 + filesEntranceIndex * 260);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="flex flex-col gap-3 p-4 overflow-y-auto">
-      <Accordion
-        defaultValue="session-details"
-        className={CUSTOMER_INFO_ACCORDION_CLASSNAME}
-        items={[
-          {
-            id: "session-details",
-            title: "Session Details",
-            icon: <Clock className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />,
-            content: (
-              <div className="flex flex-col gap-3">
-                {/* TODO: no destination defined yet for this link — see this
-                    component's own top doc comment. */}
-                <button type="button" className={viewAllLinkClassName}>
-                  View All
-                </button>
-                <TranscriptSessionDetails session={sessionContact} plain />
-              </div>
-            ),
-          },
-        ]}
-      />
-      {showCustomerDetails && (
-        <Accordion
-          className={CUSTOMER_INFO_ACCORDION_CLASSNAME}
-          items={[
-            {
-              id: "customer-details",
-              title: "Customer Details",
-              icon: <UserRound className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />,
-              content: (
-                <div className="flex flex-col gap-3">
-                  <button type="button" className={viewAllLinkClassName} onClick={onViewCustomerDetails}>
-                    View All
-                  </button>
-                  <div className="flex flex-col gap-2">
-                    {customerFields.map((field) => (
-                      <CustomerHistoryDetailField
-                        key={field.label}
-                        label={field.label}
-                        // Same "Phone #" scoping as the Overview tab's own
-                        // read-only row above — see that span's comment.
-                        value={field.label === "Phone #" ? formatPhoneForDisplay(field.value) : field.value}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ),
-            },
-          ]}
+      {showCustomerContextOverview && customerContextOverview && (
+        <CustomerContextOverview
+          customerName={customerName ?? ""}
+          customerCard={customerContextOverview.customerCard}
+          snapshot={customerContextOverview.snapshot}
+          // Per explicit request ("put the customer summary content inside
+          // the customer profile accordion") — see `detailedSummary`'s own
+          // doc comment (lyra-ui/contact-overview.tsx) for what this renders.
+          detailedSummary={customerContextOverview.detailedSummary}
+          showNextBestAction={false}
+          // Per explicit follow-up request ("if a new call is made or the
+          // customer does not have any information, do not display the
+          // customer profile") — see `renderContactOverviewBlock`'s
+          // identical prop (agent-next-gen-transcript.tsx) for the full
+          // reasoning; `customerCard` is only ever unset for that exact
+          // case.
+          showCustomerProfile={!!customerContextOverview.customerCard}
+          onViewCustomerInfo={onViewCustomerInfo}
+          onViewInteractionHistory={onViewInteractionHistory}
+          className="pt-0"
         />
       )}
       <Accordion
-        className={CUSTOMER_INFO_ACCORDION_CLASSNAME}
+        className={cn(
+          CUSTOMER_INFO_ACCORDION_CLASSNAME,
+          "transition-all duration-700 ease-out",
+          filesEntered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"
+        )}
         items={[
           {
+            // Per explicit request, renamed "Files" → "Artifacts" in this
+            // Details panel — `id` kept as the old "files" internal
+            // identifier (not user-facing, and nothing keys off the
+            // string elsewhere) rather than churning it for no reason.
             id: "files",
-            title: "Files",
+            title: "Artifacts",
             icon: <Paperclip className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />,
             content: (
               <div className="flex flex-col gap-3">
@@ -3617,6 +3755,8 @@ export function useCustomerDetailsInteriorPanel({
   onStartInteraction,
   onOpenHistoryConversation,
   onBack,
+  matchState,
+  copilotExtra,
 }: {
   customerName?: string;
   recordId: string;
@@ -3631,6 +3771,31 @@ export function useCustomerDetailsInteriorPanel({
   /** Fired by the returned `headerIcon` (the back arrow) — the caller is
    *  expected to swap this view back off (e.g. `setCustomerDetailsOpen(false)`). */
   onBack: () => void;
+  /** Per explicit follow-up request ("customer information, details and
+   *  customer summary are all opening in separate panels, they should all
+   *  open in one side panel..."): the SAME unknown-contact customer-
+   *  matching UI `CustomerInformationSidePanel` already supports (see that
+   *  component's own `matchState` prop doc comment) — this whole view
+   *  branches on it being present the identical way that component does,
+   *  so `AgentWorkspace2WithDeskPage.tsx` loses nothing by routing its
+   *  standalone docked panel's content through this hook instead.
+   *  `undefined` for every other consumer/interaction. */
+  matchState?: {
+    step: "search" | "create";
+    query: string;
+    onQueryChange: (query: string) => void;
+    possibleMatches: CreateNewCustomerRecord[];
+    searchResults: CreateNewCustomerRecord[];
+    onLinkRecord: (customer: CreateNewCustomerRecord) => void;
+    onStartCreate: () => void;
+    onBackToSearch: () => void;
+    onSaveNewCustomer: () => void;
+  };
+  /** Passed straight through to `CustomerInformationPanelBody`'s own same-
+   *  named prop — see that prop's own doc comment. `undefined` for every
+   *  interaction except the Marcus Webb scripted scenario
+   *  (AgentWorkspace2WithDeskPage.tsx). */
+  copilotExtra?: React.ReactNode;
 }) {
   const [activeTab, setActiveTab] = useState(() => CUSTOMER_PANEL_TABS.indexOf("Overview"));
   useEffect(() => {
@@ -3643,21 +3808,41 @@ export function useCustomerDetailsInteriorPanel({
   const latestNote = useMemo(() => buildLatestNote(customerName, recordId), [customerName, recordId]);
   const copilotSummary = useMemo(() => buildCopilotSummary(customerName, recordId), [customerName, recordId]);
   const row = useMemo(() => resolveCustomerListRecord(recordId), [recordId]);
+  // See `buildCustomerMatchSubhead`'s own doc comment — shared with
+  // `CustomerInformationSidePanel`/`CustomerInfoHoverPreview` so every
+  // surface that can show the unknown-contact match flow for the same
+  // interaction never disagrees on the count/wording or which list shows.
+  const { subhead: matchSubhead, visibleList: matchVisibleList } = matchState
+    ? buildCustomerMatchSubhead(matchState.query, matchState.possibleMatches, matchState.searchResults)
+    : { subhead: "", visibleList: [] };
 
   return {
     headerIcon: (
       <button
         type="button"
-        onClick={onBack}
-        aria-label="Back to Details"
+        onClick={matchState?.step === "create" ? matchState.onBackToSearch : onBack}
+        aria-label={matchState?.step === "create" ? "Back to search" : "Back to Details"}
         className="flex h-6 w-6 items-center justify-center rounded-lyra-sm text-lyra-fg-secondary hover:bg-lyra-state-hover transition-colors"
       >
         <ArrowLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
       </button>
     ),
-    headerTitle: customerName || "Customer",
-    headerSubhead: recordId,
-    headerTabs: (
+    // While `matchState` is set (see that prop's own doc comment), the
+    // title/subhead/tabs below all branch on it exactly the way
+    // `CustomerInformationSidePanel` already does for its own identical
+    // header — see that component's own doc comments for the full "why"
+    // behind each branch.
+    headerTitle: matchState
+      ? matchState.step === "create"
+        ? "Create New Customer"
+        : "Customer Information"
+      : customerName || "Customer",
+    headerSubhead: matchState
+      ? matchState.step === "search"
+        ? matchSubhead
+        : undefined
+      : recordId,
+    headerTabs: matchState ? undefined : (
       <TabList className="px-4" overflowMenu>
         {visibleTabs.map((label) => (
           <Tab
@@ -3670,32 +3855,63 @@ export function useCustomerDetailsInteriorPanel({
         ))}
       </TabList>
     ),
-    footer:
-      recordDraft.isDirty || overviewEditing ? (
+    footer: matchState ? (
+      matchState.step === "search" ? (
+        <PanelFooter>
+          <Button className="w-full" onClick={matchState.onStartCreate}>
+            Create New Customer
+          </Button>
+        </PanelFooter>
+      ) : (
         <CustomerRecordSaveFooter
-          onSave={() => {
-            recordDraft.save();
-            onOverviewEditingChange(false);
-            onAddToast?.({
-              variant: "success",
-              title: "Success",
-              message: customerName ? `${customerName} customer record saved` : "Customer record saved",
-              duration: 4000,
-            });
-          }}
+          onSave={matchState.onSaveNewCustomer}
           onCancel={() => {
             recordDraft.cancel();
-            onOverviewEditingChange(false);
+            matchState.onBackToSearch();
           }}
         />
-      ) : undefined,
-    body: (
+      )
+    ) : recordDraft.isDirty || overviewEditing ? (
+      <CustomerRecordSaveFooter
+        onSave={() => {
+          recordDraft.save();
+          onOverviewEditingChange(false);
+          onAddToast?.({
+            variant: "success",
+            title: "Success",
+            message: customerName ? `${customerName} customer record saved` : "Customer record saved",
+            duration: 4000,
+          });
+        }}
+        onCancel={() => {
+          recordDraft.cancel();
+          onOverviewEditingChange(false);
+        }}
+      />
+    ) : undefined,
+    body: matchState ? (
+      matchState.step === "search" ? (
+        <CustomerMatchSearchBody
+          query={matchState.query}
+          onQueryChange={matchState.onQueryChange}
+          matches={matchVisibleList}
+          onLinkRecord={matchState.onLinkRecord}
+        />
+      ) : (
+        <CustomerDetailTabContent
+          fields={recordDraft.draft.overviewFields}
+          draft={recordDraft.draft}
+          onDraftChange={recordDraft.updateDraft}
+        />
+      )
+    ) : (
       <CustomerInformationPanelBody
         activeTab={activeTab}
         customerName={customerName}
         latestInteraction={latestInteraction}
         latestNote={latestNote}
         copilotSummary={copilotSummary}
+        copilotExtra={copilotExtra}
         recordId={recordId}
         channels={channels}
         onOpenConversation={onOpenHistoryConversation}
@@ -3795,6 +4011,9 @@ export function CustomerInformationSidePanel({
   copilotExtra,
   onStartInteraction,
   focusTabOverride,
+  bodyOverride,
+  headerTitleOverride,
+  headerTabsOverride,
 }: {
   open: boolean;
   pinned: boolean;
@@ -3937,6 +4156,48 @@ export function CustomerInformationSidePanel({
    * clicking "View customer info" twice in a row with nothing else
    * changing `activeTab` in between). */
   focusTabOverride?: { tab: CustomerPanelTabLabel; version: number };
+  /**
+   * When set, replaces this panel's normal tabbed body
+   * (`CustomerInformationPanelBody`) with this element instead, AND hides
+   * `headerTabs` entirely (there's nothing for a tab row to switch
+   * between once the body isn't tab content anymore) — used by
+   * `AgentWorkspaceAdvancedPage.tsx`'s docked "Customer Information"
+   * panel to show the same Customer Profile/Contact Snapshot/Files
+   * accordion content (`DetailsPanelAccordions`, below) the voice
+   * "Details" panel used to show exclusively, per explicit request
+   * ("swap the actual content rendered inside each panel" — see that
+   * panel's own render site doc comment, and `CustomerInfoHoverPreview`'s
+   * identical prop, for the fuller "why"). Checked AFTER `matchState` — an
+   * unknown-contact interaction still gets the customer-matching UI, never
+   * the accordions — but INSTEAD of the normal tab body otherwise.
+   * `undefined` for every other consumer (Phase 1/Premium never pass this,
+   * so their own instances of this panel are completely unaffected).
+   */
+  bodyOverride?: React.ReactNode;
+  /**
+   * Replaces the fixed "Customer Information" header title (used whenever
+   * `matchState` isn't set) — per later explicit request ("put the
+   * transcript and session tabs into the new customer information side
+   * panel and rename the side panel Session Details"), Advanced's own
+   * instance of this panel now reads "Session Details" instead, since it
+   * shows more than just customer info once `bodyOverride`/`headerTabsOverride`
+   * are also in play. `undefined` for every other consumer, which keeps
+   * the original "Customer Information" title unchanged.
+   */
+  headerTitleOverride?: string;
+  /**
+   * Replaces the normal Overview/Detail/Notes `headerTabs` row with this
+   * instead (still hidden entirely while `matchState` is set, same as
+   * always) — per the same later explicit request as `headerTitleOverride`
+   * above: Advanced's own instance shows a Details/Transcript/Session
+   * Details row here instead, since `bodyOverride` now switches on that
+   * same external tab state rather than this component's own internal
+   * `activeTab`. Checked BEFORE the `bodyOverride`-implies-"no tabs" rule
+   * `headerTabs` otherwise follows — passing this is how a caller gets
+   * tabs back while ALSO using `bodyOverride`. `undefined` for every other
+   * consumer, unaffected.
+   */
+  headerTabsOverride?: React.ReactNode;
 }) {
   const latestInteraction = useMemo(
     () => buildLatestInteraction(customerName, recordId),
@@ -3981,6 +4242,30 @@ export function CustomerInformationSidePanel({
   // unconditionally now — see this block's own top comment.
   const visibleTabs = tabs.filter((t) => t !== "Copilot");
 
+  // Per explicit follow-up request ("I want the session details side panel
+  // to still animate in and out when docked on toggle, just not animate
+  // when it goes full screen") — this component fakes "full screen" by
+  // flipping `pinned`/`width` together at the call site (AgentWorkspace*
+  // Page.tsx's own `pinned={fullScreen ? false : ...}`/`width={fullScreen ?
+  // containerWidth : ...}`), rather than `InteriorPanel`'s own dedicated
+  // `allowFullScreen` toggle — so `SidePanel` itself (side-panel.tsx) has no
+  // way to tell "entering/exiting full screen" apart from a normal `open`
+  // toggle on its own. Same `prevRef`/`justToggled` ref-comparison pattern
+  // `InteriorPanel` uses for its own `fullScreenJustToggled` (see that
+  // component's own doc comment) — computed with a plain assignment during
+  // render (not `useEffect`) is what that fix settled on for InteriorPanel,
+  // but THIS ref update needs to happen strictly AFTER the render that
+  // reads `fullScreenJustToggled`, same reasoning as `InteriorPanel`'s own
+  // `useEffect`-based update (not `useLayoutEffect`) — otherwise the ref
+  // would already reflect the NEW value by the time this same render
+  // computes `fullScreenJustToggled`, and the instant-transition render
+  // would never actually fire.
+  const prevFullScreenRef = useRef(fullScreen);
+  const fullScreenJustToggled = prevFullScreenRef.current !== fullScreen;
+  useEffect(() => {
+    prevFullScreenRef.current = fullScreen;
+  }, [fullScreen]);
+
   // Never render wider than the parent Container actually is, docked or
   // full-screen — see `containerWidth`'s own doc comment. `Math.max(0, ...)`
   // guards the pathological case of a container narrower than any usable
@@ -4019,6 +4304,11 @@ export function CustomerInformationSidePanel({
       side="right"
       open={open}
       pinned={pinned}
+      // See `fullScreenJustToggled`'s own doc comment above — instant only
+      // for the render(s) where `fullScreen` itself just flipped; a normal
+      // `open` toggle (still docked, not entering/exiting full screen)
+      // keeps `SidePanel`'s own default animated width transition.
+      instantWidthChange={fullScreenJustToggled}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       // Static "Customer Information" title (was the customer's own name +
@@ -4047,7 +4337,7 @@ export function CustomerInformationSidePanel({
       // (`headerIcon` below) instead of a normal `TabList` (`headerTabs`
       // below is `undefined` in both match steps — neither reference
       // screenshot shows any tabs).
-      headerTitle={matchState?.step === "create" ? "Create New Customer" : "Customer Information"}
+      headerTitle={matchState?.step === "create" ? "Create New Customer" : headerTitleOverride ?? "Customer Information"}
       headerSubhead={
         matchState?.step === "search"
           ? matchSubhead
@@ -4118,19 +4408,25 @@ export function CustomerInformationSidePanel({
       // `undefined` entirely while `matchState` is set — neither match
       // step has a tab list (see `headerTitle`'s own doc comment above).
       headerTabs={
-        matchState ? undefined : (
-          <TabList className="px-4" overflowMenu>
-            {visibleTabs.map((label) => (
-              <Tab
-                key={label}
-                active={activeTab === CUSTOMER_PANEL_TABS.indexOf(label)}
-                onClick={() => setActiveTab(CUSTOMER_PANEL_TABS.indexOf(label))}
-              >
-                {label}
-              </Tab>
-            ))}
-          </TabList>
-        )
+        matchState
+          ? undefined
+          : headerTabsOverride !== undefined
+          ? headerTabsOverride
+          : bodyOverride
+          ? undefined
+          : (
+            <TabList className="px-4" overflowMenu>
+              {visibleTabs.map((label) => (
+                <Tab
+                  key={label}
+                  active={activeTab === CUSTOMER_PANEL_TABS.indexOf(label)}
+                  onClick={() => setActiveTab(CUSTOMER_PANEL_TABS.indexOf(label))}
+                >
+                  {label}
+                </Tab>
+              ))}
+            </TabList>
+          )
       }
       width={clampedWidth}
       // Hides the drag-resize handle while full-screen — its width is
@@ -4264,6 +4560,8 @@ export function CustomerInformationSidePanel({
             onDraftChange={recordDraft.updateDraft}
           />
         )
+      ) : bodyOverride ? (
+        bodyOverride
       ) : (
         <CustomerInformationPanelBody
           activeTab={activeTab}

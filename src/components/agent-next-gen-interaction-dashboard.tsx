@@ -437,6 +437,39 @@ export interface Interaction {
    */
   closed?: boolean;
   /**
+   * True once the agent has hung up a voice call on this interaction — per
+   * explicit request ("when a call is ended do not set the status to
+   * closed - keep it at whatever status it currently is - there may be
+   * after call work to do"): hanging up used to call
+   * `handleInteractionStatusChange(..., "Closed")`, a real disposition
+   * change identical to the agent picking "Closed" from the status popover
+   * themselves. That silently finalized the channel's status before any
+   * after-call work happened, so ending the call now sets this dedicated
+   * flag instead and leaves `threadStatuses` completely untouched —
+   * whatever status the voice channel already had (typically "Open") is
+   * still exactly that afterward, for the agent to actually disposition
+   * themselves. Every place that used to treat "status is Closed" as "this
+   * call has ended" (the call-controls bar's own visibility, the
+   * record-header status row's Unassign & Dismiss button, the LeftNav
+   * `ChannelRow`'s equivalent) now checks this flag instead. `undefined`
+   * for every non-voice interaction, and for a voice interaction whose call
+   * hasn't ended yet.
+   *
+   * Deliberately SEPARATE from `threadStatuses` below rather than folded
+   * into it — this is the one place that now tracks "is the call itself
+   * still connected" independently of "what has the agent dispositioned
+   * this channel as". `findLiveVoiceThread`/`isOnVoiceCall`
+   * (AgentNextGenPage.tsx/AgentWorkspaceAdvancedPage.tsx) both read this
+   * instead of `threadStatuses`'s own "Closed" value. Reset back to
+   * `undefined` by `handleStartCall`/`handleQuickDial`/`handleRedial`/
+   * `handleAddAdHocChannel` whenever any of them opens a genuinely fresh
+   * voice `Thread` — the exact same "clear stale per-call state" moment
+   * those handlers already reset `threadStatuses`/`liveMessages` at, so a
+   * previous call's hangup doesn't leave a brand-new one looking
+   * pre-ended.
+   */
+  voiceCallEnded?: boolean;
+  /**
    * The status ("Open"/"Pending"/"Escalated"/"Resolved"/"Closed") last
    * explicitly assigned via the session-status popover
    * (`TranscriptSessionSeparator`) or the LeftNav `ChannelRow`'s own
@@ -484,30 +517,6 @@ export interface Interaction {
    * status `TRANSCRIPT_SESSIONS`/`_VOICE`/`_EMAIL` otherwise assigns it.
    */
   threadStatuses?: Record<string, string>;
-  /**
-   * True once the agent has hung up this interaction's own voice call —
-   * deliberately SEPARATE from `threadStatuses` above. Per explicit
-   * request ("when a call is ended do not set the status to closed - keep
-   * it at whatever status it currently is - there may be after call work
-   * to do"): Hang Up no longer writes "Closed" into `threadStatuses` for
-   * the voice thread — that's a real disposition the agent picks (during
-   * after-call work), not something that should happen automatically the
-   * instant the call itself ends. This field is the one place that now
-   * tracks "is the call itself still connected" independently of "what has
-   * the agent dispositioned this channel as" — `findLiveVoiceThread`/
-   * `isOnVoiceCall` (AgentNextGenPage.tsx/AgentWorkspace2WithDeskPage.tsx)
-   * both read this instead of `threadStatuses`'s own "Closed" value now:
-   * it's what hides the call-controls bar and clears the agent's
-   * auto-"Working" status the moment Hang Up is pressed, regardless of
-   * whatever real status the channel still carries while ACW is pending.
-   * Reset back to `undefined` by `handleStartCall`/`handleQuickDial`/
-   * `handleRedial`/`handleAddAdHocChannel` whenever any of them opens a
-   * genuinely fresh voice `Thread` — the exact same "clear stale per-call
-   * state" moment those handlers already reset `threadStatuses`/
-   * `liveMessages` at — so a previous call's hangup doesn't leave a
-   * brand-new one looking pre-ended.
-   */
-  voiceCallEnded?: boolean;
 }
 
 /** Whether ANY currently-open channel on this Interaction is actually

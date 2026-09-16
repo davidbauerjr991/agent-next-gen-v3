@@ -1,14 +1,38 @@
-// Marcus Webb — a scripted, one-off simulated INBOUND chat for "Agent
-// Workspace 2.0 Premium" only (per explicit request — this module is never
-// imported by AgentNextGenPage.tsx/AgentWorkspaceAdvancedPage.tsx). Unlike
-// every other interaction-creation path in that file (`handleStartCall`,
-// `handleQuickDial`, `handleRedial`, `handleReopenContactHistoryEntry`,
-// `handleOpenAssignmentFromNotification`), which all start from an AGENT
-// action, this one starts itself: 30 real seconds after the agent's status
-// reads "available" (`AgentWorkspace2WithDeskPage.tsx`'s own trigger
-// `useEffect`), a chat from "Marcus Webb" — locked out of his account after
-// several failed password-reset attempts — lands in the left nav exactly
-// like a real inbound assignment, unprompted.
+// Marcus Webb — a scripted, one-off simulated INBOUND chat originally built
+// for "Agent Workspace 2.0 Premium" only. Per a later explicit request ("if
+// I push the L button on the keyboard it launches Marcus Webb's contact
+// [in Premium] - do this for both Phase 1 and 1B"), `AgentNextGenPage.tsx`
+// ("Phase 1") and `AgentWorkspaceAdvancedPage.tsx` ("Phase 1B"/Advanced —
+// now just "Phase 1", per a later explicit request that also deleted
+// AgentNextGenPage.tsx entirely; see App.tsx's own routing doc comment)
+// also imported from this module — but ONLY `MARCUS_WEBB_ID`/
+// `buildMarcusWebbInteraction`, to arm the same "L" launch, not the rest of
+// this module's exports. AgentNextGenPage.tsx's own copy of that import is
+// gone along with the rest of that file; `AgentWorkspaceAdvancedPage.tsx`
+// is the only one of the two still doing this. Per that request's own
+// explicit follow-up ("if it's easier for now - just launch the assignment
+// - I have a new case I want to wire to it"), it deliberately does NOT
+// wire up Premium's own scripted Copilot walkthrough
+// (`MarcusWebbCopilotCard`, the `selectedAction`/`resetSteps`/etc. fields
+// below, or this module's own `saveMarcusWebbScenario`/
+// `resetMarcusWebbScenario`/`loadMarcusWebbScenario` persistence) — it
+// tracks its own "has this page's load already fired the L trigger"
+// locally instead (a plain `useState`, not this module's shared
+// `localStorage` key), since a real case is expected to replace this
+// scenario's own scripted content there before any of that step-tracking
+// would matter.
+//
+// Unlike every other interaction-creation path in `AgentWorkspace2WithDesk
+// Page.tsx`'s own file (`handleStartCall`, `handleQuickDial`, `handleRedial`,
+// `handleReopenContactHistoryEntry`, `handleOpenAssignmentFromNotification`),
+// which all start from an AGENT action, this one starts itself there: 30
+// real seconds after the agent's status reads "available" (that file's own
+// trigger `useEffect`), a chat from "Marcus Webb" — locked out of his
+// account after several failed password-reset attempts — lands in the left
+// nav exactly like a real inbound assignment, unprompted.
+// `AgentWorkspaceAdvancedPage.tsx`'s own copy of this trigger (see above)
+// fires on the "L" keypress instead — see that page's own trigger
+// `useEffect` (right after `agentStatus`) for why.
 //
 // "Separate from the customer database" (per explicit request): `Marcus
 // Webb` is NOT a `CREATE_NEW_CUSTOMERS` record — `MARCUS_WEBB_CUSTOMER_ID`

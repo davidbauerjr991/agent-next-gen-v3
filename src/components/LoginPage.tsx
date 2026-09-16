@@ -1,6 +1,6 @@
 import { LoginCard } from "@nicecxone/lyra-ui";
 
-type Page = "agent-workspace" | "agent" | "outbound" | "login";
+type Page = "agent-workspace" | "agent-advanced" | "outbound" | "login";
 
 interface LoginPageProps {
   onNavigate?: (page: Page) => void;
@@ -21,7 +21,15 @@ export function LoginPage({ onNavigate }: LoginPageProps) {
       <LoginCard
         appName="Agent Workspace"
         launchButtonLabel="Launch"
-        onLaunch={() => onNavigate?.("agent")}
+        // Per explicit request ("remove phase 1 for now ... completely
+        // delete the phase 1 files"): this used to launch straight into
+        // the old "agent" page (`AgentNextGenPage.tsx`), which is now
+        // deleted — repointed to `"agent-advanced"`
+        // (`AgentWorkspaceAdvancedPage.tsx`, now labeled "Agent Workspace
+        // 2.0 | Phase 1" in that page's own app menu, agent-next-gen-
+        // outbound-data.tsx's `buildAppMenuGroups`), the page that now
+        // actually IS "Phase 1".
+        onLaunch={() => onNavigate?.("agent-advanced")}
       />
     </div>
   );

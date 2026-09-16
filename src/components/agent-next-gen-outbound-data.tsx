@@ -92,44 +92,44 @@ function randomAvatarClassName(seed: string): string {
 
 /* ── App menu builder (needs onNavigate so built inside the component) ── */
 
-// Renamed from "Agent Next Gen" (per explicit request) — still the active/
-// first item, still the same underlying `"agent"` page (`AgentNextGenPage`,
-// App.tsx) — only the label changed, and it's now labeled "Agent Workspace
-// 2.0 | Phase 1" (per explicit request). "Agent Workspace Premium"/
-// "Outbound Engagement"/"Login" were removed outright (not hidden — a full
-// delete of their menu entries); their pages/routes themselves
-// (`DesktopDesignsPage`/`OutboundEngagementPage`/`LoginPage`, App.tsx) are
-// untouched and still reachable by hash URL, just no longer linked from
-// this menu. "Agent Workspace 2.0 Advanced" was removed from this menu the
-// same way, per explicit request — its page/component/route
-// (`AgentWorkspaceAdvancedPage.tsx`, its own `#/agent-advanced` route,
-// App.tsx) is untouched and still reachable by hash URL, just no longer an
-// option in this picker. "Agent Workspace 2.0 Premium" (originally "Agent
-// Workspace 2.0 With Desk", later renamed per explicit request — same
-// underlying page/component, just the label + route changed) is now
-// labeled "Agent Workspace 2.0 | Phase 2" (per explicit request) — its own
-// separate page (`AgentWorkspace2WithDeskPage.tsx`, its own
-// `#/agent-premium` route, App.tsx) rather than reusing "Agent Workspace
-// 2.0"'s `"agent"` page.
+// Per explicit request ("remove phase 1 for now - it is old ... remove it
+// from the menu - rename the menu item Phase 1B to Phase 1 - completely
+// delete the phase 1 files"): the original "Agent Workspace 2.0 | Phase 1"
+// row (the plain `"agent"` page, `AgentNextGenPage.tsx`) is gone from this
+// menu entirely — not hidden, removed — and its page/component/file are
+// gone too (see App.tsx's own routing doc comment for the full "why").
+// "Agent Workspace 2.0 | Phase 1B" (`AgentWorkspaceAdvancedPage.tsx`, the
+// `"agent-advanced"` page — previously added back to this menu per an
+// earlier explicit request, positioned as the second item between the old
+// Phase 1 and Phase 2 since it was conceptually a variant of Phase 1) is
+// renamed to "Agent Workspace 2.0 | Phase 1" here — same underlying page/
+// component/route as before, only the label changed, and it's now this
+// menu's first/only-remaining "Phase 1" item since the original one is
+// gone. "Agent Workspace 2.0 Premium" (originally "Agent Workspace 2.0
+// With Desk", later renamed per an earlier explicit request — same
+// underlying page/component, just the label + route changed each time) is
+// still labeled "Agent Workspace 2.0 | Phase 2" — its own separate page
+// (`AgentWorkspace2WithDeskPage.tsx`, its own `#/agent-premium` route,
+// App.tsx), untouched by this change.
 //
 // `currentPage` decides which row shows the "active" (blue, non-clickable-
 // looking) treatment — each call site passes its OWN page literal
-// (`AgentNextGenPage.tsx` passes `"agent"`, `AgentWorkspace2WithDeskPage.tsx`
-// passes `"agent-with-desk"`), since each page component inherently knows
-// which page it itself is; there's no need to thread that back down from
-// `App.tsx`. Every row still gets an `onClick` (including the currently-
-// active one, which just re-navigates to the same page — harmless) so
-// clicking any row from either of the two remaining pages always works,
-// per explicit request ("allow the agent to click back to normal Agent
-// Workspace 2.0").
+// (`AgentWorkspace2WithDeskPage.tsx` passes `"agent-with-desk"`,
+// `AgentWorkspaceAdvancedPage.tsx` passes `"agent-advanced"`), since each
+// page component inherently knows which page it itself is; there's no need
+// to thread that back down from `App.tsx`. Every row still gets an
+// `onClick` (including the currently-active one, which just re-navigates to
+// the same page — harmless) so clicking any row from either of the two
+// remaining pages always works, per an earlier explicit request ("allow
+// the agent to click back to normal Agent Workspace 2.0").
 export function buildAppMenuGroups(onNavigate: ((page: Page) => void) | undefined, currentPage: Page): AppMenuGroup[] {
   return [
     {
       items: [
         {
           label: "Agent Workspace 2.0 | Phase 1",
-          active: currentPage === "agent",
-          onClick: () => onNavigate?.("agent"),
+          active: currentPage === "agent-advanced",
+          onClick: () => onNavigate?.("agent-advanced"),
         },
         {
           label: "Agent Workspace 2.0 | Phase 2",

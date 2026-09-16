@@ -1,16 +1,22 @@
 // Shared, cross-page "agent leg" (softphone/telephony connection) status —
 // per explicit request ("keep the state of the agent leg consistent if the
 // user goes from premium to advanced to basic"): "Agent Workspace 2.0
-// Premium" (AgentWorkspace2WithDeskPage.tsx), "Agent Workspace 2.0 Advanced"
-// (AgentWorkspaceAdvancedPage.tsx), and the plain "agent" page
-// (AgentNextGenPage.tsx) are each their own separate top-level route/
-// component (App.tsx) — switching between them via the app-picker dropdown
-// fully unmounts one and mounts the other, not a re-render of a shared
-// component. `AgentProfile` (lyra-ui) has always owned `agentLegStatus`
-// itself, as plain internal `useState` defaulting to `"disconnected"` on
-// every mount — so a genuinely CONNECTED agent leg on Premium looked
-// disconnected again the instant they switched to Advanced, with nothing
-// having actually changed about the leg itself.
+// Premium" (AgentWorkspace2WithDeskPage.tsx) and "Agent Workspace 2.0 |
+// Phase 1" (AgentWorkspaceAdvancedPage.tsx — "Advanced"/"Phase 1B" at the
+// time this module was written) are each their own separate top-level
+// route/component (App.tsx) — switching between them via the app-picker
+// dropdown fully unmounts one and mounts the other, not a re-render of a
+// shared component. A third page, the plain "agent" page
+// (AgentNextGenPage.tsx, "Phase 1" at the time), was originally a third
+// consumer here too — it's since been deleted entirely per a later
+// explicit request ("remove phase 1 for now ... completely delete the
+// phase 1 files"; see App.tsx's own routing doc comment), leaving the two
+// above as this module's only remaining consumers. `AgentProfile`
+// (lyra-ui) has always owned `agentLegStatus` itself, as plain internal
+// `useState` defaulting to `"disconnected"` on every mount — so a
+// genuinely CONNECTED agent leg on Premium looked disconnected again the
+// instant they switched to Advanced, with nothing having actually changed
+// about the leg itself.
 //
 // This module is the fix: each page seeds `AgentProfile`'s new
 // `initialAgentLegStatus` prop (agent-profile.tsx) from `readAgentLegStatus()`

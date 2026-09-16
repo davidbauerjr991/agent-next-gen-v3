@@ -74,6 +74,7 @@ import {
   InteriorPanel,
   SidePanel,
   EmptyState,
+  formatPhoneForDisplay,
 } from "@nicecxone/lyra-ui";
 import { CREATE_NEW_CUSTOMERS, type CreateNewCustomerRecord } from "@nicecxone/lyra-ui/customers-data";
 import { useScheduleContent } from "@nicecxone/lyra-ui";
@@ -93,6 +94,8 @@ import {
   synthesizeChannelAddress,
   SHOW_ADD_CHANNEL_HEADER_BUTTON,
   buildContactOverviewInfo,
+  buildCustomerContextOverviewInfo,
+  type CustomerPriorContactInfo,
   type Page,
 } from "@/components/agent-next-gen-shared-utils";
 import {
@@ -150,7 +153,9 @@ import {
   buildContactHistoryByRange,
   ContactHistoryCard,
   ContactHistoryEntryDetail,
+  CONTACT_HISTORY,
 } from "@/components/agent-next-gen-contact-history";
+import { useCustomerAiSummaryPanelContent } from "@/components/agent-next-gen-ai-summary-panel";
 import { saveCaseRecord, getCaseRecord } from "@/components/agent-next-gen-case-database";
 import { readAgentLegStatus, saveAgentLegStatus, consumeInitialAgentLegAnnouncement } from "@/components/agent-next-gen-agent-leg-state";
 import {
@@ -176,7 +181,6 @@ import {
   type CustomerHistorySessionEntry,
   HistoryConversationView,
   CustomerInfoHoverPreview,
-  CustomerInformationSidePanel,
   CustomerRowInfoPanel,
   CustomerFullScreenTabContent,
   CUSTOMER_PANEL_TABS,
@@ -188,6 +192,7 @@ import {
   CUSTOMER_INFO_ACCORDION_CLASSNAME,
   buildCopilotSummary,
   DetailsPanelAccordions,
+  useSessionDetailsTabContent,
   useCustomerDetailsInteriorPanel,
 } from "@/components/agent-next-gen-customer-info-panel";
 // PROTOTYPE — local-only, not in lyra-ui yet. See CollapsedChannelBadge's
@@ -266,6 +271,50 @@ import {
 // renamed from `AI_PANEL_DEFAULT_WIDTH` now that Ask AI (its original sole
 // occupant, back when each of these was its own independently-sized
 // `Draggable`) has been removed from this app.
+/** Bare digits only — used to match a dialed/SMS'd phone number against
+ *  `ContactHistoryEntry.phone` regardless of formatting (parens/dashes/
+ *  spaces/country code). See AgentNextGenPage.tsx's identical helper for
+ *  the full reasoning. */
+function digitsOnly(value: string | undefined | null): string {
+  return (value || "").replace(/\D/g, "");
+}
+
+/** Finds the real `CONTACT_HISTORY` case (agent-next-gen-contact-
+ *  history.tsx) matching the active interaction, if any — see
+ *  AgentNextGenPage.tsx's identical helper for the full reasoning
+ *  (dependency-free rule on agent-next-gen-shared-utils.ts is why this
+ *  lookup lives in each page file rather than there). */
+function findContactHistoryMatch(
+  customerName: string | undefined,
+  customerId?: string
+): ContactHistoryEntry | undefined {
+  if (!customerName) return undefined;
+  const dialedDigits = digitsOnly(customerName);
+  if (dialedDigits.length >= 7) {
+    const byPhone = CONTACT_HISTORY.find((entry) => entry.phone && digitsOnly(entry.phone) === dialedDigits);
+    if (byPhone) return byPhone;
+  }
+  if (customerId) {
+    const byId = CONTACT_HISTORY.find((entry) => entry.customerId === customerId);
+    if (byId) return byId;
+  }
+  return CONTACT_HISTORY.find((entry) => entry.name.toLowerCase() === customerName.toLowerCase());
+}
+
+/** Extracts the plain fields `buildCustomerContextOverviewInfo` actually
+ *  needs off a matched `ContactHistoryEntry` — see AgentNextGenPage.tsx's
+ *  identical helper for the full reasoning. */
+function extractPriorContactInfo(entry: ContactHistoryEntry | undefined): CustomerPriorContactInfo | undefined {
+  if (!entry) return undefined;
+  const lastMessage = entry.messages && entry.messages.length > 0 ? entry.messages[entry.messages.length - 1] : undefined;
+  return {
+    description: entry.description,
+    skillName: entry.skillName,
+    statusLabel: entry.statusLabel,
+    transcriptExcerpt: lastMessage?.text ?? entry.emailBody,
+  };
+}
+
 // ── AgentWorkspace2WithDeskPage ── (see agent-next-gen-shared-utils.ts and sibling
 // agent-next-gen-*.ts(x) files for everything this component itself no
 // longer declares — split out once this file crossed Babel's 500KB
@@ -470,12 +519,33 @@ interface InteractionNavCardProps extends InteractionNavItemProps {
    * `OnHoldCornerBadge` (collapsed rail) is untouched either way.
    */
   onHold?: boolean;
+  /**
+   * True whenever this card's own live voice thread is on hold because the
+   * agent manually put it there from the call controls (`Thread.
+   * heldByAgent`) — regardless of whether this is the interaction currently
+   * being viewed. Deliberately SEPARATE from `onHold` above (which stays
+   * `false` for the active card): `onHold` also feeds `InteractionNavItem`'s
+   * own whole-card yellow background/border, a treatment meant for
+   * "navigated away from a live call", not "still looking at it, just
+   * paused" — an active, manually-held card already gets its own inline
+   * `OnHoldPill` on the channel row instead (`channelOnHold`, this file's
+   * own channel-row-building `.map()`). This prop exists only so the
+   * COLLAPSED rail tile's corner badge — the one visible indicator left once
+   * the rail collapses and that inline pill scrolls out of view — still
+   * shows for a manually-held ACTIVE call too, per explicit request ("when
+   * the nav is collapsed and the call is manually put on hold the pause
+   * chip should appear in the collapsed interactionNavItem"). Ignored once
+   * `expanded` is true — the expanded card has no equivalent corner-badge
+   * slot to render this in.
+   */
+  manuallyHeld?: boolean;
 }
 function InteractionNavCard({
   currentChannelType,
   showChannelBadge,
   badgeSeverity,
   onHold,
+  manuallyHeld,
   expanded,
   headerAction,
   ...itemProps
@@ -488,8 +558,11 @@ function InteractionNavCard({
       )}
       {/* `right-0 top-0` — the opposite corner from `CollapsedChannelBadge`
           above (`left-0 top-0`) so the two never collide on a held,
-          single-channel collapsed tile. */}
-      {onHold && <OnHoldCornerBadge />}
+          single-channel collapsed tile. `onHold || manuallyHeld` — see
+          `manuallyHeld`'s own doc comment above for why a manually-held
+          ACTIVE card (which never sets `onHold`) still needs to show this
+          badge here. */}
+      {(onHold || manuallyHeld) && <OnHoldCornerBadge />}
     </div>
   ) : (
     <InteractionNavItem expanded={expanded} onHold={onHold} {...itemProps} headerAction={headerAction} />
@@ -1449,16 +1522,20 @@ export function AgentWorkspace2WithDeskPage({
    */
   sidePanelToggleLabel?: string;
 }) {
-  // Open by default on load (not gated on `initialInteraction` — the rail
-  // should be expanded the first time this page renders regardless of
-  // whether the agent is seeded mid-call), per explicit request. From here
-  // on it only ever changes via the agent's own toggle (`onToggle` below)
-  // or `handleResize`'s narrow-viewport auto-collapse (a few lines down)
-  // — nothing else (including a new inbound assignment arriving) is
-  // allowed to open or close it on the agent's behalf; see the "when a new
+  // Closed by default on load — per a later explicit follow-up request
+  // ("default the left nav closed on app load"), reversing this state's
+  // own original "open by default" doc comment/request below. Same change
+  // as AgentNextGenPage.tsx's identical copy of this state. Still not
+  // gated on `initialInteraction` (closed the first time this page renders
+  // regardless of whether the agent is seeded mid-call) — this is a fixed
+  // starting value, not conditional logic. From here on it only ever
+  // changes via the agent's own toggle (`onToggle` below) or
+  // `handleResize`'s narrow-viewport auto-collapse (a few lines down) —
+  // nothing else (including a new inbound assignment arriving) is allowed
+  // to open or close it on the agent's behalf; see the "when a new
   // interaction comes in" doc comments further down for the auto-open that
   // used to do that and was explicitly dropped.
-  const [navOpen, setNavOpen] = useState(true);
+  const [navOpen, setNavOpen] = useState(false);
   // No interactions exist until the agent launches one from the CreateNew
   // menu (Start Interaction / quick dial) — see handleStartCall/handleQuick
   // Dial below. Click any resulting InteractionNavItem card to make it the
@@ -2338,22 +2415,6 @@ export function AgentWorkspace2WithDeskPage({
   // identical declaration for the full doc comment. `tabs` mirrors this
   // page's own `CustomerInformationSidePanel` call site just below
   // (Detail-only for a non-real-customer interaction).
-  const customerDetailsPanel = useCustomerDetailsInteriorPanel({
-    customerName: activeInteraction?.customerName,
-    recordId: activeInteraction?.customerId ?? "",
-    channels: activeInteraction?.threads ?? [],
-    tabs: activeInteractionIsRealCustomer ? CUSTOMER_PANEL_TABS : (["Detail"] as const),
-    recordDraft: activeCustomerRecordDraft,
-    overviewEditing: activeCustomerOverviewEditing,
-    onOverviewEditingChange: setActiveCustomerOverviewEditing,
-    onAddToast: addToast,
-    onStartInteraction: (contact, channel, phone, skillId) =>
-      handleStartCall({ contact, channel, phone, skillId }),
-    onOpenHistoryConversation: (entry) =>
-      activeInteraction &&
-      setHistoryConversationTab({ interactionId: activeInteraction.id, entry, active: true }),
-    onBack: () => setCustomerDetailsOpen(false),
-  });
   // Per explicit bug report, with a screenshot of a message bubble showing a
   // bare "4" avatar for an unidentified SMS number ("in the message avatar
   // bubbles for customers who are not identified/linked use the customer
@@ -2397,6 +2458,46 @@ export function AgentWorkspace2WithDeskPage({
     !activeInteraction.id.startsWith("quickdial:") &&
     !activeInteraction.id.startsWith("redial:") &&
     activeChannelType === "chat";
+  // Computed once so the SAME object feeds both the Customer Context
+  // Overview cards AND the new "AI Customer Summary" panel
+  // (`aiSummaryPanelOpen` below) — see AgentNextGenPage.tsx's identical
+  // memo for the full reasoning.
+  const customerContextOverviewInfo = useMemo(
+    () =>
+      activeInteraction
+        ? buildCustomerContextOverviewInfo(
+            activeInteraction.id,
+            activeInteraction.customerName,
+            activeInteractionIsRealCustomer,
+            activeInteractionCustomerIdentified,
+            extractPriorContactInfo(
+              findContactHistoryMatch(activeInteraction.customerName, activeInteraction.customerId)
+            )
+          )
+        : undefined,
+    [
+      activeInteraction?.id,
+      activeInteraction?.customerName,
+      activeInteraction?.customerId,
+      activeInteractionIsRealCustomer,
+      activeInteractionCustomerIdentified,
+    ]
+  );
+  // Drives the "AI Customer Summary" content swapped into the SAME
+  // "Details" `SidePanel` this file already shares between Session Details
+  // and Customer Information — see AgentNextGenPage.tsx's identical
+  // state/hook for the full reasoning (per explicit follow-up request:
+  // "they should all open in one side panel and just replace the current
+  // information").
+  const [aiSummaryPanelOpen, setAiSummaryPanelOpen] = useState(false);
+  const aiSummaryPanelContent = useCustomerAiSummaryPanelContent({
+    onBack: () => setAiSummaryPanelOpen(false),
+    customerName: activeInteraction?.customerName,
+    subtitle: customerContextOverviewInfo?.customerCard?.subtitle,
+    tags: customerContextOverviewInfo?.customerCard?.tags,
+    summary: customerContextOverviewInfo?.detailedSummary,
+    nextBestAction: customerContextOverviewInfo?.nextBestAction,
+  });
   // Per explicit follow-up request (superseding the customer-identity
   // version this used to be — see git history for that prior condition):
   // now keyed purely on how many channels/threads this interaction
@@ -2625,6 +2726,80 @@ export function AgentWorkspace2WithDeskPage({
       duration: 4000,
     });
   };
+
+  // Drives `customerDetailsPanel`'s own `focusTabOverride` prop just below
+  // (and, historically, the never-rendered docked `CustomerInformationSidePanel`'s
+  // identical prop — see `focusCustomerPanelTab`'s own doc comment further
+  // down for the full root-cause story). Fed by the Contact Overview's own
+  // "View customer info"/"View interaction history" links via
+  // `InteractionTranscript`'s `onViewCustomerInfo`/`onViewInteractionHistory`.
+  // Declared here, ABOVE `customerDetailsPanel`, specifically so its VALUE
+  // (not just its setter) can be read synchronously in that hook call's own
+  // `focusTabOverride` field just below — a plain `const` read like that
+  // needs the declaration to already have run, unlike the setters referenced
+  // inside `focusCustomerPanelTab`'s callback body (declared further down),
+  // which only need to exist by the time that callback actually FIRES, not
+  // by the time it's defined.
+  const [customerPanelFocusTab, setCustomerPanelFocusTab] = useState<
+    { tab: CustomerPanelTabLabel; version: number } | undefined
+  >(undefined);
+  const customerPanelFocusTabVersionRef = useRef(0);
+  const customerDetailsPanel = useCustomerDetailsInteriorPanel({
+    customerName: activeInteraction?.customerName,
+    recordId: activeInteraction?.customerId ?? "",
+    channels: activeInteraction?.threads ?? [],
+    tabs: activeInteractionIsRealCustomer ? CUSTOMER_PANEL_TABS : (["Detail"] as const),
+    recordDraft: activeCustomerRecordDraft,
+    overviewEditing: activeCustomerOverviewEditing,
+    onOverviewEditingChange: setActiveCustomerOverviewEditing,
+    onAddToast: addToast,
+    onStartInteraction: (contact, channel, phone, skillId) =>
+      handleStartCall({ contact, channel, phone, skillId }),
+    onOpenHistoryConversation: (entry) =>
+      activeInteraction &&
+      setHistoryConversationTab({ interactionId: activeInteraction.id, entry, active: true }),
+    onBack: () => setCustomerDetailsOpen(false),
+    // Per explicit follow-up request ("they should all open in one side
+    // panel and just replace the current information..."): this file's
+    // standalone docked `CustomerInformationSidePanel` no longer renders
+    // (see that render site's own doc comment further down) — its
+    // unknown-contact matching flow and the Marcus Webb scripted Copilot
+    // card move here instead, verbatim, so this ONE shared panel loses
+    // neither. `undefined` for a real-customer interaction, same as
+    // `CustomerInformationSidePanel` always got.
+    matchState:
+      activeInteractionIsRealCustomer || !activeInteraction
+        ? undefined
+        : {
+            step: customerMatchStep,
+            query: customerMatchQuery,
+            onQueryChange: setCustomerMatchQuery,
+            possibleMatches: possibleCustomerMatches,
+            searchResults: customerSearchResults,
+            onLinkRecord: handleLinkCustomerRecord,
+            onStartCreate: handleStartCreateCustomer,
+            onBackToSearch: handleBackToCustomerSearch,
+            onSaveNewCustomer: handleSaveNewCustomer,
+          },
+    copilotExtra:
+      activeInteraction?.id === MARCUS_WEBB_ID ? (
+        <MarcusWebbCopilotCard
+          state={marcusWebbState}
+          onSelectAction={handleMarcusWebbSelectAction}
+          onCompleteActivity={handleMarcusWebbCompleteActivity}
+          onSelectMessage={handleMarcusWebbSelectMessage}
+          onWrapUp={handleMarcusWebbWrapUp}
+          onResetVerifyIdentity={handleMarcusWebbResetVerifyIdentity}
+          onResetGeneratePassword={handleMarcusWebbResetGeneratePassword}
+          onResetRegeneratePassword={handleMarcusWebbResetRegeneratePassword}
+          onResetConfirmLogin={handleMarcusWebbResetConfirmLogin}
+        />
+      ) : undefined,
+    // Per bug-report root-cause fix — see `focusCustomerPanelTab`'s own doc
+    // comment (declared further down this file) for the full story: this is
+    // now the actual live target `focusCustomerPanelTab` drives.
+    focusTabOverride: customerPanelFocusTab,
+  });
   // Shared clock powering every open channel's live "MM:SS since it
   // started" elapsed display — independent of `elapsedSeconds` below, which
   // is the agent's own status timer and resets on status change.
@@ -3054,17 +3229,26 @@ export function AgentWorkspace2WithDeskPage({
   const [voiceVideoFullScreen, setVoiceVideoFullScreen] = useState(false);
   // "View Details"'s target panel/session state — see AgentNextGenPage.tsx's
   // identical state (same `[activeInteractionId]` reset below) for the full
-  // rationale: voice reuses this file's own "Session Details"/"Transcript"
-  // `InteriorPanel` via `voiceDetailsPanelTab`/`selectedVoiceDetailsSession`;
-  // every other channel gets its own single-purpose panel via
-  // `selectedSessionDetails`.
-  const [voiceDetailsPanelTab, setVoiceDetailsPanelTab] = useState<"Details" | "Transcript">("Transcript");
+  // rationale: voice reuses this file's own "Session Details"/"Details"/
+  // "Transcript" `InteriorPanel` via `voiceDetailsPanelTab`/
+  // `selectedVoiceDetailsSession`; every other channel gets its own single-
+  // purpose panel via `selectedSessionDetails`.
+  const [voiceDetailsPanelTab, setVoiceDetailsPanelTab] = useState<"Session Details" | "Details" | "Transcript">(
+    "Transcript"
+  );
   const [selectedVoiceDetailsSession, setSelectedVoiceDetailsSession] = useState<Contact | null>(null);
   // Fallback for the Details tab when no session has been explicitly
   // clicked yet — see AgentNextGenPage.tsx's identical state
   // (`currentVoiceSession`) for the full rationale.
   const [currentVoiceSession, setCurrentVoiceSession] = useState<Contact | null>(null);
   const [selectedSessionDetails, setSelectedSessionDetails] = useState<Contact | null>(null);
+  // See AgentNextGenPage.tsx's identical hook calls for the full rationale.
+  const voiceSessionDetailsPanel = useSessionDetailsTabContent({
+    sessionContact: selectedVoiceDetailsSession ?? currentVoiceSession,
+  });
+  const nonVoiceSessionDetailsPanel = useSessionDetailsTabContent({
+    sessionContact: selectedSessionDetails,
+  });
   // See AgentNextGenPage.tsx's identical state for the full doc comment.
   const [customerDetailsOpen, setCustomerDetailsOpen] = useState(false);
   // Per explicit follow-up request ("update the side panel in phase 2 to
@@ -3085,18 +3269,90 @@ export function AgentWorkspace2WithDeskPage({
   // same as `sidePanelWidth` above.
   const [detailsPanelWidth, setDetailsPanelWidth] = useState(350);
   const [detailsPanelResizing, setDetailsPanelResizing] = useState(false);
+  // Per-interaction memory for the "Details" panel — per explicit request
+  // ("respect the agent selection of the details panel state - if it is
+  // opened by the agent - it should stay open if the agent leaves the
+  // interaction then goes back (but don't keep it open automatically for
+  // other interactions if the agent has those closed)"). Same fix as
+  // AgentNextGenPage.tsx's identical copy of this effect — see that file's
+  // own doc comment for the full "why". Before this, the effect just below
+  // unconditionally closed the panel (and reset its content) on EVERY
+  // interaction switch, with no memory of what the agent had actually left
+  // it as — so returning to an interaction the agent had deliberately
+  // opened Details on looked identical to switching to one they'd never
+  // touched. A plain `useRef<Map>` (not React state) is enough: nothing
+  // here needs to re-render off the map itself, only off the plain
+  // `detailsPanelOpen`/etc. state the map seeds. Keyed by interaction id; a
+  // never-before-seen id (a brand-new interaction) has no entry, so `?? <
+  // closed default>` below is exactly "closed", matching this same
+  // request's own second half.
+  const detailsPanelSnapshotsRef = useRef(
+    new Map<
+      string,
+      {
+        open: boolean;
+        voiceTab: "Session Details" | "Details" | "Transcript";
+        selectedVoiceSession: Contact | null;
+        selectedSessionDetails: Contact | null;
+        customerDetailsOpen: boolean;
+        fullScreen: boolean;
+      }
+    >()
+  );
+  // The interaction id this "Details" bundle was LAST captured for — lets
+  // the effect below save the OUTGOING interaction's state before loading
+  // the incoming one's. `null` until the first switch, so nothing is saved
+  // on initial mount (there's nothing to save yet).
+  const prevDetailsPanelInteractionIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (activeInteractionId) {
-      setDetailsPanelOpen(false);
+      // Snapshot whatever the OUTGOING interaction's Details panel was left
+      // as — these state values are still that interaction's own (this
+      // effect is the only place that ever changes them on a switch, and it
+      // hasn't run yet for the switch that just happened), so this captures
+      // the agent's actual last choice for it, not a stale/default one.
+      const prevId = prevDetailsPanelInteractionIdRef.current;
+      if (prevId) {
+        detailsPanelSnapshotsRef.current.set(prevId, {
+          open: detailsPanelOpen,
+          voiceTab: voiceDetailsPanelTab,
+          selectedVoiceSession: selectedVoiceDetailsSession,
+          selectedSessionDetails,
+          customerDetailsOpen,
+          fullScreen: detailsPanelFullScreen,
+        });
+      }
+      // Restore the INCOMING interaction's own last Details state — or the
+      // same all-closed defaults every consumer got before this change, for
+      // one that's never had the panel touched.
+      const snapshot = detailsPanelSnapshotsRef.current.get(activeInteractionId);
+      setDetailsPanelOpen(snapshot?.open ?? false);
+      setVoiceDetailsPanelTab(snapshot?.voiceTab ?? "Transcript");
+      setSelectedVoiceDetailsSession(snapshot?.selectedVoiceSession ?? null);
+      setSelectedSessionDetails(snapshot?.selectedSessionDetails ?? null);
+      setCustomerDetailsOpen(snapshot?.customerDetailsOpen ?? false);
+      setDetailsPanelFullScreen(snapshot?.fullScreen ?? false);
+      prevDetailsPanelInteractionIdRef.current = activeInteractionId;
+      // Voice call transcript side panel's own floating video window (see
+      // this effect's own original doc comment, still true here) — NOT
+      // part of "the details panel state" this request is about, so it
+      // keeps unconditionally closing on every switch rather than joining
+      // the snapshot/restore above. `currentVoiceSession` likewise isn't
+      // restored — it's a live derived value (`InteractionTranscript`'s own
+      // `onCurrentSessionChange`, fed by whichever interaction is ACTIVE
+      // right now), not something the agent chose, so it's left to that
+      // effect to repopulate for the newly-active interaction rather than
+      // carried over from a snapshot.
       setVoiceVideoWindowOpen(false);
       setVoiceVideoFullScreen(false);
-      setVoiceDetailsPanelTab("Transcript");
-      setSelectedVoiceDetailsSession(null);
       setCurrentVoiceSession(null);
-      setSelectedSessionDetails(null);
-      setCustomerDetailsOpen(false);
-      setDetailsPanelFullScreen(false);
     }
+    // Deliberately reads several state values (`detailsPanelOpen`/
+    // `voiceDetailsPanelTab`/etc.) not listed below — this effect needs
+    // their value as of the switch that just happened (the outgoing
+    // interaction's own last state), not to re-run every time one of THEM
+    // changes, which is exactly what adding them as deps would cause.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeInteractionId]);
   const [panelMounted,   setPanelMounted]   = useState(false);
   const [panelState,     setPanelState]     = useState<PanelState>("closed");
@@ -3465,21 +3721,40 @@ export function AgentWorkspace2WithDeskPage({
   // defaults — it stays OPEN though, just no longer docked. See that
   // guard's own doc comment.
   const [sidePanelOpen,     setSidePanelOpen]     = useState(true);
-  // Drives `CustomerInformationSidePanel`'s own `focusTabOverride` prop —
-  // see that prop's doc comment (agent-next-gen-customer-info-panel.tsx).
-  // Fed by the Contact Overview's own "View customer info"/"View
-  // interaction history" links (`focusCustomerPanelTab` below) via
-  // `InteractionTranscript`'s `onViewCustomerInfo`/`onViewInteractionHistory`
-  // — both wired here (unlike AgentNextGenPage/AgentWorkspaceAdvancedPage)
-  // since this page's panel is the one consumer configured with the full
-  // `CUSTOMER_PANEL_TABS`, "Contacts" included.
-  const [customerPanelFocusTab, setCustomerPanelFocusTab] = useState<
-    { tab: CustomerPanelTabLabel; version: number } | undefined
-  >(undefined);
-  const customerPanelFocusTabVersionRef = useRef(0);
+  /** Opens the LIVE Customer Information surface (if closed) and jumps it to
+   *  `tab` — the shared handler behind both Contact Overview links (and any
+   *  other "View Customer Info"/"View interaction history" trigger).
+   *
+   *  ROOT-CAUSE FIX (per bug report "the view customer info links aren't
+   *  opening in phase 1" — this page has the identical bug): this used to
+   *  only call `setSidePanelOpen(true)`, which targets a docked
+   *  `CustomerInformationSidePanel` — but that component isn't even
+   *  imported into this file anymore, let alone rendered (see
+   *  `customerDetailsPanel`'s own `matchState` doc comment above: "this
+   *  file's standalone docked `CustomerInformationSidePanel` no longer
+   *  renders"), so that call had zero visible effect. The REAL, currently
+   *  rendering "Customer Information" surface in this file is
+   *  `customerDetailsPanel` (`useCustomerDetailsInteriorPanel`, declared
+   *  well above) — the same Overview/Detail/Notes/Contacts content, reused
+   *  as a content-swap mode of the shared "Details" `SidePanel` (see
+   *  `customerDetailsOpen`'s own doc comment). This now opens THAT: closes
+   *  any open AI Summary content first (the two share the same physical
+   *  panel and are mutually exclusive — see the
+   *  `aiSummaryPanelOpen ? ... : customerDetailsOpen ? ...` ternary at the
+   *  panel's render site), opens the shared Details panel itself
+   *  (`setDetailsPanelOpen`), switches its content to Customer Information
+   *  (`setCustomerDetailsOpen`), and feeds `tab` through to
+   *  `customerDetailsPanel`'s own `focusTabOverride` prop (fed via
+   *  `customerPanelFocusTab`, now declared up alongside `customerDetailsPanel`
+   *  itself since that hook call reads its value directly). `setSidePanelOpen`
+   *  is left in place — harmless, cheap insurance if a docked panel is ever
+   *  reintroduced here. */
   const focusCustomerPanelTab = (tab: CustomerPanelTabLabel) => {
     customerPanelFocusTabVersionRef.current += 1;
     setCustomerPanelFocusTab({ tab, version: customerPanelFocusTabVersionRef.current });
+    setAiSummaryPanelOpen(false);
+    setCustomerDetailsOpen(true);
+    setDetailsPanelOpen(true);
     setSidePanelOpen(true);
   };
   // No setter — always pinned. `onPinToggle` is deliberately left unset on
@@ -7306,8 +7581,17 @@ export function AgentWorkspace2WithDeskPage({
                     // isn't the interaction currently being viewed. Pure
                     // derivation off existing state — see `findLiveVoiceThread`'s
                     // own doc comment above for why no extra "on hold" state
-                    // needs to be tracked anywhere.
+                    // needs to be tracked anywhere. Deliberately UNCHANGED by
+                    // manual hold on the ACTIVE card (`c.heldByAgent`) — see
+                    // `InteractionNavCardProps.manuallyHeld`'s own doc
+                    // comment just below for why that's a separate prop.
                     onHold={!!findLiveVoiceThread(interaction) && interaction.id !== activeInteractionId}
+                    // Per explicit follow-up request ("when the nav is
+                    // collapsed and the call is manually put on hold the
+                    // pause chip should appear in the collapsed
+                    // interactionNavItem") — see `manuallyHeld`'s own doc
+                    // comment above for the full "why".
+                    manuallyHeld={!!findLiveVoiceThread(interaction)?.heldByAgent}
                     // Goes through `interactionDisplayName` — this tier's
                     // own "Customer" reversion once a second channel joins
                     // (see that function's own doc comment) — rather than
@@ -8623,29 +8907,54 @@ export function AgentWorkspace2WithDeskPage({
                           // conversation/transfer pickup too, just
                           // repositioned by `InteractionTranscript`'s own
                           // `isFreshLaunch` check).
-                          contactOverview={
-                            activeInteractionIsRealCustomer
-                              ? {
-                                  ...buildContactOverviewInfo(activeInteraction.id, activeInteractionIsRealCustomer),
-                                  journeySummary: buildCopilotSummary(activeInteraction.customerName, activeInteraction.customerId).journeySummary,
-                                }
-                              : undefined
-                          }
-                          // "View customer info"/"View interaction history"
-                          // jump this page's docked Customer Information
-                          // panel to its Overview/Contacts tab respectively
-                          // — see AgentNextGenPage.tsx's identical
-                          // `onViewCustomerInfo` wiring for the shared
-                          // reasoning. Gated on `activeInteractionIsRealCustomer`
-                          // (unlike `contactOverview` just above, which also
-                          // shows a Journey Summary for Marcus Webb): this
-                          // page's own panel `tabs` prop only expands to the
-                          // full `CUSTOMER_PANEL_TABS` (Overview/Contacts
-                          // included) for a real customer — an unknown
-                          // contact (Marcus Webb included) gets `["Detail"]`
-                          // only, so neither target tab would exist there.
-                          onViewCustomerInfo={
-                            activeInteractionIsRealCustomer ? () => focusCustomerPanelTab("Overview") : undefined
+                          // Per explicit request ("replace the current
+                          // context overview with the attached
+                          // information for each contact"), this page
+                          // ("Phase 2") now passes the newer
+                          // `customerContextOverview` (Customer Profile /
+                          // Customer Snapshot / Next Best Action) instead
+                          // of the plain `contactOverview` above — see
+                          // AgentNextGenPage.tsx's identical wiring
+                          // ("Phase 1") for the full reasoning, including
+                          // why this still reuses
+                          // `activeInteractionIsRealCustomer` rather than a
+                          // new "is this a callback" flag.
+                          // See AgentNextGenPage.tsx's identical wiring
+                          // ("Phase 1") for why the 4th arg reuses this
+                          // same block's own
+                          // `activeInteractionCustomerIdentified`.
+                          customerContextOverview={customerContextOverviewInfo}
+                          // "View customer info" jumps this page's docked
+                          // Customer Information panel to its Overview tab
+                          // for a real customer, or to the Detail tab (the
+                          // field-editor form) when there's no associated
+                          // customer record at all — per explicit request
+                          // ("when the agent clicks View Customer Info
+                          // display the customer info panel - if there is
+                          // no associated customer just display the detail
+                          // screen"). Previously opened the separate "AI
+                          // Customer Summary" panel instead for a real
+                          // customer, and was hidden outright otherwise — a
+                          // mismatch on both counts. That summary panel's
+                          // own narrative content now lives inside the
+                          // Customer Profile accordion's own
+                          // `detailedSummary` (see `customerContextOverview`'s
+                          // own doc comment on the `<InteractionTranscript>`
+                          // above), so a dedicated summary panel is no
+                          // longer needed for this link to be useful, and no
+                          // longer needs to be gated on real-customer status
+                          // either — an unknown contact now gets the Detail
+                          // screen instead of no link at all.
+                          //
+                          // "View interaction history" still jumps this
+                          // page's docked Customer Information panel to its
+                          // Contacts tab, unchanged, still gated on
+                          // `activeInteractionIsRealCustomer` — that link is
+                          // about browsing this customer's OTHER past
+                          // interactions (a real list an unknown contact
+                          // doesn't have), not a fallback detail form.
+                          onViewCustomerInfo={() =>
+                            focusCustomerPanelTab(activeInteractionIsRealCustomer ? "Overview" : "Detail")
                           }
                           onViewInteractionHistory={
                             activeInteractionIsRealCustomer ? () => focusCustomerPanelTab("Contacts") : undefined
@@ -8762,47 +9071,54 @@ export function AgentWorkspace2WithDeskPage({
                           hideSessionSeparatorFade={
                             activeChannelType === "voice" && voiceVideoWindowOpen && voiceVideoFullScreen
                           }
-                          // Per explicit follow-up request, "View Details"
-                          // now TOGGLES — see AgentNextGenPage.tsx's
-                          // identical prop for the full rationale. Per
-                          // further explicit bug fix, also closes (rather
-                          // than switching tabs) when the panel is already
-                          // open on a tab OTHER than "Details".
+                          // Per explicit follow-up request ("View Details
+                          // should no longer toggle the panel open closed
+                          // but just display the details in the side
+                          // panel"): this no longer closes an already-open
+                          // panel under any circumstance — every branch
+                          // below now unconditionally selects this
+                          // session/tab and opens the panel. The toggle-
+                          // open/closed behavior this used to have moved to
+                          // the new `onToggleDetailsPanel` button instead
+                          // (below) — see AgentNextGenPage.tsx's identical
+                          // prop for the full rationale on both.
                           onViewSessionDetails={(session) => {
                             if (activeChannelType === "voice") {
-                              if (detailsPanelOpen && voiceDetailsPanelTab !== "Details") {
-                                setDetailsPanelOpen(false);
-                                return;
-                              }
-                              const alreadyShowingThisSession =
-                                detailsPanelOpen &&
-                                voiceDetailsPanelTab === "Details" &&
-                                selectedVoiceDetailsSession?.id === session.id;
-                              if (alreadyShowingThisSession) {
-                                setDetailsPanelOpen(false);
-                              } else {
-                                setSelectedVoiceDetailsSession(session);
-                                setVoiceDetailsPanelTab("Details");
-                                setDetailsPanelOpen(true);
-                              }
+                              setSelectedVoiceDetailsSession(session);
+                              setVoiceDetailsPanelTab("Session Details");
+                              setDetailsPanelOpen(true);
                             } else {
-                              // Per explicit fix ("respect the visibility of
-                              // the details panel"): toggles the SHARED
-                              // `detailsPanelOpen` flag rather than nulling
-                              // `selectedSessionDetails` itself — the
-                              // session stays remembered so a later reopen
-                              // (including after switching channel tabs and
-                              // back) shows the same content, same as
-                              // voice's own `selectedVoiceDetailsSession`.
-                              const alreadyShowingThisSession =
-                                detailsPanelOpen && selectedSessionDetails?.id === session.id;
-                              if (alreadyShowingThisSession) {
-                                setDetailsPanelOpen(false);
-                              } else {
-                                setSelectedSessionDetails(session);
-                                setDetailsPanelOpen(true);
-                              }
+                              setSelectedSessionDetails(session);
+                              setDetailsPanelOpen(true);
                             }
+                          }}
+                          // "Open Details Panel" (each session row's own
+                          // icon button, right of Unassign & Dismiss) — per
+                          // further explicit follow-up request, this is now
+                          // a plain open/close toggle of the shared
+                          // `detailsPanelOpen` flag, no menu — see
+                          // AgentNextGenPage.tsx's identical prop for the
+                          // full rationale. Whatever content the panel was
+                          // last showing (Customer Information/AI Summary,
+                          // if one of those was opened some other way) is
+                          // what reappears when this reopens it — this
+                          // button has no opinion on THAT.
+                          //
+                          // It does have one opinion, per further explicit
+                          // follow-up request ("make details the first tab
+                          // in view when the panel toggle is clicked") —
+                          // see AgentNextGenPage.tsx's identical prop for
+                          // the full rationale: opening the panel this way
+                          // always lands on voice's own "Details" tab, not
+                          // whatever tab ("Transcript", most often) it was
+                          // left on. Only on the OPENING half of the
+                          // toggle; non-voice has no tabs to default here.
+                          onToggleDetailsPanel={() => {
+                            const opening = !detailsPanelOpen;
+                            if (opening && activeChannelType === "voice") {
+                              setVoiceDetailsPanelTab("Details");
+                            }
+                            setDetailsPanelOpen(opening);
                           }}
                         />
                         {/* Full-screen video — see AgentNextGenPage.tsx's
@@ -9595,11 +9911,13 @@ export function AgentWorkspace2WithDeskPage({
                   Content below (voice/non-voice split, tabs, accordions,
                   transcript) is otherwise unchanged from the original
                   `InteriorPanel` usage — including this page's own
-                  `onViewCustomerDetails` link into the accordions
-                  (AgentNextGenPage.tsx dropped that per its own separate
-                  explicit request, "remove the customer details
-                  accordion from phase 1" — this page never got that
-                  request, so it stays). */}
+                  `onViewCustomerInfo`/`onViewInteractionHistory` links into
+                  `DetailsPanelAccordions`'s Customer Profile/Snapshot cards
+                  (AgentNextGenPage.tsx omits `onViewInteractionHistory`
+                  there per its own separate explicit request, "remove the
+                  customer details accordion from phase 1" — its own Details
+                  tab has no Contacts tab to jump to, see that file's own
+                  render site). */}
               {activeInteraction && (
                 // `z-[5]` on this wrapper (not just relying on `SidePanel`'s
                 // own internal `z-[5]`) — same fix, same reasoning, as the
@@ -9645,14 +9963,39 @@ export function AgentWorkspace2WithDeskPage({
                       // header/body/footer, whenever `customerDetailsOpen`
                       // — `useCustomerDetailsInteriorPanel`'s own back
                       // arrow (`headerIcon`) is what flips this back off.
-                      headerIcon={customerDetailsOpen ? customerDetailsPanel.headerIcon : undefined}
-                      headerTitle={customerDetailsOpen ? customerDetailsPanel.headerTitle : "Details"}
+                      headerIcon={
+                        aiSummaryPanelOpen
+                          ? aiSummaryPanelContent.headerIcon
+                          : customerDetailsOpen
+                          ? customerDetailsPanel.headerIcon
+                          : undefined
+                      }
+                      // Per explicit request ("update the header to be the
+                      // phone number / customer name"): was the static
+                      // "Details" label — same `formatPhoneForDisplay(
+                      // customerName) || "Customer"` idiom used everywhere
+                      // else in this app that shows a customer identity
+                      // which might actually be a raw, not-yet-identified
+                      // phone number (e.g. `InteractionNavItem`'s own
+                      // `displayName`, lyra-ui/interaction-nav-item.tsx) —
+                      // formats it as a phone number when it is one, and is
+                      // a safe no-op (passes the real name straight through)
+                      // when it isn't.
+                      headerTitle={
+                        aiSummaryPanelOpen
+                          ? aiSummaryPanelContent.headerTitle
+                          : customerDetailsOpen
+                          ? customerDetailsPanel.headerTitle
+                          : formatPhoneForDisplay(activeInteraction.customerName) || "Customer"
+                      }
                       // See AgentNextGenPage.tsx's identical prop for
                       // the full rationale (contact type + contact ID
                       // of whichever session is showing, not the
                       // customer name).
                       headerSubhead={
-                        customerDetailsOpen
+                        aiSummaryPanelOpen
+                          ? aiSummaryPanelContent.headerSubhead
+                          : customerDetailsOpen
                           ? customerDetailsPanel.headerSubhead
                           : selectedVoiceDetailsSession
                           ? `${selectedVoiceDetailsSession.channel} | #${selectedVoiceDetailsSession.contactId}`
@@ -9667,7 +10010,7 @@ export function AgentWorkspace2WithDeskPage({
                       // the full rationale.
                       headerActions={
                         <>
-                          {customerDetailsOpen && (
+                          {(customerDetailsOpen || aiSummaryPanelOpen) && (
                             <PanelPinButton
                               pinned={false}
                               onToggle={() => setDetailsPanelFullScreen((v) => !v)}
@@ -9687,6 +10030,7 @@ export function AgentWorkspace2WithDeskPage({
                             onToggle={() => {
                               setDetailsPanelOpen(false);
                               setCustomerDetailsOpen(false);
+                              setAiSummaryPanelOpen(false);
                               setDetailsPanelFullScreen(false);
                             }}
                             icon={<PanelRightClose className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />}
@@ -9696,23 +10040,41 @@ export function AgentWorkspace2WithDeskPage({
                         </>
                       }
                       headerTabs={
-                        customerDetailsOpen ? (
+                        aiSummaryPanelOpen ? undefined : customerDetailsOpen ? (
                           customerDetailsPanel.headerTabs
                         ) : (
-                          <TabList className="px-4">
-                            {(["Details", "Transcript"] as const).map((label) => (
+                          // See AgentNextGenPage.tsx's identical
+                          // `overflowMenu`/`overflowBreakpoint="compact"`
+                          // wiring for the full rationale.
+                          <TabList className="px-4" overflowMenu overflowBreakpoint="compact">
+                            {(["Details", "Transcript", "Session Details"] as const).map((label) => (
                               <Tab
                                 key={label}
                                 active={voiceDetailsPanelTab === label}
                                 onClick={() => setVoiceDetailsPanelTab(label)}
                               >
-                                {label}
+                                {/* Displayed as "Session" per explicit
+                                    follow-up request, while the underlying
+                                    identifier stays "Session Details" (used
+                                    throughout for state/comparisons). */}
+                                {label === "Session Details" ? "Session" : label}
                               </Tab>
                             ))}
                           </TabList>
                         )
                       }
-                      footer={customerDetailsOpen ? customerDetailsPanel.footer : undefined}
+                      // See AgentNextGenPage.tsx's identical wiring for the
+                      // full rationale ("session detail cancel/save should
+                      // be fixed to the bottom of the panel").
+                      footer={
+                        aiSummaryPanelOpen
+                          ? undefined
+                          : customerDetailsOpen
+                          ? customerDetailsPanel.footer
+                          : voiceDetailsPanelTab === "Session Details"
+                          ? voiceSessionDetailsPanel.footer
+                          : undefined
+                      }
                       // Full-screen substitutes the shared content-area
                       // measurement (`sidePanelContainerWidth`) for the
                       // normal drag-resized width — same trick
@@ -9725,32 +10087,35 @@ export function AgentWorkspace2WithDeskPage({
                       onWidthChange={setDetailsPanelWidth}
                       onResizeStateChange={setDetailsPanelResizing}
                     >
-                      {customerDetailsOpen ? (
+                      {aiSummaryPanelOpen ? (
+                        aiSummaryPanelContent.body
+                      ) : customerDetailsOpen ? (
                         customerDetailsPanel.body
                       ) : (
                         <>
+                      {voiceDetailsPanelTab === "Session Details" && voiceSessionDetailsPanel.body}
                       {voiceDetailsPanelTab === "Details" && (
-                        <>
-                          {selectedVoiceDetailsSession || currentVoiceSession ? (
-                            // Per explicit request ("when a user clicks
-                            // 'View Details' — display the accordions
-                            // instead of the current session details
-                            // content"): the accordions replace the
-                            // previous flat `TranscriptSessionDetails`
-                            // render here.
-                            <DetailsPanelAccordions
-                              sessionContact={(selectedVoiceDetailsSession ?? currentVoiceSession)!}
-                              customerName={activeInteraction.customerName}
-                              customerId={activeInteraction.customerId}
-                              channels={activeInteraction.threads}
-                              onViewCustomerDetails={() => setCustomerDetailsOpen(true)}
-                            />
-                          ) : (
-                            <p className="lyra-body-md text-lyra-fg-secondary px-4 pt-3 pb-4">
-                              Select "View Details" on a session to see its details here.
-                            </p>
-                          )}
-                        </>
+                        // Per explicit follow-up request ("add these to
+                        // the details tab"): Customer Profile/Customer
+                        // Snapshot cards, same `customerContextOverviewInfo`
+                        // the main transcript column's own Contact
+                        // Overview already renders — see
+                        // `DetailsPanelAccordions`'s own doc comment
+                        // (agent-next-gen-customer-info-panel.tsx).
+                        <DetailsPanelAccordions
+                          customerName={activeInteraction.customerName}
+                          customerContextOverview={customerContextOverviewInfo}
+                          // Same Overview-vs-Detail branch as the main
+                          // Contact Overview's own "View customer info"
+                          // link above — see that call site's own doc
+                          // comment for the full reasoning.
+                          onViewCustomerInfo={() =>
+                            focusCustomerPanelTab(activeInteractionIsRealCustomer ? "Overview" : "Detail")
+                          }
+                          onViewInteractionHistory={
+                            activeInteractionIsRealCustomer ? () => focusCustomerPanelTab("Contacts") : undefined
+                          }
+                        />
                       )}
                       {voiceDetailsPanelTab === "Transcript" && (
                         <InteractionTranscript
@@ -9779,7 +10144,7 @@ export function AgentWorkspace2WithDeskPage({
                           showSessionActionCluster={false}
                           onViewSessionDetails={(session) => {
                             setSelectedVoiceDetailsSession(session);
-                            setVoiceDetailsPanelTab("Details");
+                            setVoiceDetailsPanelTab("Session Details");
                           }}
                           // See AgentNextGenPage.tsx's identical prop
                           // for the full rationale.
@@ -9808,12 +10173,37 @@ export function AgentWorkspace2WithDeskPage({
                       side="right"
                       pinned={detailsPanelFullScreen ? false : !isSidePanelContainerNarrow}
                       open={detailsPanelOpen}
-                      headerIcon={customerDetailsOpen ? customerDetailsPanel.headerIcon : undefined}
-                      headerTitle={customerDetailsOpen ? customerDetailsPanel.headerTitle : "Details"}
+                      headerIcon={
+                        aiSummaryPanelOpen
+                          ? aiSummaryPanelContent.headerIcon
+                          : customerDetailsOpen
+                          ? customerDetailsPanel.headerIcon
+                          : undefined
+                      }
+                      // Per explicit request ("update the header to be the
+                      // phone number / customer name"): was the static
+                      // "Details" label — same `formatPhoneForDisplay(
+                      // customerName) || "Customer"` idiom used everywhere
+                      // else in this app that shows a customer identity
+                      // which might actually be a raw, not-yet-identified
+                      // phone number (e.g. `InteractionNavItem`'s own
+                      // `displayName`, lyra-ui/interaction-nav-item.tsx) —
+                      // formats it as a phone number when it is one, and is
+                      // a safe no-op (passes the real name straight through)
+                      // when it isn't.
+                      headerTitle={
+                        aiSummaryPanelOpen
+                          ? aiSummaryPanelContent.headerTitle
+                          : customerDetailsOpen
+                          ? customerDetailsPanel.headerTitle
+                          : formatPhoneForDisplay(activeInteraction.customerName) || "Customer"
+                      }
                       // See AgentNextGenPage.tsx's identical prop for
                       // the full rationale.
                       headerSubhead={
-                        customerDetailsOpen
+                        aiSummaryPanelOpen
+                          ? aiSummaryPanelContent.headerSubhead
+                          : customerDetailsOpen
                           ? customerDetailsPanel.headerSubhead
                           : selectedSessionDetails
                           ? `${selectedSessionDetails.channel} | #${selectedSessionDetails.contactId}`
@@ -9821,7 +10211,7 @@ export function AgentWorkspace2WithDeskPage({
                       }
                       headerActions={
                         <>
-                          {customerDetailsOpen && (
+                          {(customerDetailsOpen || aiSummaryPanelOpen) && (
                             <PanelPinButton
                               pinned={false}
                               onToggle={() => setDetailsPanelFullScreen((v) => !v)}
@@ -9841,6 +10231,7 @@ export function AgentWorkspace2WithDeskPage({
                             onToggle={() => {
                               setDetailsPanelOpen(false);
                               setCustomerDetailsOpen(false);
+                              setAiSummaryPanelOpen(false);
                               setDetailsPanelFullScreen(false);
                             }}
                             icon={<PanelRightClose className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />}
@@ -9849,8 +10240,20 @@ export function AgentWorkspace2WithDeskPage({
                           />
                         </>
                       }
-                      headerTabs={customerDetailsOpen ? customerDetailsPanel.headerTabs : undefined}
-                      footer={customerDetailsOpen ? customerDetailsPanel.footer : undefined}
+                      headerTabs={
+                        aiSummaryPanelOpen
+                          ? undefined
+                          : customerDetailsOpen
+                          ? customerDetailsPanel.headerTabs
+                          : undefined
+                      }
+                      footer={
+                        aiSummaryPanelOpen
+                          ? undefined
+                          : customerDetailsOpen
+                          ? customerDetailsPanel.footer
+                          : nonVoiceSessionDetailsPanel.footer
+                      }
                       width={detailsPanelFullScreen ? sidePanelContainerWidth : Math.min(detailsPanelWidth, sidePanelContainerWidth)}
                       minWidth={350}
                       maxWidth={Math.max(0, Math.min(425, sidePanelContainerWidth))}
@@ -9858,249 +10261,57 @@ export function AgentWorkspace2WithDeskPage({
                       onWidthChange={setDetailsPanelWidth}
                       onResizeStateChange={setDetailsPanelResizing}
                     >
-                      {customerDetailsOpen ? (
+                      {aiSummaryPanelOpen ? (
+                        aiSummaryPanelContent.body
+                      ) : customerDetailsOpen ? (
                         customerDetailsPanel.body
                       ) : (
                         selectedSessionDetails && (
-                          // Per explicit request ("when a user clicks
-                          // 'View Details' — display the accordions
-                          // instead of the current session details
-                          // content"): the accordions replace the
-                          // previous flat `TranscriptSessionDetails`
-                          // render here.
-                          <DetailsPanelAccordions
-                            sessionContact={selectedSessionDetails}
-                            customerName={activeInteraction.customerName}
-                            customerId={activeInteraction.customerId}
-                            channels={activeInteraction.threads}
-                            onViewCustomerDetails={() => setCustomerDetailsOpen(true)}
-                          />
+                          // This non-voice "Session Details" panel has no
+                          // tab row of its own — see AgentNextGenPage.tsx's
+                          // identical render site for the full rationale.
+                          // `useSessionDetailsTabContent`'s body (Save/Cancel
+                          // now render in the panel's own fixed `footer` slot
+                          // above, not inline here) followed by
+                          // `DetailsPanelAccordions`'s Customer
+                          // Profile/Customer Snapshot cards + Files, stacked
+                          // in this one scrolling view.
+                          <>
+                            {nonVoiceSessionDetailsPanel.body}
+                            <DetailsPanelAccordions
+                              customerName={activeInteraction.customerName}
+                              customerContextOverview={customerContextOverviewInfo}
+                              // Same Overview-vs-Detail branch as the main
+                              // Contact Overview's own "View customer info"
+                              // link above — see that call site's own doc
+                              // comment for the full reasoning.
+                              onViewCustomerInfo={() =>
+                                focusCustomerPanelTab(activeInteractionIsRealCustomer ? "Overview" : "Detail")
+                              }
+                              onViewInteractionHistory={
+                                activeInteractionIsRealCustomer ? () => focusCustomerPanelTab("Contacts") : undefined
+                              }
+                            />
+                          </>
                         )
                       )}
                     </SidePanel>
                   )}
                 </div>
               )}
-              {/* Customer Information now docks on the RIGHT of the main
-                  content column (per explicit request — was on the left) —
-                  this block itself is unchanged from its old position
-                  (still this exact same conditional/wrapper/`SidePanel`
-                  usage), just moved to render AFTER the content column
-                  instead of before it, so it's the row's LAST flex child
-                  instead of its first. `SidePanel`'s own `side="right"`
-                  prop (set on the `SidePanel` inside
-                  `CustomerInformationSidePanel` itself, not here) is what
-                  actually flips its border/resize-handle/slide-direction to
-                  match — this DOM move alone only changes which edge of the
-                  ROW it renders against. Per explicit request, also gated
-                  on `!activeInteractionIsAgentCall` — an agent-to-agent
-                  call hides this docked panel outright (see that const's
-                  own doc comment above), not just its Detail-only
-                  "unknown contact" fallback. */}
-              {!activeInteractionIsAgentCall && !activeInteractionIsMarcusWebb && showPanelToggle && activeInteraction && (
-                // `key`ed on the assignment's own id, same "force a full
-                // remount on every genuine switch" technique the content
-                // column further down already uses (see that div's own
-                // `animate-in fade-in-0 duration-200 delay-150 fill-mode-
-                // backwards` doc comment for the full explanation) —
-                // applied here too per explicit follow-up report: an
-                // earlier fix suppressed `SidePanel`'s own width/opacity
-                // transition instead (a briefly-toggled `!important` CSS
-                // class), which stopped it sliding open/shut but replaced
-                // that with a different problem — the panel then just
-                // snapped into view with no animation at all while the
-                // content column beside it was still doing its own soft
-                // fade, so the two read as out of sync ("not fading, just
-                // appearing").
-                //
-                // Remounting fixes both at once: a freshly-inserted DOM
-                // node has no PRIOR width/opacity value on that same node
-                // for `SidePanel`'s own `transition` to animate FROM, so
-                // its width-slide never plays (no suppression hack
-                // needed) — but a CSS *animation* (unlike a *transition*)
-                // still runs from its keyframes at mount regardless, which
-                // is exactly what `animate-in fade-in-0` on this wrapper
-                // is, so the panel now genuinely fades in, on the same
-                // `duration-200 delay-150` timing as the content column,
-                // instead of either sliding open or hard-cutting into
-                // place.
-                //
-                // Side effect, expected rather than a regression: this
-                // panel's own internal `activeTab` (Overview/Interactions/
-                // Detail/Directory — `CustomerInformationSidePanel`'s own
-                // `useState(0)`), and the Interactions tab's own
-                // `selectedHistoryIndex` (`CustomerInformationPanelBody`),
-                // now reset to their defaults on every genuine assignment
-                // switch too, since remounting discards them along with
-                // everything else in the subtree. Landing on a different
-                // customer's Overview tab first, rather than wherever the
-                // PREVIOUS customer's panel happened to be left, matches the
-                // same "genuinely new context should start from the top"
-                // reasoning the outer interaction detail page's own
-                // `key={`interaction-${id}`}` remount already establishes.
-                //
-                // `z-[5]` here (on THIS wrapper, not just relying on
-                // `SidePanel`'s own internal `z-[5]`) — per explicit
-                // follow-up report: a full-screen restore (this panel
-                // unpinned/`position: absolute`, meant to overlay the
-                // whole content column) briefly flashed with the
-                // transcript visible on top instead of properly
-                // underneath. Root cause is a well-known CSS gotcha: ANY
-                // element with a live `animation-name` (which `animate-in`
-                // sets, permanently, for as long as the class stays on the
-                // element — not just while actually mid-play) forms its
-                // OWN stacking context, same as `opacity`/`transform`/
-                // `filter` do. Before this wrapper existed, `SidePanel`'s
-                // own `position: absolute; z-index: 5` sat DIRECTLY in
-                // `Container`'s stacking context, at the same explicit-
-                // positive-z-index tier as the record header's sticky
-                // separator (`z-[1]`), `InteriorPanel` (`z-[3]`), and the
-                // shared panel's fullscreen overlay (`z-[9]`) — see those
-                // components' own doc comments for this whole tier system.
-                // Once wrapped, `z-[5]` on `SidePanel` only orders things
-                // INSIDE this new stacking context (nothing else is in
-                // here to compete with) — this wrapper itself, having NO
-                // z-index of its own, instead got silently pushed down to
-                // the plain "z-index: auto" tier alongside the content
-                // column sibling next to it, so the two started competing
-                // by DOM ORDER instead of by their intended z-index
-                // values. Setting `z-[5]` explicitly on this wrapper (a
-                // flex item of the `flex flex-1 overflow-hidden min-h-0`
-                // row above — z-index applies to flex items without
-                // needing `position` set) restores the exact same tier
-                // this whole subtree occupied before the wrapper was
-                // introduced.
-                <div
-                  key={`side-panel-${activeInteraction.id}`}
-                  // `h-full` — explicit, not left to this flex item's own
-                  // default cross-axis `align-items: stretch` from its
-                  // parent row (`flex flex-1 overflow-hidden min-h-0`,
-                  // "Row: Customer Information panel + everything else"
-                  // above) — confirmed live as the actual root cause of
-                  // the docked panel's own internal scrolling never
-                  // engaging (while full-screen/unpinned mode, which
-                  // reaches its height via `position: absolute` against
-                  // `Container` instead — an unambiguous MAIN-axis
-                  // flex-grow box, not cross-axis stretch — worked fine
-                  // the whole time). Mirrored one level down on
-                  // `SidePanel`'s own pinned-branch outer div
-                  // (side-panel.tsx), which had the identical gap.
-                  className="shrink-0 h-full z-[5] animate-in fade-in-0 duration-200 delay-150 fill-mode-backwards"
-                >
-                <CustomerInformationSidePanel
-                  open={sidePanelOpen}
-                  // Always unpinned (floating overlay) while full-screen —
-                  // per explicit request this should overlay the parent
-                  // Container, not push the tab row/transcript column over
-                  // via docked mode.
-                  pinned={sidePanelFullScreen ? false : effectiveSidePanelPinned}
-                  // Always shown, even in the narrow-container overlay mode
-                  // — per explicit request, an agent who's opened it as a
-                  // floating overlay still needs a way to close it again
-                  // from inside the panel itself, not just the (now-hidden
-                  // while open) header toggle icon.
-                  onClose={handleSidePanelClose}
-                  fullScreen={sidePanelFullScreen}
-                  // Hidden below 350px of container width — see
-                  // `isSidePanelAtMinimalThreshold`'s own doc comment.
-                  onToggleFullScreen={
-                    isSidePanelAtMinimalThreshold ? undefined : () => setSidePanelFullScreen((v) => !v)
-                  }
-                  onMouseEnter={onSidePanelHoverStart}
-                  onMouseLeave={sidePanelResizing ? undefined : onSidePanelHoverEnd}
-                  customerName={activeInteraction.customerName}
-                  recordId={activeInteraction.customerId}
-                  channels={activeInteraction.threads}
-                  startedFresh={activeInteraction.startedFresh}
-                  // Per explicit request: a brand-new outbound assignment
-                  // NOT associated with a real customer record shows ONLY
-                  // the Detail tab (no Overview/Copilot/Interactions/
-                  // Directory/Notes/etc.) — for its whole lifetime, based
-                  // purely on customer identity (`activeInteractionIsRealCustomer`,
-                  // see that const's own doc comment above). An interaction
-                  // WITH a real customer record keeps the full tab set.
-                  tabs={activeInteractionIsRealCustomer ? CUSTOMER_PANEL_TABS : (["Detail"] as const)}
-                  onOpenHistoryConversation={(entry) =>
-                    setHistoryConversationTab({ interactionId: activeInteraction.id, entry, active: true })
-                  }
-                  // Full-screen substitutes the parent Container's own
-                  // measured width (`sidePanelContainerWidth` — already
-                  // tracked for the narrow-container guard) for the normal
-                  // drag-resized width, so the panel's unpinned/absolute
-                  // rendering covers the whole container edge to edge.
-                  width={sidePanelFullScreen ? sidePanelContainerWidth : sidePanelWidth}
-                  containerWidth={sidePanelContainerWidth}
-                  // Per the accordion redesign: dragging this panel open
-                  // can go up to half the workspace width now (was a flat
-                  // 425px cap) — see `CustomerInformationSidePanel`'s own
-                  // `maxWidthRatio` prop doc comment (agent-next-gen-
-                  // customer-info-panel.tsx) for the full rationale.
-                  maxWidthRatio={0.5}
-                  onWidthChange={setSidePanelWidth}
-                  onResizeStateChange={setSidePanelResizing}
-                  onAddToast={addToast}
-                  recordDraft={activeCustomerRecordDraft}
-                  overviewEditing={activeCustomerOverviewEditing}
-                  onOverviewEditingChange={setActiveCustomerOverviewEditing}
-                  // The old "only open the customer information
-                  // automatically if a NEW message appears in the copilot
-                  // window" behavior (`onCopilotFirstAvailable`) is gone
-                  // along with Copilot itself — see `CustomerInformationSidePanel`'s
-                  // own doc comment (agent-next-gen-customer-info-panel.tsx)
-                  // for the "stop launching copilot - hide it completely"
-                  // fix this prop was removed as part of.
-                  onStartInteraction={(contact, channel, phone, skillId) =>
-                    handleStartCall({ contact, channel, phone, skillId })
-                  }
-                  focusTabOverride={customerPanelFocusTab}
-                  // Marcus Webb's own decision/detail/message-options/wrapup
-                  // card — only ever rendered for HIS interaction (every
-                  // other customer leaves this `undefined`, the same default
-                  // every other `CustomerInformationSidePanel` consumer in
-                  // this app gets). See `MarcusWebbCopilotCard`'s own doc
-                  // comment (top of this file) for what each step renders.
-                  copilotExtra={
-                    activeInteraction.id === MARCUS_WEBB_ID ? (
-                      <MarcusWebbCopilotCard
-                        state={marcusWebbState}
-                        onSelectAction={handleMarcusWebbSelectAction}
-                        onCompleteActivity={handleMarcusWebbCompleteActivity}
-                        onSelectMessage={handleMarcusWebbSelectMessage}
-                        onWrapUp={handleMarcusWebbWrapUp}
-                        onResetVerifyIdentity={handleMarcusWebbResetVerifyIdentity}
-                        onResetGeneratePassword={handleMarcusWebbResetGeneratePassword}
-                        onResetRegeneratePassword={handleMarcusWebbResetRegeneratePassword}
-                        onResetConfirmLogin={handleMarcusWebbResetConfirmLogin}
-                      />
-                    ) : undefined
-                  }
-                  // Per explicit request: an unknown-contact interaction
-                  // (`!activeInteractionIsRealCustomer` — same signal
-                  // `tabs` above already keys off) gets the customer-
-                  // matching UI (search/possible-matches/create-new)
-                  // instead of its normal tabs+body — see `matchState`'s
-                  // own doc comment (agent-next-gen-customer-info-
-                  // panel.tsx) for what each piece does. `undefined` for a
-                  // real-customer interaction, same as every OTHER
-                  // consumer of this component always passes.
-                  matchState={
-                    activeInteractionIsRealCustomer
-                      ? undefined
-                      : {
-                          step: customerMatchStep,
-                          query: customerMatchQuery,
-                          onQueryChange: setCustomerMatchQuery,
-                          possibleMatches: possibleCustomerMatches,
-                          searchResults: customerSearchResults,
-                          onLinkRecord: handleLinkCustomerRecord,
-                          onStartCreate: handleStartCreateCustomer,
-                          onBackToSearch: handleBackToCustomerSearch,
-                          onSaveNewCustomer: handleSaveNewCustomer,
-                        }
-                  }
-                />
-                </div>
-              )}
+              {/* Customer Information no longer renders as a separate
+                  docked panel here — per explicit follow-up request ("they
+                  should all open in one side panel and just replace the
+                  current information"), it and "AI Customer Summary" both
+                  now swap content INTO the "Details" `SidePanel` above
+                  (see `customerDetailsOpen`/`aiSummaryPanelOpen` and this
+                  file's own `customerDetailsPanel`/`aiSummaryPanelContent`
+                  declarations) — the same single overlay Session Details
+                  already used. The unknown-contact matching flow and the
+                  Marcus Webb scripted Copilot card this standalone panel
+                  used to own (`matchState`/`copilotExtra`) moved onto
+                  `useCustomerDetailsInteriorPanel` itself (agent-next-gen-
+                  customer-info-panel.tsx) so this file loses neither. */}
             </div>
 
           </Container>

@@ -7,6 +7,8 @@ import {
   AccordionHeadlessContent,
   ContactOverview,
   type ContactOverviewInfo,
+  CustomerContextOverview,
+  type CustomerContextOverviewInfo,
   ChatMessage,
   ActionIconButton,
   TagPicker,
@@ -61,6 +63,7 @@ import {
   Languages,
   Trash2,
   X,
+  PanelRight,
 } from "lucide-react";
 import {
   CURRENT_AGENT_FIRST_NAME,
@@ -1064,6 +1067,12 @@ export function ChannelStatusTag({
 export function TranscriptSessionSeparator({
   session,
   onViewDetails,
+  onToggleDetailsPanel,
+  detailsPanelOpen = false,
+  detailsPanelPreviewContent,
+  detailsPanelPreviewOpen = false,
+  onDetailsPanelPreviewHoverStart,
+  onDetailsPanelPreviewHoverEnd,
   statusMenuOpen,
   statusMenuView,
   onStatusMenuOpenChange,
@@ -1079,6 +1088,20 @@ export function TranscriptSessionSeparator({
   showConsultTransferAndAddParticipant = true,
   showKebabMenu = true,
   outcomeAfterStatus = false,
+  // Per explicit follow-up request (Advanced only — "hide the add
+  // participant icon button ... move the transfer inside the 3 dots menu
+  // ... move the 3 dots to the left of the outcome button and move the
+  // status chip to the left of the 3 dots button"): these three are
+  // additive/independent of the three props just above, not replacements —
+  // `showConsultTransferAndAddParticipant` still hides BOTH buttons
+  // together for 2.0 Phase 1's own existing usage; these let a caller keep
+  // Consult/Transfer while hiding just Add Participant, folding Transfer
+  // into the kebab instead of showing it as its own icon, and reordering
+  // Status/Kebab/Outcome independently of `outcomeAfterStatus`'s own
+  // status-then-outcome arrangement. See each prop's own doc comment below.
+  showAddParticipant = true,
+  transferInKebabMenu = false,
+  statusAndKebabBeforeOutcome = false,
   channelType,
   direction,
   isNewThread = false,
@@ -1097,8 +1120,91 @@ export function TranscriptSessionSeparator({
    *  which each page threads to a real "Session Details" panel, or, for
    *  voice, a tab on the existing "Transcript" panel — see that prop's own
    *  doc comment). This component owns no open/closed state of its own
-   *  anymore for this row; it's just a trigger. */
+   *  anymore for this row; it's just a trigger.
+   *
+   *  Per further explicit follow-up request ("View Details should no
+   *  longer toggle the panel open closed but just display the details in
+   *  the side panel"): each caller's own handler behind this no longer
+   *  closes an already-open panel showing this same session — it always
+   *  opens (or stays open on) the panel and shows this session's details,
+   *  full stop. The toggle-open/closed behavior moved to the new
+   *  `onToggleDetailsPanel` button below instead. */
   onViewDetails: () => void;
+  /** Per explicit follow-up request ("customer information, details and
+   *  customer summary are all opening in separate panels, they should all
+   *  open in one side panel and just replace the current information...
+   *  you may need to add a panel icon button to the right of the outcome /
+   *  dismiss and unassign buttons in the session row"): a new icon button,
+   *  right of Unassign & Dismiss/Delete Draft. Per explicit follow-up
+   *  request ("this should say 'Open Details Panel' and just open/close -
+   *  the panel not list the options. View Details should no longer toggle
+   *  the panel open closed but just display the details in the side
+   *  panel"): this used to open a small menu offering a choice of
+   *  destinations (Session Details/Customer Information/AI Summary) — that
+   *  menu is gone. This is now a single plain toggle: the caller's own
+   *  open/closed boolean for the whole Details panel, flipped as-is,
+   *  regardless of WHICH content that panel currently shows (this button
+   *  has no opinion on that — same "just report the click, no opinion on
+   *  what it means" split `onViewDetails` already draws). `onViewDetails`
+   *  itself (above) is no longer a toggle either — see its own doc comment
+   *  — so this button is now the ONLY thing on a session row that can
+   *  close an already-open panel. Omit to skip rendering the button
+   *  entirely (nothing else about this row changes either way). */
+  onToggleDetailsPanel?: () => void;
+  /** Per explicit follow-up request ("hide the toggle icon button when the
+   *  session details are open"): hides the `onToggleDetailsPanel` button
+   *  above entirely while the caller's Details panel is already open,
+   *  rather than leaving it sitting there only able to close the very panel
+   *  it's rendered inside the row of — the panel itself is now this row's
+   *  own "session details are open" indicator, so the button stays out of
+   *  the way until there's actually something for it to open again.
+   *  Reflects the caller's real open/closed state (the same state
+   *  `onToggleDetailsPanel` flips). Defaults `false`, so a caller that
+   *  hasn't wired its own open state through here yet still renders the
+   *  button exactly as before, unconditionally, whenever
+   *  `onToggleDetailsPanel` is provided. */
+  detailsPanelOpen?: boolean;
+  /** Per explicit bug report ("when you moved the session detail panel
+   *  toggle to the session row line you lost the overlay of the session
+   *  details panel itself — now it just shows a tooltip"): before the move,
+   *  hovering the record header's own Customer Information toggle showed a
+   *  rich preview `Popover` (`CustomerInfoHoverPreview`, still live in
+   *  `AgentNextGenPage.tsx`) of the panel's own content, not just a plain
+   *  text tooltip — that hover-preview never got carried over when this
+   *  button relocated into the session row. Restores the same idea here:
+   *  supply this button's own Details-panel content (whatever the caller's
+   *  real docked panel would show) and hovering (or focusing) the button
+   *  now pops it open right below the button, exactly as before. Omit to
+   *  keep the old plain-tooltip-only behavior (nothing else about this row
+   *  changes either way) — e.g. a caller with no equivalent preview content
+   *  ready to hand over. The caller owns open/close timing itself (see
+   *  `detailsPanelPreviewOpen`/`onDetailsPanelPreviewHoverStart`/
+   *  `onDetailsPanelPreviewHoverEnd` below), same "parent owns the hover
+   *  timer, child just reports hover in/out" split
+   *  `CustomerInfoHoverPreview`'s own former call site used. */
+  detailsPanelPreviewContent?: React.ReactNode;
+  /** Whether `detailsPanelPreviewContent` above is currently showing —
+   *  purely a controlled reflection of the caller's own hover-preview state
+   *  (see that prop's own doc comment); this component owns none of the
+   *  open/close timing itself. Defaults `false`, so a caller that hasn't
+   *  wired the preview through yet renders exactly as before. */
+  detailsPanelPreviewOpen?: boolean;
+  /** Fired on hover-in (`onMouseEnter`) or keyboard focus (`onFocus`) of the
+   *  "Open Details Panel" button — the caller's own cue to open
+   *  `detailsPanelPreviewContent` (typically after clearing any pending
+   *  close timer, same "open immediately" half of the hover-intent pattern
+   *  `CustomerInfoHoverPreview`'s own former trigger used). No-op (button
+   *  still renders as a plain tooltip-only toggle) when
+   *  `detailsPanelPreviewContent` is omitted. */
+  onDetailsPanelPreviewHoverStart?: () => void;
+  /** Fired on hover-out (`onMouseLeave`) or blur (`onBlur`) of the same
+   *  button — the caller's own cue to schedule closing the preview (a short
+   *  delay, so the pointer can cross into the portaled preview content
+   *  itself without it flickering shut — see `CustomerInfoHoverPreview`'s
+   *  own former close handler for the exact shape). Receives the raw
+   *  mouse/focus event so a caller that needs to inspect `relatedTarget`
+   *  (e.g. to not close into its own nested overflow menu) still can. */
+  onDetailsPanelPreviewHoverEnd?: (e: React.MouseEvent | React.FocusEvent) => void;
   /** This session's own message (chat bubble) count — shown as "{n}
    *  Messages | " right before "# contactId · date", same "Messages | #id"
    *  format `ChannelTab`'s own tooltip line already uses (channel-row.tsx)
@@ -1209,6 +1315,40 @@ export function TranscriptSessionSeparator({
    *  Workspace 2.0 Phase 1 only). Default `false` (every other call site
    *  keeps Outcome in its original, leading position). */
   outcomeAfterStatus?: boolean;
+  /** Hides just the "Add Participant" icon button within this cluster,
+   *  leaving Consult/Transfer, the status tag, Outcome, and "Unassign &
+   *  Dismiss" untouched — per explicit follow-up request (Advanced only).
+   *  ANDed with `showConsultTransferAndAddParticipant` above (both must be
+   *  true for Add Participant to render) rather than a replacement for it,
+   *  so 2.0 Phase 1's existing "hide both together" usage is unaffected.
+   *  Default `true` (every other call site keeps Add Participant). */
+  showAddParticipant?: boolean;
+  /** Per explicit follow-up request (Advanced only, same request as
+   *  `showAddParticipant` above): hides the standalone "Consult / Transfer"
+   *  icon button and instead adds a "Consult / Transfer" row to the kebab
+   *  ("More Options") menu just below, reusing the same `TransferIcon` and
+   *  sitting first in that menu's item list. Purely decorative/unwired,
+   *  same as the standalone button it replaces (see that button's own doc
+   *  comment/rule #30) — clicking it does nothing yet either. Has no effect
+   *  while `showKebabMenu` is false (nowhere to add the row to) or while
+   *  `showConsultTransferAndAddParticipant` is false (Transfer already
+   *  hidden outright). Default `false` (every other call site keeps
+   *  Transfer as its own standalone icon). */
+  transferInKebabMenu?: boolean;
+  /** Reorders this session row's status tag, kebab, and Outcome button to
+   *  render in that exact sequence (status tag first, then kebab, then
+   *  Outcome) — via flex `order-*` utilities on each element, same
+   *  technique `outcomeAfterStatus` above already uses, not by physically
+   *  reordering the JSX, so every element's own gating logic stays
+   *  untouched. Collapse/Unassign & Dismiss/"Open Details Panel" keep
+   *  their existing relative order, just pushed after Outcome. Independent
+   *  of `outcomeAfterStatus` above (which only reorders status-then-
+   *  outcome, leaving the kebab in its default position) — the two are
+   *  never combined at the same call site today, but use distinct `order-*`
+   *  values regardless so nothing would collide if they ever were. Per
+   *  explicit follow-up request (Advanced only). Default `false` (every
+   *  other call site keeps this cluster in its original DOM order). */
+  statusAndKebabBeforeOutcome?: boolean;
   /** This channel's real, typed channel — passed straight through from
    *  `InteractionTranscript`'s own `channelType` prop (one instance renders
    *  every historical session for a single channel, so this is the same
@@ -1338,6 +1478,51 @@ export function TranscriptSessionSeparator({
   // popover uses for its identical field (channel-row.tsx).
   const [outcomeResolutionMenuOpen, setOutcomeResolutionMenuOpen] = useState(false);
   const [outcomeResolutionMenuView, setOutcomeResolutionMenuView] = useState<"menu" | "confirm">("menu");
+  // The "Open Details Panel" button itself, computed once here (rather than
+  // inline below) so both the plain and hover-preview-wrapped renderings
+  // (see `detailsPanelPreviewContent`'s own doc comment above) share the
+  // exact same markup with zero duplication — only whether it's wrapped in
+  // a `Popover` differs.
+  const detailsPanelButton = onToggleDetailsPanel && !detailsPanelOpen ? (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      // Per explicit follow-up request ("remove the tooltip now"): once the
+      // rich hover-preview above is wired, `Button`'s own auto-tooltip
+      // (icon-size + `title` — button.tsx) is redundant with it — hovering
+      // showed BOTH the plain text tooltip and the preview card stacked on
+      // top of each other. `Button` wires that same `title` straight into
+      // `aria-label` too whenever it skips the tooltip for a non-icon size,
+      // but for an ICON size specifically it only does that INSIDE the
+      // tooltip wrap — so dropping `title` outright for the preview case
+      // would silently leave this an unlabeled icon button. Passing
+      // `aria-label` directly instead (still-icon-sized, but caller-
+      // supplied) sidesteps that: `Button` spreads the rest of its props
+      // (including this) AFTER computing its own tooltip-driven
+      // `aria-label`, so this wins regardless, while `title` staying
+      // undefined here means the `isIconVariant && title` check
+      // (button.tsx) never wraps it in a `Tooltip` in the first place. A
+      // caller with no preview content still gets the plain tooltip
+      // exactly as before — nothing to replace it with there.
+      title={detailsPanelPreviewContent ? undefined : "Open Details Panel"}
+      aria-label={detailsPanelPreviewContent ? "Open Details Panel" : undefined}
+      className={cn("shrink-0 text-lyra-fg-secondary", outcomeAfterStatus && "order-5", statusAndKebabBeforeOutcome && "order-6")}
+      onClick={(e: React.MouseEvent) => {
+        e.stopPropagation();
+        onToggleDetailsPanel();
+      }}
+      // Per the hover-preview restoration above — no-ops (undefined) when
+      // the caller hasn't wired `detailsPanelPreviewContent` through, same
+      // as `CustomerInfoHoverPreview`'s own former trigger button wired
+      // both pointer AND keyboard-focus hover-intent (mirrors it exactly).
+      onMouseEnter={onDetailsPanelPreviewHoverStart}
+      onMouseLeave={onDetailsPanelPreviewHoverEnd}
+      onFocus={onDetailsPanelPreviewHoverStart}
+      onBlur={onDetailsPanelPreviewHoverEnd}
+    >
+      <PanelRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+    </Button>
+  ) : null;
   // `content` (not a direct `return`) so `portalTarget` (this component's
   // own prop, doc comment above) can relocate the exact same JSX into the
   // record header via `createPortal` further down, with zero duplication.
@@ -1600,12 +1785,12 @@ export function TranscriptSessionSeparator({
                 !isNewThread` gate as the rest of this cluster: nothing to
                 add a participant to on a closed or still-draft thread
                 either. */}
-            {showConsultTransferAndAddParticipant && !isClosed && !isNewThread && (
+            {showConsultTransferAndAddParticipant && showAddParticipant && !isClosed && !isNewThread && (
               <Button variant="icon" size="icon-sm" title="Add Participant" className="text-lyra-fg-secondary">
                 <UserPlus className="h-4 w-4" strokeWidth={1.5} />
               </Button>
             )}
-            {showConsultTransferAndAddParticipant && !isClosed && !isNewThread && (
+            {showConsultTransferAndAddParticipant && !transferInKebabMenu && !isClosed && !isNewThread && (
               <Button variant="icon" size="icon-sm" title="Consult / Transfer" className="text-lyra-fg-secondary">
                 <TransferIcon />
               </Button>
@@ -1791,7 +1976,7 @@ export function TranscriptSessionSeparator({
                   variant="icon"
                   size="icon-sm"
                   title="Outcome"
-                  className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2")}
+                  className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2", statusAndKebabBeforeOutcome && "order-3")}
                   onClick={(e: React.MouseEvent) => e.stopPropagation()}
                 >
                   {/* Per explicit request ("make the outcome check button
@@ -1816,7 +2001,7 @@ export function TranscriptSessionSeparator({
               // `isClosed`, so a just-closed CURRENT session reads
               // identically (no icon) rather than a static disabled one.
               !isClosed && (
-                <Button variant="icon" size="icon-sm" title="Outcome" className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2")}>
+                <Button variant="icon" size="icon-sm" title="Outcome" className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2", statusAndKebabBeforeOutcome && "order-3")}>
                   {/* Per explicit request ("make the outcome check button
                       a solid blue circle"): swaps the outline `CircleCheck`
                       lucide icon for lyra-ui's own `SuccessIconSolid` (a
@@ -1848,8 +2033,25 @@ export function TranscriptSessionSeparator({
               <KebabMenuButton
                 ariaLabel="More Options"
                 align="right"
+                className={statusAndKebabBeforeOutcome ? "order-2" : undefined}
                 items={
                   [
+                    // Per explicit follow-up request (Advanced only — see
+                    // `transferInKebabMenu`'s own doc comment above): folds
+                    // the standalone Transfer icon (hidden above via that
+                    // same prop) into this menu instead, leading its item
+                    // list. Same unwired `onClick: () => {}` as every other
+                    // row here.
+                    ...(transferInKebabMenu
+                      ? [
+                          {
+                            id: "consult-transfer",
+                            label: "Consult / Transfer",
+                            icon: <TransferIcon />,
+                            onClick: () => {},
+                          },
+                        ]
+                      : []),
                     {
                       id: "send-transcript",
                       label: "Send Transcript",
@@ -1900,7 +2102,7 @@ export function TranscriptSessionSeparator({
                 onConfirmClose={onConfirmClose}
                 onCancelClose={onCancelClose}
                 disabled={isClosed}
-                className={outcomeAfterStatus ? "order-1" : undefined}
+                className={cn(outcomeAfterStatus && "order-1", statusAndKebabBeforeOutcome && "order-1")}
               />
             )}
             {/* Collapse icon — immediately right of the status tag, only for
@@ -1919,7 +2121,7 @@ export function TranscriptSessionSeparator({
                   size="icon-sm"
                   aria-label={collapsed ? "Expand session" : "Collapse session"}
                   aria-expanded={!collapsed}
-                  className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-3")}
+                  className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-3", statusAndKebabBeforeOutcome && "order-4")}
                   onClick={onToggleCollapsed}
                 >
                   {collapsed ? (
@@ -2034,7 +2236,7 @@ export function TranscriptSessionSeparator({
                       variant="ghost"
                       size="icon-sm"
                       title="Remove from Queue"
-                      className={cn("shrink-0 text-lyra-status-critical-strong hover:bg-lyra-status-critical-subtle hover:text-lyra-status-critical-strong active:bg-lyra-status-critical-medium", outcomeAfterStatus && "order-4")}
+                      className={cn("shrink-0 text-lyra-status-critical-strong hover:bg-lyra-status-critical-subtle hover:text-lyra-status-critical-strong active:bg-lyra-status-critical-medium", outcomeAfterStatus && "order-4", statusAndKebabBeforeOutcome && "order-5")}
                       onClick={onDismiss}
                     >
                       <X className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -2055,13 +2257,60 @@ export function TranscriptSessionSeparator({
                       variant="ghost"
                       size="icon-sm"
                       title="Unassign & Dismiss"
-                      className={cn("shrink-0 text-lyra-status-critical-strong hover:bg-lyra-status-critical-subtle hover:text-lyra-status-critical-strong active:bg-lyra-status-critical-medium", outcomeAfterStatus && "order-4")}
+                      className={cn("shrink-0 text-lyra-status-critical-strong hover:bg-lyra-status-critical-subtle hover:text-lyra-status-critical-strong active:bg-lyra-status-critical-medium", outcomeAfterStatus && "order-4", statusAndKebabBeforeOutcome && "order-5")}
                       onClick={onDismiss}
                     >
                       <UserX className="h-3.5 w-3.5" strokeWidth={1.5} />
                     </Button>
                   )
                 )}
+            {/* "Open Details Panel" — new icon button, immediately right of
+                Unassign & Dismiss/Remove from Queue/Delete Draft (per
+                explicit request). Per further explicit follow-up request
+                ("this should say 'Open Details Panel' and just open/close
+                - the panel not list the options"): no more menu — a plain
+                toggle of the caller's own Details panel open/closed state
+                (`onToggleDetailsPanel`'s own doc comment above). Rendered
+                for every row `onToggleDetailsPanel` is passed for, not
+                just the current session — same reasoning as before, this
+                button has no session-specific opinion to withhold from a
+                closed/past session. Per explicit follow-up request ("hide
+                the toggle icon button when the session details are
+                open"): also gated on `!detailsPanelOpen` now — see that
+                prop's own doc comment above for the full "why". */}
+            {detailsPanelButton &&
+              (detailsPanelPreviewContent ? (
+                // Same `Popover` shape `CustomerInfoHoverPreview`'s own
+                // former call site used (bottom-end anchored, no arrow, no
+                // padding of its own since the preview content brings its
+                // own card chrome) — open/close timing is entirely the
+                // caller's (`detailsPanelPreviewOpen`), this just renders
+                // it. The two auto-focus preventions and the
+                // `data-radix-popper-content-wrapper` outside-interaction
+                // guard match that former call site exactly, so a nested
+                // overflow menu inside the preview content doesn't get
+                // treated as an "outside" click that closes this Popover.
+                <Popover
+                  open={detailsPanelPreviewOpen}
+                  placement="bottom"
+                  align="end"
+                  showArrow={false}
+                  bodyPadding={false}
+                  className="border-0 bg-transparent p-0 shadow-none"
+                  onOpenAutoFocus={(e: Event) => e.preventDefault()}
+                  onCloseAutoFocus={(e: Event) => e.preventDefault()}
+                  onInteractOutside={(e: Event) => {
+                    if ((e.target as Element)?.closest?.("[data-radix-popper-content-wrapper]")) {
+                      e.preventDefault();
+                    }
+                  }}
+                  content={detailsPanelPreviewContent}
+                >
+                  {detailsPanelButton}
+                </Popover>
+              ) : (
+                detailsPanelButton
+              ))}
           </div>
           )}
         </div>
@@ -2099,6 +2348,9 @@ export function InteractionTranscript({
   skillLabel,
   isFreshLaunch,
   contactOverview,
+  customerContextOverview,
+  showCustomerContextProfile,
+  showCustomerContextSnapshot,
   contactOverviewPosition,
   onViewCustomerInfo,
   onViewInteractionHistory,
@@ -2123,9 +2375,18 @@ export function InteractionTranscript({
   showSessionConsultTransferAndAddParticipant = true,
   showSessionKebabMenu = true,
   sessionOutcomeAfterStatus = false,
+  showSessionAddParticipant = true,
+  sessionTransferInKebabMenu = false,
+  sessionStatusAndKebabBeforeOutcome = false,
   isNewThread = false,
   isCustomerTyping = false,
   onViewSessionDetails,
+  onToggleDetailsPanel,
+  detailsPanelOpen = false,
+  detailsPanelPreviewContent,
+  detailsPanelPreviewOpen = false,
+  onDetailsPanelPreviewHoverStart,
+  onDetailsPanelPreviewHoverEnd,
   showViewDetails = true,
   sessionRowPortalTarget,
   onCurrentSessionChange,
@@ -2212,6 +2473,46 @@ export function InteractionTranscript({
    * summarize).
    */
   contactOverview?: ContactOverviewInfo;
+  /**
+   * When set, renders the newer `CustomerContextOverview` block (Customer
+   * Profile / Customer Snapshot / Next Best Action — see that component's
+   * own doc comment, contact-overview.tsx) at the SAME two spots
+   * `contactOverview` would otherwise use, INSTEAD of `ContactOverview` —
+   * this takes priority over `contactOverview` whenever both happen to be
+   * set. Per explicit request, only AgentNextGenPage.tsx and
+   * AgentWorkspace2WithDeskPage.tsx pass this ("Phase 1"/"Phase 2");
+   * AgentWorkspaceAdvancedPage.tsx now passes it too (its own explicit
+   * follow-up request to mirror Phase 1's Customer Context Overview
+   * functionality — see that page's own call site) — this doc comment's
+   * "still passes plain `contactOverview`" is stale as of that change.
+   * Same "caller resolves the content, this component just renders it"
+   * division of labor `contactOverview` itself already follows.
+   */
+  customerContextOverview?: CustomerContextOverviewInfo;
+  /**
+   * Overrides the "Customer Profile" container's own default visibility
+   * inside `customerContextOverview`'s block (normally derived from
+   * whether `customerContextOverview.customerCard` is set — see
+   * `renderContactOverviewBlock`'s own `showCustomerProfile` line below)
+   * — `false` force-hides it regardless of `customerCard`. Per explicit
+   * request ("hide the customer profile and contact snapshot from the
+   * main container and just display the next best action"):
+   * AgentWorkspaceAdvancedPage.tsx passes `false` at its own main-column
+   * `<InteractionTranscript>` call site so only "Next Best Action" shows
+   * there, while its own "Details" side panel tab still shows the full
+   * Customer Profile/Contact Snapshot cards (a separate, un-gated
+   * `CustomerContextOverview`/`DetailsPanelAccordions` render, unaffected
+   * by this prop). `undefined` (default) keeps the existing derived
+   * behavior for every other consumer/call site.
+   */
+  showCustomerContextProfile?: boolean;
+  /**
+   * Same idea as `showCustomerContextProfile` just above, for the
+   * "Contact Snapshot" container — see that prop's own doc comment for
+   * the full "why". `undefined` (default) shows it, matching
+   * `CustomerContextOverview`'s own `showContactSnapshot` default.
+   */
+  showCustomerContextSnapshot?: boolean;
   /**
    * Overrides which of the two `ContactOverview` render spots is used —
    * see either spot's own doc comment below for what each means. Only
@@ -2376,6 +2677,20 @@ export function InteractionTranscript({
    *  `false` (every other call site keeps Outcome in its original
    *  position). */
   sessionOutcomeAfterStatus?: boolean;
+  /** Passed straight through to every `TranscriptSessionSeparator` below as
+   *  `showAddParticipant` — see that prop's own doc comment. Default `true`
+   *  (every other call site keeps Add Participant). */
+  showSessionAddParticipant?: boolean;
+  /** Passed straight through to every `TranscriptSessionSeparator` below as
+   *  `transferInKebabMenu` — see that prop's own doc comment. Default
+   *  `false` (every other call site keeps Transfer as its own standalone
+   *  icon). */
+  sessionTransferInKebabMenu?: boolean;
+  /** Passed straight through to every `TranscriptSessionSeparator` below as
+   *  `statusAndKebabBeforeOutcome` — see that prop's own doc comment.
+   *  Default `false` (every other call site keeps this cluster in its
+   *  original DOM order). */
+  sessionStatusAndKebabBeforeOutcome?: boolean;
   /** True for a brand-new, agent-initiated OUTBOUND thread with no real
    *  activity yet — the caller resolves this the same way as
    *  `isFreshLaunch` (`Interaction.startedFresh`), AND-ed with "the
@@ -2419,6 +2734,37 @@ export function InteractionTranscript({
    *  differently here either way — the row's own `open`/collapse state is
    *  gone, so there's no fallback in-place behavior to fall back to). */
   onViewSessionDetails?: (session: Contact) => void;
+  /** Forwarded straight through to every `TranscriptSessionSeparator`'s own
+   *  `onToggleDetailsPanel` (see that prop's own doc comment for the full
+   *  "why" — a plain open/close toggle now, no menu, no per-session
+   *  content). Omit for a caller with no Details panel to toggle (nothing
+   *  else renders differently either way). */
+  onToggleDetailsPanel?: () => void;
+  /** Forwarded straight through to every `TranscriptSessionSeparator`'s own
+   *  `detailsPanelOpen` (see that prop's own doc comment for the full
+   *  "why" — hides the `onToggleDetailsPanel` button while the caller's
+   *  Details panel is already open). Defaults `false`; a caller that
+   *  hasn't wired this through yet keeps rendering the button exactly as
+   *  before. */
+  detailsPanelOpen?: boolean;
+  /** Forwarded straight through to every `TranscriptSessionSeparator`'s own
+   *  `detailsPanelPreviewContent` (see that prop's own doc comment for the
+   *  full "why" — restores the hover-preview `Popover` the record header's
+   *  own Customer Information toggle used to show before this button
+   *  relocated into the session row). Omit for a caller with no equivalent
+   *  preview content ready to hand over (nothing else renders differently
+   *  either way). */
+  detailsPanelPreviewContent?: React.ReactNode;
+  /** Forwarded straight through to every `TranscriptSessionSeparator`'s own
+   *  `detailsPanelPreviewOpen` (see that prop's own doc comment). Defaults
+   *  `false`. */
+  detailsPanelPreviewOpen?: boolean;
+  /** Forwarded straight through to every `TranscriptSessionSeparator`'s own
+   *  `onDetailsPanelPreviewHoverStart` (see that prop's own doc comment). */
+  onDetailsPanelPreviewHoverStart?: () => void;
+  /** Forwarded straight through to every `TranscriptSessionSeparator`'s own
+   *  `onDetailsPanelPreviewHoverEnd` (see that prop's own doc comment). */
+  onDetailsPanelPreviewHoverEnd?: (e: React.MouseEvent | React.FocusEvent) => void;
   /** Forwarded straight through to every `TranscriptSessionSeparator`'s own
    *  `showViewDetails` prop (see that prop's own doc comment for the full
    *  "why" — the nested instance inside voice's "Transcript" tab passes
@@ -2661,6 +3007,52 @@ export function InteractionTranscript({
     lastContactOverviewBoundaryContactIdRef.current = contactId;
     contactOverviewLiveMessageBoundaryRef.current = (liveMessagesBySessionId[lastSessionId ?? ""] ?? []).length;
   }
+
+  // Renders whichever of the two overview blocks this call actually wants
+  // — the newer `CustomerContextOverview` when a caller supplies
+  // `customerContextOverview` (see that prop's own doc comment above), else
+  // the original `ContactOverview` when a caller supplies `contactOverview`
+  // — shared by both of the two render spots below so neither has to
+  // duplicate this branch.
+  const renderContactOverviewBlock = () =>
+    customerContextOverview ? (
+      <CustomerContextOverview
+        customerName={displayName}
+        customerCard={customerContextOverview.customerCard}
+        snapshot={customerContextOverview.snapshot}
+        nextBestAction={customerContextOverview.nextBestAction}
+        // Per explicit request ("put the customer summary content inside
+        // the customer profile accordion") — see `detailedSummary`'s own
+        // doc comment (lyra-ui/contact-overview.tsx) for what this renders.
+        detailedSummary={customerContextOverview.detailedSummary}
+        // Per explicit follow-up request ("if a new call is made or the
+        // customer does not have any information, do not display the
+        // customer profile"): `customerCard` is only ever unset for
+        // exactly that case (`buildCustomerContextOverviewInfo`'s own
+        // `!isKnownCustomer` branch, agent-next-gen-shared-utils.ts) — so
+        // its presence doubles as the "is there anything useful to show
+        // here" signal, no separate flag needed from callers.
+        showCustomerProfile={showCustomerContextProfile ?? !!customerContextOverview.customerCard}
+        // See `showCustomerContextSnapshot`'s own doc comment above —
+        // `undefined` here falls through to `CustomerContextOverview`'s
+        // own `showContactSnapshot = true` default.
+        showContactSnapshot={showCustomerContextSnapshot}
+        onViewCustomerInfo={onViewCustomerInfo}
+        onViewInteractionHistory={onViewInteractionHistory}
+      />
+    ) : (
+      contactOverview && (
+        <ContactOverview
+          customerName={displayName}
+          previousAgent={contactOverview.previousAgent}
+          snapshot={contactOverview.snapshot}
+          journeySummary={contactOverview.journeySummary}
+          onViewCustomerInfo={onViewCustomerInfo}
+          onViewInteractionHistory={onViewInteractionHistory}
+          onLaunchPreviousAgentInteraction={onLaunchPreviousAgentInteraction}
+        />
+      )
+    );
 
   // Local, per-session tag state — removing/adding a tag on one message
   // shouldn't touch any other message's tags (in this session or any
@@ -3146,11 +3538,17 @@ export function InteractionTranscript({
                   // doc comment, and `hideSessionSeparatorFade`'s own doc
                   // comment on this component's own props for the latter).
                   hideFade={
-                    (!!contactOverview && session.id === lastSessionId) ||
+                    (!!(contactOverview || customerContextOverview) && session.id === lastSessionId) ||
                     (hideSessionSeparatorFade && session.id === lastSessionId)
                   }
                   session={sessionWithCurrentStatus}
                   onViewDetails={() => onViewSessionDetails?.(sessionWithCurrentStatus)}
+                  onToggleDetailsPanel={onToggleDetailsPanel}
+                  detailsPanelOpen={detailsPanelOpen}
+                  detailsPanelPreviewContent={detailsPanelPreviewContent}
+                  detailsPanelPreviewOpen={detailsPanelPreviewOpen}
+                  onDetailsPanelPreviewHoverStart={onDetailsPanelPreviewHoverStart}
+                  onDetailsPanelPreviewHoverEnd={onDetailsPanelPreviewHoverEnd}
                   showViewDetails={showViewDetails}
                   // See `sessionRowPortalTarget`'s own doc comment above —
                   // only the CURRENT session's row ever relocates into the
@@ -3235,6 +3633,9 @@ export function InteractionTranscript({
                   showConsultTransferAndAddParticipant={showSessionConsultTransferAndAddParticipant}
                   showKebabMenu={showSessionKebabMenu}
                   outcomeAfterStatus={sessionOutcomeAfterStatus}
+                  showAddParticipant={showSessionAddParticipant}
+                  transferInKebabMenu={sessionTransferInKebabMenu}
+                  statusAndKebabBeforeOutcome={sessionStatusAndKebabBeforeOutcome}
                   // Voice/SMS direction-aware icon — see this component's
                   // own doc comment above for the `direction`/`channelType`
                   // props feeding it.
@@ -3383,17 +3784,10 @@ export function InteractionTranscript({
                     the existing history first and this summary lands right
                     where their own new messages are about to continue
                     from. */}
-                {contactOverview && session.id === lastSessionId && !contactOverviewAtBottom && (
-                  <ContactOverview
-                    customerName={displayName}
-                    previousAgent={contactOverview.previousAgent}
-                    snapshot={contactOverview.snapshot}
-                    journeySummary={contactOverview.journeySummary}
-                    onViewCustomerInfo={onViewCustomerInfo}
-                    onViewInteractionHistory={onViewInteractionHistory}
-                    onLaunchPreviousAgentInteraction={onLaunchPreviousAgentInteraction}
-                  />
-                )}
+                {(contactOverview || customerContextOverview) &&
+                  session.id === lastSessionId &&
+                  !contactOverviewAtBottom &&
+                  renderContactOverviewBlock()}
                 {messages.length > 0 && (
                   <div className="flex min-w-0 flex-col gap-5 py-4">
                     {messages.map((message) => (
@@ -3485,7 +3879,7 @@ export function InteractionTranscript({
                 {(() => {
                   const sessionLiveMessages = liveMessagesBySessionId[session.id] ?? [];
                   const isNonFreshOverviewSession =
-                    !!contactOverview && session.id === lastSessionId && contactOverviewAtBottom;
+                    !!(contactOverview || customerContextOverview) && session.id === lastSessionId && contactOverviewAtBottom;
                   const existingLiveMessages = isNonFreshOverviewSession
                     ? sessionLiveMessages.slice(0, contactOverviewLiveMessageBoundaryRef.current)
                     : sessionLiveMessages;
@@ -3521,17 +3915,7 @@ export function InteractionTranscript({
                           {existingLiveMessages.map(renderBubble)}
                         </div>
                       )}
-                      {isNonFreshOverviewSession && contactOverview && (
-                        <ContactOverview
-                          customerName={displayName}
-                          previousAgent={contactOverview.previousAgent}
-                          snapshot={contactOverview.snapshot}
-                          journeySummary={contactOverview.journeySummary}
-                          onViewCustomerInfo={onViewCustomerInfo}
-                          onViewInteractionHistory={onViewInteractionHistory}
-                          onLaunchPreviousAgentInteraction={onLaunchPreviousAgentInteraction}
-                        />
-                      )}
+                      {isNonFreshOverviewSession && renderContactOverviewBlock()}
                       {(newLiveMessages.length > 0 || showTypingIndicator) && (
                         <div className="flex flex-col gap-5 py-4">
                           {newLiveMessages.map(renderBubble)}

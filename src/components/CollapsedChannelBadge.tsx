@@ -18,9 +18,10 @@ import { Badge, type ChannelType, CHANNEL_TYPE_META as CHANNEL_ICON_META } from 
  * w-[18px]` override — none of `Badge`'s own sm/md/lg tokens land on 18px)
  * to match `InteractionNavItem`'s own channel-count badge (the "2" on a
  * multi-channel card, `interaction-nav-item.tsx`) exactly, since the two
- * occupy the same top-left corner (see this component's only call site,
- * `AgentNextGenPage.tsx`, which skips rendering this one at all once that
- * count badge is showing instead — a card can only show one or the other).
+ * occupy the same top-left corner (see this component's call sites —
+ * `AgentWorkspaceAdvancedPage.tsx`/`AgentWorkspace2WithDeskPage.tsx` — each
+ * of which skips rendering this one at all once that count badge is
+ * showing instead — a card can only show one or the other).
  * Rule zero: reuse `Badge`, don't hand-roll the circle as a bare `<span>`.
  *
  * Colors follow lyra-ui's own canonical channel-type convention

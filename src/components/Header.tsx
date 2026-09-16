@@ -13,7 +13,7 @@ import {
   type AppMenuGroup,
 } from "@nicecxone/lyra-ui";
 
-type Page = "agent-workspace" | "agent" | "outbound" | "login";
+type Page = "agent-workspace" | "agent-advanced" | "outbound" | "login";
 
 interface HeaderProps {
   onNavigate?: (page: Page) => void;
@@ -33,7 +33,14 @@ export function Header({ onNavigate, currentPage = "agent-workspace" }: HeaderPr
   const appMenuGroups: AppMenuGroup[] = [
     {
       items: [
-        { label: "Agent Next Gen", onClick: () => navigate("agent") },
+        // Per explicit request ("remove phase 1 for now ... completely
+        // delete the phase 1 files"): this used to open the old "agent"
+        // page (`AgentNextGenPage.tsx`), which is now deleted — repointed
+        // to `"agent-advanced"` (`AgentWorkspaceAdvancedPage.tsx`, now
+        // labeled "Agent Workspace 2.0 | Phase 1" in that page's own app
+        // menu, agent-next-gen-outbound-data.tsx's `buildAppMenuGroups`)
+        // so this row still goes somewhere real instead of a dead page id.
+        { label: "Agent Next Gen", onClick: () => navigate("agent-advanced") },
         { label: "Agent Workspace Premium", active: currentPage === "agent-workspace", onClick: () => navigate("agent-workspace") },
         { label: "Outbound Engagement", active: currentPage === "outbound", onClick: () => navigate("outbound") },
         { label: "Login", active: currentPage === "login", onClick: () => navigate("login") },
