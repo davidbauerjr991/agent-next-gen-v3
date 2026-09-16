@@ -102,12 +102,13 @@
 // tone — with real initials (`customerInitials`) taking over instead once a
 // caller has a genuine contact match, same "initials over generic icon
 // once known" split that avatar convention already uses.
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
   Button,
   Popover,
   Slider,
+  Spinner,
   Tooltip,
   type ToastItem,
 } from "@nicecxone/lyra-ui";
@@ -347,9 +348,18 @@ function DialPad() {
 function CompactVolumeButton({
   volume,
   onVolumeChange,
+  disabled,
 }: {
   volume: number;
   onVolumeChange: (volume: number) => void;
+  /** Per explicit request ("when end call is clicked ... disable the
+   *  other buttons at the same time"): disables the trigger itself
+   *  (forwarded to `WideCallControlButton` below, same as every other
+   *  control in this bar) and forces the popover closed/unopenable rather
+   *  than leaving an already-open volume slider live while the call is
+   *  hanging up — same "force off a conflicting open state" convention
+   *  the Mask/Record pair above already follows. */
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -364,8 +374,10 @@ function CompactVolumeButton({
     // exactly what `WideCallControlButton`'s own `forwardRef`+`...rest`
     // are for (see that component's own doc comment).
     <Popover
-      open={open}
-      onOpenChange={setOpen}
+      open={open && !disabled}
+      onOpenChange={(next: boolean) => {
+        if (!disabled) setOpen(next);
+      }}
       placement="top"
       content={
         <div className="flex items-center gap-2 p-3 w-[200px]">
@@ -404,6 +416,7 @@ function CompactVolumeButton({
         }
         label="Volume"
         active={open}
+        disabled={disabled}
         aria-label="Volume"
         aria-pressed={open}
       />
@@ -428,16 +441,7 @@ export interface VoiceCallControlsProps {
   /** Same shared toast surface every other mock/placeholder control in
    *  this app already fires through (`agent-next-gen-customer-info-
    *  panel.tsx`'s own `onAddToast`, etc.) — omit to silently no-op instead
-   *  of throwing on a caller that hasn't wired toasts through yet.
-   *  Per explicit follow-up request ("don't fire tooltips on the normal
-   *  call controls they are annoying"), nothing in this component actually
-   *  calls this anymore — every control that used to (Hold, Mask, Record,
-   *  the decorative Add-video fallback; see each one's own `onClick` doc
-   *  comment) had its toast dropped. Left declared/accepted rather than
-   *  removed outright, since every existing caller already wires it
-   *  through (`onAddToast={addToast}`) for no harm done, and it's a small,
-   *  ready-made hook back in if some future control here ever genuinely
-   *  needs one. */
+   *  of throwing on a caller that hasn't wired toasts through yet. */
   onAddToast?: (toast: Omit<ToastItem, "id">) => void;
   /**
    * Opens/closes the call transcript `InteriorPanel` the caller renders
@@ -570,6 +574,95 @@ export function VoiceCallControls({
   const [volume, setVolume] = useState(70);
   const [volumeOpen, setVolumeOpen] = useState(false);
 
+  // Per explicit request ("when end call is clicked transition the end
+  // call button to a hanging up state (disabled) then disable the other
+  // buttons at the same time and animate the call controls out (down)"),
+  // refined by a later explicit follow-up ("wait one second after the
+  // call is ended before animating out the controls"): two states, not
+  // one, so the disabled "hanging up" look and the slide-out animation
+  // don't happen in the same instant. `isEnding` flips immediately on
+  // click and gates the disabling half — every other control below reads
+  // `disabled={isEnding}` (or ORs it into a disabled expression it already
+  // had, e.g. Record/masked) and the End Call button itself swaps to its
+  // disabled "Hanging Up..." look right away. `isExiting` only flips a
+  // full second later (`HANG_UP_HOLD_MS` below) and is what the outer
+  // card's own transition classes (see that div's doc comment below)
+  // actually key off of — so an agent sees the "hanging up" state hold for
+  // a beat before the bar starts sliding away, instead of both happening
+  // at once. The real `onHangUp` callback — the one thing here that
+  // actually closes the channel (see this file's own top doc comment) —
+  // is deliberately DEFERRED past both delays (the 1s hold plus the exit
+  // transition's own duration) rather than fired on click: this whole bar
+  // unmounts the instant the caller closes the channel (see each tier
+  // page's own "voice has no composer" branch), which would cut the
+  // hold/exit sequence short if `onHangUp` ran synchronously.
+  const HANG_UP_HOLD_MS = 1000;
+  const HANG_UP_EXIT_MS = 300;
+  const [isEnding, setIsEnding] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
+  const hangUpTimeoutsRef = useRef<number[]>([]);
+  useEffect(() => {
+    return () => {
+      hangUpTimeoutsRef.current.forEach((id) => window.clearTimeout(id));
+    };
+  }, []);
+  // Per explicit follow-up bug report ("when the call controls animate out
+  // the main container drops instantly instead of animating with the
+  // controls"): the slide/fade transition above only ever moved this bar
+  // visually — it never shrank the actual space this bar RESERVES in the
+  // caller's flex column (see this file's own top doc comment: this whole
+  // component is a `shrink-0` flex sibling of `InteractionTranscript`), so
+  // that space stayed put for the full exit transition and only vanished
+  // the instant this component actually unmounts (once `onHangUp` fires
+  // and the caller closes the channel) — a hard one-frame snap for
+  // whatever sits above it, landing right as the slide/fade was still
+  // finishing. Collapsing this bar's own rendered height to 0 in lock-step
+  // with that same transition means the transcript column above grows
+  // into the vacated space gradually, over the same 300ms, instead of
+  // jumping the instant this bar disappears.
+  //
+  // `collapseHeight` is `null` while this bar is in its normal (or merely
+  // "hanging up"/disabled) state — no inline height override, sized by its
+  // own content exactly as it always was. It's only ever set once
+  // `isExiting` flips: first to this bar's OWN just-measured rendered
+  // height (a CSS `height` transition can't animate from `auto`, only
+  // between two concrete pixel values — setting it to the height it
+  // already visually has causes no jump), then, one animation frame later,
+  // down to `0` — that second state change is what the outer div's own
+  // `transition-all` class (below) actually animates. `overflow-hidden`
+  // rides along with the collapse (see that div's own style/className) so
+  // the padding/content don't visibly poke out past the shrinking box.
+  const barRef = useRef<HTMLDivElement>(null);
+  const [collapseHeight, setCollapseHeight] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isExiting) return;
+    const el = barRef.current;
+    if (!el) return;
+    setCollapseHeight(el.getBoundingClientRect().height);
+    const raf = requestAnimationFrame(() => setCollapseHeight(0));
+    return () => cancelAnimationFrame(raf);
+  }, [isExiting]);
+  const handleHangUp = () => {
+    // Guards against a double-fire (e.g. a stray extra click before the
+    // button's own `disabled` re-renders) from scheduling `onHangUp` twice.
+    if (isEnding) return;
+    setIsEnding(true);
+    // Force-close the Keypad popover too — same "don't leave a conflicting
+    // open state showing" reasoning `CompactVolumeButton`'s own `disabled`
+    // prop doc comment gives for the volume popover.
+    setKeypadOpen(false);
+    hangUpTimeoutsRef.current.push(
+      window.setTimeout(() => {
+        setIsExiting(true);
+        hangUpTimeoutsRef.current.push(
+          window.setTimeout(() => {
+            onHangUp();
+          }, HANG_UP_EXIT_MS)
+        );
+      }, HANG_UP_HOLD_MS)
+    );
+  };
+
   return (
     // Per explicit request/reference screenshot: this bar floats as its own
     // bordered, rounded, shadowed white card rather than an edge-to-edge
@@ -591,7 +684,32 @@ export function VoiceCallControls({
     // wrapping row supplies those instead) — same "don't lean on ambient
     // stretch actually being definite" fix as `SidePanel`'s own `h-full`
     // doc comment (side-panel.tsx) describes for its pinned branch.
-    <div className={cn("w-full shrink-0 bg-lyra-bg-surface-base px-6 py-3", className)}>
+    <div
+      ref={barRef}
+      style={collapseHeight !== null ? { height: collapseHeight } : undefined}
+      className={cn(
+        "w-full shrink-0 bg-lyra-bg-surface-base px-6 py-3",
+        // Per explicit request ("animate the call controls out (down)"),
+        // refined by a later follow-up ("wait one second after the call is
+        // ended before animating out the controls"): this keys off
+        // `isExiting`, NOT `isEnding` — see `isEnding`'s own doc comment
+        // above for why those two are separate states. `isExiting` only
+        // flips a second after click, so the disabled "hanging up" look
+        // holds for that beat before this transition (slide down + fade)
+        // actually starts. `onHangUp` itself is deferred behind BOTH the
+        // 1s hold and this transition's own duration, so it finishes
+        // playing before the caller unmounts this bar entirely.
+        "transition-all duration-300 ease-in-out",
+        isExiting && "pointer-events-none translate-y-4 opacity-0",
+        // `overflow-hidden` only once a height collapse is actually in
+        // flight (`collapseHeight` non-null — see that state's own doc
+        // comment above) — normal/"hanging up" rendering keeps this bar's
+        // default visible overflow rather than clipping anything
+        // unnecessarily the rest of the time.
+        collapseHeight !== null && "overflow-hidden",
+        className
+      )}
+    >
       {/* This card used to be one of three branches (wide two-row centered
           card / compact icon-only row / `stretch` single-row wide) picked
           by `stretch`+`isCompact` — see this file's own top doc comment
@@ -783,23 +901,15 @@ export function VoiceCallControls({
                 ? "text-lyra-status-warning-strong bg-lyra-status-warning-subtle hover:text-lyra-status-warning-strong"
                 : undefined
             }
-            // Per explicit follow-up request ("don't fire tooltips on the
-            // normal call controls they are annoying" — the reference
-            // screenshot showed this exact "Call on hold" toast, plus
-            // "Voice masking on" below, stacked on top of the bar): this
-            // used to also fire an `onAddToast` info toast on every toggle
-            // — dropped, here and on every other control in this bar that
-            // did the same (Mask/Record/the decorative Add-video fallback,
-            // below), in favor of the button's own `active` state (the
-            // warning-amber tint just above, the pressed/filled icon) being
-            // the only feedback — same "the control itself is the
-            // confirmation, no separate toast needed" reasoning most of
-            // this bar's OTHER toggles (Mute, Keypad, Transcript, Volume,
-            // End Call) never fired one for in the first place.
             onClick={() => {
               const next = !onHold;
               setOnHold(next);
+              onAddToast?.({ variant: "info", title: next ? "Call on hold" : "Call resumed" });
             }}
+            // Per explicit request ("when end call is clicked ... disable
+            // the other buttons at the same time") — see `isEnding`'s own
+            // doc comment above.
+            disabled={isEnding}
           />
           <WideCallControlButton
             // Per explicit request ("use audio lines and audio lines off
@@ -834,14 +944,13 @@ export function VoiceCallControls({
               if (next && recording) {
                 setRecording(false);
               }
-              // Per explicit follow-up request ("don't fire tooltips on
-              // the normal call controls they are annoying") — see the
-              // Hold button's own `onClick` doc comment just above for the
-              // full "why"; this button used to fire two, "Voice masking
-              // on"/"off" plus a second "Recording stopped" whenever
-              // masking forced an in-progress recording off — both gone
-              // now, same reasoning.
+              onAddToast?.({ variant: "info", title: next ? "Voice masking on" : "Voice masking off" });
+              if (next && recording) {
+                onAddToast?.({ variant: "info", title: "Recording stopped" });
+              }
             }}
+            // See `isEnding`'s own doc comment above.
+            disabled={isEnding}
           />
           <Tooltip
             // `disabled={!masked}` — the tooltip's `content` is only ever
@@ -867,16 +976,13 @@ export function VoiceCallControls({
               // See the Mask button's own `onClick` doc comment just above
               // for the full "why" — masking and recording can't both be
               // on, so this stays disabled (and un-clickable) for as long
-              // as `masked` is true.
-              disabled={masked}
-              // Per explicit follow-up request ("don't fire tooltips on
-              // the normal call controls they are annoying") — see the
-              // Hold button's own `onClick` doc comment above for the full
-              // "why"; this used to fire "Recording started"/"stopped" on
-              // every toggle too.
+              // as `masked` is true. ORs in `isEnding` too — see that
+              // state's own doc comment above.
+              disabled={masked || isEnding}
               onClick={() => {
                 const next = !recording;
                 setRecording(next);
+                onAddToast?.({ variant: next ? "success" : "info", title: next ? "Recording started" : "Recording stopped" });
               }}
             />
           </Tooltip>
@@ -889,8 +995,10 @@ export function VoiceCallControls({
               its own `...rest` spread) is now redundant with its own
               visible label text, but harmless to leave. */}
           <Popover
-            open={keypadOpen}
-            onOpenChange={setKeypadOpen}
+            open={keypadOpen && !isEnding}
+            onOpenChange={(next: boolean) => {
+              if (!isEnding) setKeypadOpen(next);
+            }}
             placement="top"
             bodyPadding={false}
             content={<DialPad />}
@@ -900,6 +1008,11 @@ export function VoiceCallControls({
               label="Keypad"
               active={keypadOpen}
               aria-label="Keypad"
+              // See `isEnding`'s own doc comment above — `handleHangUp`
+              // also force-closes this popover directly (`setKeypadOpen
+              // (false)`) rather than relying on this alone, since
+              // `disabled` only blocks NEW opens, not one already open.
+              disabled={isEnding}
             />
           </Popover>
           {/* Transcript — per an earlier explicit follow-up request ("take
@@ -920,9 +1033,11 @@ export function VoiceCallControls({
               label="Transcript"
               active={transcriptOpen}
               onClick={onToggleTranscript}
+              // See `isEnding`'s own doc comment above.
+              disabled={isEnding}
             />
           )}
-          <CompactVolumeButton volume={volume} onVolumeChange={setVolume} />
+          <CompactVolumeButton volume={volume} onVolumeChange={setVolume} disabled={isEnding} />
           {/* Right separator — see the leading one's own doc comment
               (this slot's opening `<div>`, above) for why this lives here,
               right after `CompactVolumeButton`, rather than at this slot's
@@ -946,6 +1061,8 @@ export function VoiceCallControls({
             // `variant` doc comment.
             variant="outline"
             onClick={() => setMuted((m) => !m)}
+            // See `isEnding`'s own doc comment above.
+            disabled={isEnding}
           />
           {/* Add video — same `strong` darkening as Mute per the reference
               screenshot (only visible in practice where `showAddVideo` is
@@ -982,14 +1099,12 @@ export function VoiceCallControls({
                   onToggleVideo();
                   return;
                 }
-                // Per explicit follow-up request ("don't fire tooltips on
-                // the normal call controls they are annoying") — see the
-                // Hold button's own `onClick` doc comment above for the
-                // full "why"; this decorative fallback used to fire "Video
-                // added to call"/"removed" too.
                 const next = !localVideoAdded;
                 setLocalVideoAdded(next);
+                onAddToast?.({ variant: "info", title: next ? "Video added to call" : "Video removed from call" });
               }}
+              // See `isEnding`'s own doc comment above.
+              disabled={isEnding}
             />
           )}
           {/* End Call — per explicit request ("make the leave button big
@@ -1031,10 +1146,31 @@ export function VoiceCallControls({
               `items-stretch` (see the divider's own comment just above for
               why it needed an explicit `self-center` once the row stopped
               using `items-center`). `size="lg"` is still passed for its
-              padding/typography, just no longer for its height. */}
-          <Button variant="destructive" size="lg" className="h-auto shrink-0 gap-1.5" onClick={onHangUp}>
-            <PhoneOff className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
-            End Call
+              padding/typography, just no longer for its height.
+              Per explicit follow-up request ("when end call is clicked
+              transition the end call button to a hanging up state
+              (disabled)"): once `isEnding` is set (`handleHangUp` above),
+              this button disables itself (lyra-ui's own `disabled:opacity-
+              40`/`disabled:pointer-events-none`, same dimmed-and-inert look
+              every other disabled control in this bar already gets — see
+              button.tsx) and swaps its icon+label for an inverse `Spinner`
+              + "Hanging Up..." — the one visible cue (besides the rest of
+              the bar disabling alongside it) that the click registered
+              while `onHangUp` itself is deferred behind the exit
+              animation (see `isEnding`'s own doc comment above). */}
+          <Button
+            variant="destructive"
+            size="lg"
+            className="h-auto shrink-0 gap-1.5"
+            onClick={handleHangUp}
+            disabled={isEnding}
+          >
+            {isEnding ? (
+              <Spinner variant="circle" size="sm" color="inverse" label="Hanging up" />
+            ) : (
+              <PhoneOff className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
+            )}
+            {isEnding ? "Hanging Up..." : "End Call"}
           </Button>
         </div>
       </div>

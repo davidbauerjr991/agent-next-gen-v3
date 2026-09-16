@@ -661,6 +661,36 @@ export function TranscriptMessageBubble({
   );
 }
 
+/* ── TranscriptPlainLine ──
+ *  Per explicit request ("style the transcript like the contact history
+ *  call transcripts"): a plain "Name  timestamp" header line (bold name,
+ *  secondary-colored time) with the spoken line below it, stacked top-to-
+ *  bottom for every turn regardless of speaker — deliberately NOT
+ *  `TranscriptMessageBubble`'s avatar/bubble/left-right `ChatMessage`
+ *  layout. This is the live-transcript twin of `agent-next-gen-contact-
+ *  history.tsx`'s own `ContactHistoryTranscriptLine` (same reference
+ *  screenshot, same look), kept as a separate small component rather than
+ *  reusing that one directly since it works over `ContactHistoryMessage`
+ *  or (its own hardcoded `CURRENT_AGENT_NAME` for every agent turn), while
+ *  a live `TranscriptMessage` already carries the real speaker `name` for
+ *  both sides (a customer, or here also a non-human speaker like a
+ *  "Cognigy AI Agent") — this one just renders whatever `name` it's
+ *  given, no agent-identity substitution. Used in place of
+ *  `TranscriptMessageBubble` only for voice channels (see this file's own
+ *  `renderPlainLine`/`renderBubble` selection below) — chat/sms/whatsapp
+ *  keep the bubble layout exactly as before. */
+function TranscriptPlainLine({ name, timestamp, text }: { name: string; timestamp: string; text: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-baseline gap-2">
+        <span className="lyra-body-md-emphasis text-lyra-fg-default">{name}</span>
+        <span className="lyra-body-sm text-lyra-fg-secondary">{timestamp}</span>
+      </div>
+      <p className="lyra-body-md text-lyra-fg-default">{text}</p>
+    </div>
+  );
+}
+
 /** "Customer is typing" bubble — shown in place of the next message while a
  *  simulated customer reply is pending (chat/SMS/WhatsApp only, per explicit
  *  request; see `InteractionTranscript`'s own `isCustomerTyping` doc comment
@@ -1478,6 +1508,13 @@ export function TranscriptSessionSeparator({
   // popover uses for its identical field (channel-row.tsx).
   const [outcomeResolutionMenuOpen, setOutcomeResolutionMenuOpen] = useState(false);
   const [outcomeResolutionMenuView, setOutcomeResolutionMenuView] = useState<"menu" | "confirm">("menu");
+  // Per explicit follow-up request ("also in the interaction more options 3
+  // dots add a tooltip that says more options (like in the
+  // interactionNavItem)"): mirrors `ChannelRow`'s own `menuOpen` state
+  // (channel-row.tsx) used to suppress its "More Options" tooltip while the
+  // kebab dropdown itself is open, so the tooltip doesn't linger/overlap the
+  // open menu here either.
+  const [kebabMenuOpen, setKebabMenuOpen] = useState(false);
   // The "Open Details Panel" button itself, computed once here (rather than
   // inline below) so both the plain and hover-preview-wrapped renderings
   // (see `detailsPanelPreviewContent`'s own doc comment above) share the
@@ -1487,25 +1524,7 @@ export function TranscriptSessionSeparator({
     <Button
       variant="ghost"
       size="icon-sm"
-      // Per explicit follow-up request ("remove the tooltip now"): once the
-      // rich hover-preview above is wired, `Button`'s own auto-tooltip
-      // (icon-size + `title` — button.tsx) is redundant with it — hovering
-      // showed BOTH the plain text tooltip and the preview card stacked on
-      // top of each other. `Button` wires that same `title` straight into
-      // `aria-label` too whenever it skips the tooltip for a non-icon size,
-      // but for an ICON size specifically it only does that INSIDE the
-      // tooltip wrap — so dropping `title` outright for the preview case
-      // would silently leave this an unlabeled icon button. Passing
-      // `aria-label` directly instead (still-icon-sized, but caller-
-      // supplied) sidesteps that: `Button` spreads the rest of its props
-      // (including this) AFTER computing its own tooltip-driven
-      // `aria-label`, so this wins regardless, while `title` staying
-      // undefined here means the `isIconVariant && title` check
-      // (button.tsx) never wraps it in a `Tooltip` in the first place. A
-      // caller with no preview content still gets the plain tooltip
-      // exactly as before — nothing to replace it with there.
-      title={detailsPanelPreviewContent ? undefined : "Open Details Panel"}
-      aria-label={detailsPanelPreviewContent ? "Open Details Panel" : undefined}
+      title="Open Details Panel"
       className={cn("shrink-0 text-lyra-fg-secondary", outcomeAfterStatus && "order-5", statusAndKebabBeforeOutcome && "order-6")}
       onClick={(e: React.MouseEvent) => {
         e.stopPropagation();
@@ -2030,49 +2049,58 @@ export function TranscriptSessionSeparator({
                 translate yet either. 3 decorative, unwired items, same as
                 every other copy of this menu in this app. */}
             {showKebabMenu && !isClosed && !isNewThread && (
-              <KebabMenuButton
-                ariaLabel="More Options"
-                align="right"
-                className={statusAndKebabBeforeOutcome ? "order-2" : undefined}
-                items={
-                  [
-                    // Per explicit follow-up request (Advanced only — see
-                    // `transferInKebabMenu`'s own doc comment above): folds
-                    // the standalone Transfer icon (hidden above via that
-                    // same prop) into this menu instead, leading its item
-                    // list. Same unwired `onClick: () => {}` as every other
-                    // row here.
-                    ...(transferInKebabMenu
-                      ? [
-                          {
-                            id: "consult-transfer",
-                            label: "Consult / Transfer",
-                            icon: <TransferIcon />,
-                            onClick: () => {},
-                          },
-                        ]
-                      : []),
-                    {
-                      id: "send-transcript",
-                      label: "Send Transcript",
-                      icon: <Send className="h-4 w-4" strokeWidth={1.5} />,
-                      onClick: () => {},
-                    },
-                    {
-                      id: "download-transcript",
-                      label: "Download Transcript",
-                      icon: <FileDown className="h-4 w-4" strokeWidth={1.5} />,
-                      onClick: () => {},
-                    },
-                    {
-                      id: "translate-messages",
-                      label: "Translate Messages",
-                      icon: <Languages className="h-4 w-4" strokeWidth={1.5} />,
-                      onClick: () => {},
-                    },
-                  ] satisfies MenuEntry[]
-                }
-              />
+              // Per explicit follow-up request ("also in the interaction
+              // more options 3 dots add a tooltip that says more options
+              // (like in the interactionNavItem)"): matches `ChannelRow`'s
+              // own "More Options" tooltip on its kebab (channel-row.tsx),
+              // including suppressing it while the dropdown is open via
+              // `kebabMenuOpen`/`onOpenChange` below, same pattern.
+              <Tooltip content="More Options" placement="bottom" disabled={kebabMenuOpen}>
+                <KebabMenuButton
+                  ariaLabel="More Options"
+                  align="right"
+                  className={statusAndKebabBeforeOutcome ? "order-2" : undefined}
+                  onOpenChange={setKebabMenuOpen}
+                  items={
+                    [
+                      // Per explicit follow-up request (Advanced only — see
+                      // `transferInKebabMenu`'s own doc comment above): folds
+                      // the standalone Transfer icon (hidden above via that
+                      // same prop) into this menu instead, leading its item
+                      // list. Same unwired `onClick: () => {}` as every other
+                      // row here.
+                      ...(transferInKebabMenu
+                        ? [
+                            {
+                              id: "consult-transfer",
+                              label: "Consult / Transfer",
+                              icon: <TransferIcon />,
+                              onClick: () => {},
+                            },
+                          ]
+                        : []),
+                      {
+                        id: "send-transcript",
+                        label: "Send Transcript",
+                        icon: <Send className="h-4 w-4" strokeWidth={1.5} />,
+                        onClick: () => {},
+                      },
+                      {
+                        id: "download-transcript",
+                        label: "Download Transcript",
+                        icon: <FileDown className="h-4 w-4" strokeWidth={1.5} />,
+                        onClick: () => {},
+                      },
+                      {
+                        id: "translate-messages",
+                        label: "Translate Messages",
+                        icon: <Languages className="h-4 w-4" strokeWidth={1.5} />,
+                        onClick: () => {},
+                      },
+                    ] satisfies MenuEntry[]
+                  }
+                />
+              </Tooltip>
             )}
             {/* Status tag — moved to the far right of the Consult/Transfer +
                 Outcome cluster (was previously the leading element at the
@@ -3262,6 +3290,13 @@ export function InteractionTranscript({
   // scroll-to-latest-on-open/on-channel-switch behavior. Declared up here
   // since the `ResizeObserver` effect right below also needs it.
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Marks the true bottom of the rendered transcript content — see the
+  // mount/open scroll-to-bottom effect below (`[contactId]`) for why this
+  // exists: an invisible target for `scrollIntoView()` rather than relying
+  // on `scrollContainerRef`'s own (sometimes-inert) `scrollHeight`.
+  // Rendered once, as the very last node inside the message column (see
+  // its own render site, right after the sessions `.map()` closes).
+  const bottomSentinelRef = useRef<HTMLDivElement>(null);
 
   // Below 400px of this transcript's own rendered width: drop each
   // message's sender avatar (`transcriptNarrow`, threaded into each real
@@ -3351,19 +3386,59 @@ export function InteractionTranscript({
   // branch below already do — so the "N new" chip/count (which otherwise
   // would've kept comparing against whatever channel was last read) starts
   // clean for the newly-viewed channel too.
+  // Single scroll-to-bottom implementation every call site below shares
+  // (this mount effect, the auto-scroll-on-new-message effect, and both
+  // the "Scroll To Latest"/"Sync to Live" buttons' own `onClick`) — see
+  // `bottomSentinelRef`'s own declaration for why this targets THAT
+  // sentinel via `Element.scrollIntoView()` rather than setting
+  // `scrollContainerRef.current.scrollTop`/`.scrollTo(...)` directly, which
+  // is a no-op wherever this component is nested inside an ALREADY-
+  // scrollable ancestor (the docked Customer Information panel's own
+  // "Transcript" tab, and its hover-preview twin — see that mount effect's
+  // former version, in git history, for the full "why" this replaced it):
+  // `scrollIntoView()` walks up to whichever ancestor actually owns the
+  // scrollbar and scrolls THAT one, so this lands correctly in every
+  // context this component is mounted in, not just the main record
+  // column (where `scrollContainerRef` itself happens to be the real
+  // scroll container).
+  const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
+    bottomSentinelRef.current?.scrollIntoView({ block: "end", behavior });
+  };
+
   useLayoutEffect(() => {
-    const el = scrollContainerRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    // `useLayoutEffect` (not `useEffect`) so this happens before the
+    // browser paints the first frame — no visible flash of the top of the
+    // transcript before it jumps to the bottom.
+    scrollToBottom();
     setIsAtBottom(true);
+    // Safety net for a still-settling ancestor (the docked panel's own
+    // opening transition, running in this same commit as this mount) —
+    // re-applies the same scroll once that layout has settled.
+    const raf = requestAnimationFrame(() => scrollToBottom());
+    return () => cancelAnimationFrame(raf);
   }, [contactId]);
 
-  const BOTTOM_THRESHOLD_PX = 24;
-  const handleTranscriptScroll = () => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setIsAtBottom(distanceFromBottom < BOTTOM_THRESHOLD_PX);
-  };
+  // Tracks whether the agent is scrolled to the live edge of the
+  // transcript — drives the floating "Scroll To Latest"/"Sync to Live"
+  // affordance below. An `IntersectionObserver` on `bottomSentinelRef`,
+  // not the old `onScroll`/`scrollTop` math against `scrollContainerRef`
+  // (see `scrollToBottom`'s own doc comment for why that math only ever
+  // reflected reality in the main record column): an `IntersectionObserver`
+  // with no explicit `root` measures intersection against the viewport,
+  // which is computed correctly straight through any number of clipping/
+  // scrolling ancestors in between — so "is the latest message actually
+  // on screen" comes out right in every context this component mounts in,
+  // not just the one where `scrollContainerRef` happens to be the real
+  // scroll container.
+  useEffect(() => {
+    const target = bottomSentinelRef.current;
+    if (!target) return;
+    const observer = new IntersectionObserver(([entry]) => setIsAtBottom(entry.isIntersecting), {
+      threshold: 0,
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
 
   // Keeps the "N new" count in sync with reality: while at the bottom,
   // every message is by definition "seen," so the seen-count tracks the
@@ -3392,7 +3467,8 @@ export function InteractionTranscript({
   //    than depended on — see that ref's own comment) — if they've scrolled
   //    up to read earlier messages, an incoming reply shouldn't yank them
   //    back down; it only self-resumes once they scroll back down
-  //    themselves (`handleTranscriptScroll`) or click "Scroll To Latest".
+  //    themselves (the `IntersectionObserver` above) or click "Scroll To
+  //    Latest"/"Sync to Live".
   // Distinguished by `liveMessages`' own last entry's `sender` — the fixed
   // mock log never changes at runtime, so any growth in `liveMessages` is
   // exactly "the agent sent one" or "the customer replied," in that order.
@@ -3405,16 +3481,13 @@ export function InteractionTranscript({
     const lastLiveMessage = liveMessages[liveMessages.length - 1];
     const isOwnJustSentMessage = lastLiveMessage?.sender === "agent";
     if (!isOwnJustSentMessage && !isAtBottomRef.current) return;
-    const el = scrollContainerRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    scrollToBottom("smooth");
     if (isOwnJustSentMessage) setIsAtBottom(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveMessages.length]);
 
   const scrollToLatest = () => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    scrollToBottom("smooth");
     setIsAtBottom(true);
   };
 
@@ -3443,7 +3516,6 @@ export function InteractionTranscript({
     <div className="relative flex-1 min-h-0 min-w-0">
       <div
         ref={scrollContainerRef}
-        onScroll={handleTranscriptScroll}
         className="h-full overflow-y-auto"
       >
         {/* Per explicit follow-up request, un-reverting the max-width-back
@@ -3908,17 +3980,33 @@ export function InteractionTranscript({
                       narrow={transcriptNarrow}
                     />
                   );
+                  // Per explicit request ("style the transcript like the
+                  // contact history call transcripts") — see
+                  // `TranscriptPlainLine`'s own doc comment for the full
+                  // "why voice only, why a separate component from
+                  // `ContactHistoryTranscriptLine`". Same customer-identity
+                  // override `renderBubble` applies above (`displayName`),
+                  // just fed to the plain line instead of `ChatMessage`.
+                  const renderPlainLine = (message: TranscriptMessage) => (
+                    <TranscriptPlainLine
+                      key={message.id}
+                      name={message.sender === "customer" ? displayName : message.name}
+                      timestamp={message.timestamp}
+                      text={message.text}
+                    />
+                  );
+                  const renderLiveMessage = channelType === "voice" ? renderPlainLine : renderBubble;
                   return (
                     <>
                       {existingLiveMessages.length > 0 && (
                         <div className="flex flex-col gap-5 py-4">
-                          {existingLiveMessages.map(renderBubble)}
+                          {existingLiveMessages.map(renderLiveMessage)}
                         </div>
                       )}
                       {isNonFreshOverviewSession && renderContactOverviewBlock()}
                       {(newLiveMessages.length > 0 || showTypingIndicator) && (
                         <div className="flex flex-col gap-5 py-4">
-                          {newLiveMessages.map(renderBubble)}
+                          {newLiveMessages.map(renderLiveMessage)}
                           {showTypingIndicator && (
                             <TypingIndicator
                               initials={displayInitials}
@@ -3939,9 +4027,68 @@ export function InteractionTranscript({
               </div>
             );
           })}
+          {/* See `bottomSentinelRef`'s own declaration (above) — the
+              scroll-to-bottom-on-open effect's `scrollIntoView` target.
+              Zero-size, purely a scroll anchor — must stay the LAST node
+              in this column so "the bottom" always means the true end of
+              the rendered content, not wherever the last session/message
+              happened to end. */}
+          <div ref={bottomSentinelRef} />
         </div>
       </div>
-      {!isAtBottom && (
+      {/* Per explicit request ("if you scroll up in the transcript, add a
+          sync to live button that scrolls to the bottom of the transcript
+          (match the lyra style)"): voice gets its own "Sync to Live"
+          affordance here instead of the plain "Scroll To Latest" pill
+          every other channel keeps — solid `variant="default"` (lyra-ui's
+          own primary-filled button, matching the reference screenshot's
+          filled/white-text look) rather than `outline`, no "N New" badge
+          (voice's live transcript has no per-message unread count to show
+          — see `newMessageCount`'s own doc comment, which is chat/SMS/
+          WhatsApp-specific). Same `scrollToBottom` the "Scroll To Latest"
+          button below calls — see that function's own doc comment.
+          `sticky`, NOT `absolute` like the "Scroll To Latest" version
+          below — per explicit bug report ("the button should not scroll -
+          it is currently scrolling"). `absolute` anchors to the nearest
+          `position`-ed ancestor, which for the main record column (the
+          "Scroll To Latest" button's only real-world context — see
+          `channelType`'s own gate on the docked-panel "Transcript" tab,
+          voice-only) is a `relative` wrapper that ITSELF never scrolls
+          (only `scrollContainerRef`, ITS un-ancestor sibling, does) — so
+          anchoring to it correctly reads as "pinned to the viewport while
+          content scrolls underneath." Voice's OWN real-world context is
+          the opposite: this whole subtree (the `relative` wrapper AND
+          `scrollContainerRef`) sits INSIDE an ancestor that's already
+          scrollable itself (lyra-ui's `PanelContent`, or this file's own
+          hand-rolled preview wrapper — see `scrollToBottom`'s own doc
+          comment for the full "why" `scrollContainerRef` isn't the real
+          scroll container there), so `absolute` there anchors to a box
+          that scrolls right along with everything else — reading as "this
+          button is scrolling," exactly the bug reported. `sticky bottom-4`
+          instead resolves against whichever ancestor genuinely has
+          `overflow` set (walking straight past this `relative`/`overflow-
+          hidden`-only wrapper to `PanelContent`/the preview wrapper,
+          `scrollContainerRef`'s `overflow-y-auto` never entering into it
+          since it's a sibling, not an ancestor, of this button) — so it
+          correctly stays pinned to the panel's own bottom edge instead.
+          `-mb-9` cancels out the height `sticky` (unlike `absolute`) adds
+          back into the document's normal flow — exactly this button's own
+          rendered height (`size="lg"` → `h-9`) — so it still floats over
+          the last message rather than pushing it up and leaving a gap. */}
+      {!isAtBottom && channelType === "voice" && (
+        <div className="pointer-events-none sticky bottom-4 z-[2] -mb-9 flex justify-center">
+          <Button
+            variant="default"
+            size="lg"
+            onClick={scrollToLatest}
+            className="pointer-events-auto rounded-full shadow-lg"
+          >
+            <ArrowDown className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+            Sync to Live
+          </Button>
+        </div>
+      )}
+      {!isAtBottom && channelType !== "voice" && (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
           <Button
             variant="outline"

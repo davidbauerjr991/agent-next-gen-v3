@@ -3628,7 +3628,19 @@ export function DetailsPanelAccordions({
   onViewCustomerInfo?: () => void;
   onViewInteractionHistory?: () => void;
 }) {
-  const viewAllLinkClassName = "lyra-body-sm-emphasis text-lyra-status-info-strong text-left hover:underline w-fit";
+  // Plain `lyra-body-md` + `text-lyra-fg-link` — this accordion's own
+  // "View All" link (only consumer of this local const) per two explicit
+  // requests: "increase the font size in the ... artifact ... accordion
+  // content to md" (this was `-sm-emphasis`), then "make sure the view all
+  // matches the link font in the view customer info" (dropped the
+  // `-emphasis` weight — `CustomerContextOverview`'s own "View customer
+  // info" link, lyra-ui/contact-overview.tsx, is plain `lyra-body-md`, not
+  // emphasized), and finally "remove the accent tint on view all" — this
+  // link never had a color explicitly requested; `text-lyra-status-info-
+  // strong` was pre-existing and is replaced here with the same plain
+  // `text-lyra-fg-link` every other "View ..." link in this file/
+  // lyra-ui/contact-overview.tsx already uses, rather than a special tint.
+  const viewAllLinkClassName = "lyra-body-md text-lyra-fg-link text-left hover:underline w-fit";
 
   // Files joins the same staggered fade/slide-up entrance
   // `CustomerContextOverview` drives for its own Customer Profile/
@@ -3671,6 +3683,19 @@ export function DetailsPanelAccordions({
         />
       )}
       <Accordion
+        // Open by default per explicit request — this is a single-item
+        // `Accordion` (`type="single"`, the component's own default), so
+        // its one item's own `id` ("files", kept from the pre-rename
+        // internal identifier — see that field's own comment below) is
+        // exactly the uncontrolled `defaultValue` that starts it expanded.
+        // Paired with `key={activeInteractionId}` on `DetailsPanelAccordions`
+        // itself (AgentWorkspaceAdvancedPage.tsx's two render sites) — an
+        // uncontrolled `defaultValue` only applies on mount, so without that
+        // key this component (and this prop) would only ever take effect
+        // for the very first contact ever shown, not each new one opened
+        // afterward. See bug report ("the artifacts is not open when I open
+        // a new contact from contact history").
+        defaultValue="files"
         className={cn(
           CUSTOMER_INFO_ACCORDION_CLASSNAME,
           "transition-all duration-700 ease-out",
@@ -3684,7 +3709,31 @@ export function DetailsPanelAccordions({
             // string elsewhere) rather than churning it for no reason.
             id: "files",
             title: "Artifacts",
-            icon: <Paperclip className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />,
+            // Per explicit follow-up request ("make the artifacts accordion
+            // background white and the header the same purple as the
+            // autosummary") — same `lyra-accent-purple-soft`/`-strong`
+            // pairing `CustomerContextOverview`'s own Autosummary header
+            // uses (lyra-ui/contact-overview.tsx), via `Accordion`'s new
+            // `headerClassName`/`contentClassName` props rather than a
+            // bespoke hand-rolled accordion item — this is still the
+            // shared, single-item `Accordion` every other consumer of this
+            // component gets, just with this one item's header/body tinted.
+            // `lyra-purple-soft-header-fix` (lyra-tokens.css), not the
+            // plain `bg-lyra-accent-purple-soft` class, per explicit bug
+            // report ("check if that's the correct dark mode version, it
+            // seems heavy") — see that class's own doc comment for the
+            // full reasoning (same scoped fix applied to Autosummary's
+            // header, lyra-ui/contact-overview.tsx) and its promote-to-
+            // global TODO once the corrected shade is approved.
+            headerClassName: "lyra-purple-soft-header-fix",
+            contentClassName: "bg-lyra-bg-surface-base",
+            icon: (
+              <Paperclip
+                className="h-4 w-4 text-lyra-accent-purple-strong"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            ),
             content: (
               <div className="flex flex-col gap-3">
                 {/* TODO: no destination defined yet for this link — see this
@@ -3692,7 +3741,9 @@ export function DetailsPanelAccordions({
                 <button type="button" className={viewAllLinkClassName}>
                   View All
                 </button>
-                <p className="lyra-body-sm text-lyra-fg-secondary">{FILES_EMPTY_TEXT}</p>
+                {/* lyra-body-md, not -sm — see `viewAllLinkClassName`'s own
+                    comment just above for the same request. */}
+                <p className="lyra-body-md text-lyra-fg-secondary">{FILES_EMPTY_TEXT}</p>
               </div>
             ),
           },
