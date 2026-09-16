@@ -8177,13 +8177,107 @@ export function AgentWorkspaceAdvancedPage({
                             for the full "why" and what replaced it here
                             (nothing — this branch simply has no
                             voice-specific composer-slot content of its own
-                            anymore). */}
+                            anymore, EXCEPT the "Reviewing this conversation"
+                            `ActionBar` just below, which moved the opposite
+                            direction — see its own doc comment). */}
                         {!activeInteraction.closed &&
                           activeChannelStatus !== "Closed" &&
                           activeChannelType !== "email" &&
                           activeChannelType !== "voice" && (
                             <InteractionComposer onSend={(text) => handleSendMessage(activeInteraction.id, text)} />
                           )}
+                        {/* "Reviewing this conversation" action bar — per
+                            explicit follow-up request ("we need to move the
+                            action bar to inside the container b/c it should
+                            not be viewable when the user in on other
+                            pages"). This used to render as `Container`'s own
+                            page-level sibling (alongside `VoiceCallControls`
+                            — see that render site's own doc comment for the
+                            full history), which meant it kept showing no
+                            matter which interaction — or even Settings/Home
+                            — the agent had actually navigated to. Moved
+                            here instead, inside THIS interaction's own
+                            content column, so it only ever shows while
+                            actually looking at Marcus's interaction — gated
+                            on `activeInteraction.id === MARCUS_WEBB_ID`
+                            (not `liveVoiceCallInteraction`, which persists
+                            regardless of what's on screen) precisely to
+                            drop that page-level persistence. Placed in the
+                            same slot `InteractionComposer` occupies for a
+                            chat channel — voice has no composer of its own
+                            (see this block's own doc comment above), so this
+                            is the first thing to actually fill that slot for
+                            a voice channel. lyra-ui's own `ActionBar` (icon +
+                            title + description + an `actions` slot) reused
+                            as-is rather than hand-rolling a new one; only
+                            "Takeover" is wired (`setMarcusWebbReviewing
+                            (false)` — the sole way out of review mode,
+                            matching the toast's own "Takeover" one step up
+                            the flow); "Guide Conversation"/"Transfer" have
+                            no specified behavior yet, left as inert buttons
+                            same as before the move. `h-20`/card chrome/
+                            `animate-in slide-in-from-bottom-4 fade-in-0
+                            duration-200` all carried over unchanged from
+                            this bar's previous page-level render site — see
+                            that site's own git history for why each one is
+                            there; only the GATE (this comment), LOCATION,
+                            and outer spacing actually changed: `m-2` (was
+                            `mt-2`/`w-full`, top-only) per explicit follow-up
+                            request ("add a 8px padding around the left/
+                            right and bottom of the action bar") — now that
+                            this card lives inside the interaction column
+                            instead of flush against the page background, it
+                            reads as sitting ON the page, not IN it, without
+                            an 8px gap on every side, not just the top.
+                            `w-full` dropped in favor of this column's own
+                            default flex `align-items: stretch` (unchanged
+                            from every other direct child here, e.g.
+                            `InteractionComposer` just above) — an explicit
+                            width would fight the new horizontal margin
+                            rather than leave room for it. */}
+                        {activeInteraction.id === MARCUS_WEBB_ID && marcusWebbReviewing && (
+                          // Per explicit follow-up request ("make the
+                          // background of the action bar warning color (and
+                          // border)"): `ActionBar`'s own `variant="warning"`
+                          // swaps its background/title/icon to this design
+                          // system's warning tokens in one prop, no custom
+                          // classes needed. Its bg fully covers this outer
+                          // card (see `h-full border-b-0` below), so the
+                          // outer card's OWN border — the only border
+                          // actually visible, since `ActionBar` has none on
+                          // three of its four sides — is switched to match
+                          // (`border-lyra-status-warning-strong/40`, the
+                          // exact border color/opacity `ActionBar`'s own
+                          // `warning` variant uses internally, spinner.tsx's
+                          // sibling `action-bar.tsx`) rather than left on
+                          // the neutral `border-lyra-border-subtle` this
+                          // card used for the previous blue/`info` look.
+                          <div className="m-2 h-20 shrink-0 animate-in slide-in-from-bottom-4 fade-in-0 duration-200 overflow-hidden rounded-lg border border-lyra-status-warning-strong/40 bg-lyra-bg-surface-container-subtle">
+                            <ActionBar
+                              variant="warning"
+                              className="h-full border-b-0"
+                              title="Reviewing this conversation"
+                              description="You are reviewing the AI Agent's live conversation - immediate action is requested."
+                              actions={
+                                <>
+                                  <Button variant="outline" size="md">
+                                    Guide Conversation
+                                  </Button>
+                                  <Button variant="outline" size="md">
+                                    Transfer
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="md"
+                                    onClick={() => setMarcusWebbReviewing(false)}
+                                  >
+                                    Takeover
+                                  </Button>
+                                </>
+                              }
+                            />
+                          </div>
+                        )}
                         </>
                         )}
                       </div>
@@ -9245,91 +9339,28 @@ export function AgentWorkspaceAdvancedPage({
               same pattern every other optional callback on this shared
               component already follows) rather than wiring them to act on
               the wrong interaction's panel/video window, or against no
-              interaction at all. */}
+              interaction at all.
+
+              While `marcusWebbReviewing` is on, this whole page-level bar
+              is hidden outright (no `VoiceCallControls`, and no substitute
+              either) — per explicit follow-up request ("we need to move
+              the action bar to inside the container b/c it should not be
+              viewable when the user in on other pages"): the "Reviewing
+              this conversation" `ActionBar` used to render right here, as
+              this same page-level sibling, which meant it kept showing no
+              matter which interaction (or Settings/Home) the agent had
+              actually navigated to — exactly the persistence this comment
+              praises for a real live call is wrong for "reviewing," which
+              should only be visible while actually looking at that one
+              interaction. It's moved to that interaction's own content
+              column instead (`activeInteraction.id === MARCUS_WEBB_ID &&
+              marcusWebbReviewing`, right where `InteractionComposer` would
+              sit for a chat channel — see that composer's own doc comment
+              for the "why nothing renders there for voice today" this
+              reuses). */}
           {liveVoiceCallInteraction &&
           liveVoiceCallThread &&
-          marcusWebbReviewing &&
-          liveVoiceCallInteraction.id === MARCUS_WEBB_ID ? (
-            // Per explicit request ("when the agent clicks review from the
-            // toast display an action bar component in place of the call
-            // controls" — reference screenshot: a blue info bar, "Reviewing
-            // this conversation" + description, Guide Conversation/Transfer/
-            // Takeover on the right): lyra-ui's own `ActionBar` is exactly
-            // that component (icon + title + description + an `actions`
-            // slot), so this reuses it rather than hand-rolling a new one.
-            // Sits in the exact spot `VoiceCallControls` itself renders in
-            // below (this whole block is an if/else over the same
-            // `liveVoiceCallInteraction`/`liveVoiceCallThread` gate) — so the
-            // agent still sees SOME persistent live-call bar under every
-            // top-level view while reviewing, just this one instead of full
-            // call controls. Only "Takeover" is wired: it's the sole way out
-            // of review mode (`setMarcusWebbReviewing(false)`), matching the
-            // toast's own "Takeover" one step up the flow. "Guide
-            // Conversation"/"Transfer" have no specified behavior yet — left
-            // as inert buttons (same "visible, not yet wired" treatment
-            // other not-yet-built actions get elsewhere in this file) rather
-            // than invented functionality.
-            // Per explicit follow-up request ("put the action bar in a
-            // white container the same height as the call controls"): the
-            // call-controls card itself (`VoiceCallControls`'s own inner
-            // node, just below) is an unconditional `border
-            // border-lyra-border-subtle bg-lyra-bg-surface-container-subtle
-            // rounded-lg` card, sized to content by its tallest
-            // `WideCallControlButton`s (`h-auto`/`py-2`, "roughly h-16" per
-            // that file's own doc comment) plus this card's own `py-2` —
-            // ~80px (`h-20`) total. This outer div reproduces that exact
-            // card chrome/height so the two bars line up; `overflow-hidden`
-            // so `ActionBar`'s own corners don't poke past this card's
-            // `rounded-lg`, `h-full` + `border-b-0` on `ActionBar` itself so
-            // it fills the fixed height (vertically centering its content
-            // via its own `items-center`) instead of sizing to its own
-            // `px-4 py-3` content and leaving a stray bottom border/gap.
-            // `mt-2` (8px) per explicit follow-up request ("add 8px
-            // separation between the bottom of the main container and the
-            // top of the action bar") — this bar renders as `Container`'s
-            // own sibling (see this whole block's gate, above), so without
-            // a top margin of its own it sits flush against `Container`'s
-            // bottom edge.
-            // `animate-in slide-in-from-bottom-4 fade-in-0 duration-200` per
-            // explicit follow-up request ("animate up the call controls /
-            // action bar when they are instantiated") — tailwindcss-
-            // animate's own entrance utilities, same ones this file already
-            // relies on elsewhere (e.g. the interaction column's own
-            // `animate-in fade-in-0 duration-200`, above) for a fresh-mount
-            // transition. This div (and `VoiceCallControls` below, its
-            // sibling branch of the same ternary) only ever mounts when
-            // `liveVoiceCallInteraction`/`liveVoiceCallThread` actually
-            // becomes true, or when switching between this action bar and
-            // full call controls (Review/Takeover) — a genuinely fresh DOM
-            // node each time, at the same tree position, so the animation
-            // replays on its own every time without needing a `key` to force
-            // a remount.
-            <div className="mt-2 h-20 w-full shrink-0 animate-in slide-in-from-bottom-4 fade-in-0 duration-200 overflow-hidden rounded-lg border border-lyra-border-subtle bg-lyra-bg-surface-container-subtle">
-              <ActionBar
-                variant="info"
-                className="h-full border-b-0"
-                title="Reviewing this conversation"
-                description="You are reviewing the AI Agent's live conversation - immediate action is requested."
-                actions={
-                  <>
-                    <Button variant="outline" size="md">
-                      Guide Conversation
-                    </Button>
-                    <Button variant="outline" size="md">
-                      Transfer
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="md"
-                      onClick={() => setMarcusWebbReviewing(false)}
-                    >
-                      Takeover
-                    </Button>
-                  </>
-                }
-              />
-            </div>
-          ) : liveVoiceCallInteraction && liveVoiceCallThread ? (
+          !(marcusWebbReviewing && liveVoiceCallInteraction.id === MARCUS_WEBB_ID) ? (
             <VoiceCallControls
               // Per explicit follow-up request/reference screenshot, now
               // that this bar sits directly on the page background instead
@@ -9347,11 +9378,10 @@ export function AgentWorkspaceAdvancedPage({
               // padding axes) rather than fighting them. `animate-in
               // slide-in-from-bottom-4 fade-in-0 duration-200` per explicit
               // follow-up request ("animate up the call controls / action
-              // bar when they are instantiated") — see the review
-              // `ActionBar`'s own identical classes (this ternary's other
-              // branch, just above) for the full reasoning; same treatment
-              // here since this component mounts fresh under the same
-              // conditions.
+              // bar when they are instantiated") — tailwindcss-animate's own
+              // entrance utilities, replaying on their own every time this
+              // mounts fresh (a real call starting, or `marcusWebbReviewing`
+              // switching back to `false`) without needing a `key`.
               className="bg-transparent px-0 pt-2 pb-0 animate-in slide-in-from-bottom-4 fade-in-0 duration-200"
               onHangUp={() => {
                 setInteractions((prev) =>
