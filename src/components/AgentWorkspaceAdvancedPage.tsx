@@ -8511,7 +8511,23 @@ export function AgentWorkspaceAdvancedPage({
                         }}
                         selectedEntryId={selectedContactHistoryEntry?.id ?? null}
                         historyByRange={contactHistoryByRange}
-                        onOpenAllContacts={handleOpenAllContacts}
+                        // `onOpenAllContacts` intentionally omitted — per
+                        // explicit request ("remove all contacts button from
+                        // the contact history in the home dashboard"). This
+                        // card's own `headerTitleBadge` only renders its
+                        // "All Contacts" button when this prop is passed
+                        // (agent-next-gen-contact-history.tsx's own
+                        // `onOpenAllContacts && (...)` check), so leaving it
+                        // out removes the button with no changes needed to
+                        // that shared component. `handleOpenAllContacts`
+                        // itself (below) and the standalone "All Contacts"
+                        // view it opens (`showAllContacts`, this file's own
+                        // `key="all-contacts"` branch) are left in place
+                        // rather than deleted, same "may come back later"
+                        // treatment this dashboard's own removed "Latest
+                        // Cases" section gets (its own doc comment, just
+                        // above) — only this one entry point into it is
+                        // gone now.
                       />
                     </div>
 
