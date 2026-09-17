@@ -3465,6 +3465,7 @@ const FILES_EMPTY_TEXT = "No artifacts on this interaction yet.";
    already use, for a visually identical "fixed to the bottom" treatment. */
 export function useSessionDetailsTabContent({
   sessionContact,
+  onEditClick,
 }: {
   /** The actual session "View Details" was clicked on (or the current
    *  in-progress one for voice) — `null` while none has been picked yet
@@ -3473,6 +3474,14 @@ export function useSessionDetailsTabContent({
    *  falls back to a plain placeholder and `footer` stays `undefined`
    *  (nothing to save with no session loaded). */
   sessionContact: Contact | null;
+  /** Fired (in addition to this hook's own internal `sessionEditing`
+   *  becoming `true`) whenever the Edit button is clicked — for a caller
+   *  that renders this hook's `body` in more than one place sharing the
+   *  same hook instance (e.g. a docked panel AND a transient hover-preview
+   *  popover of it), this is the hook to make sure the right one is
+   *  actually visible/open when editing starts, since this hook has no
+   *  idea which of its callers' renders the agent clicked "Edit" in. */
+  onEditClick?: () => void;
 }): { body: React.ReactNode; footer: React.ReactNode } {
   const viewAllLinkClassName = "lyra-body-sm-emphasis text-lyra-status-info-strong text-left hover:underline w-fit";
 
@@ -3540,7 +3549,10 @@ export function useSessionDetailsTabContent({
           <button
             type="button"
             className={cn(viewAllLinkClassName, "inline-flex items-center gap-1.5")}
-            onClick={() => setSessionEditing(true)}
+            onClick={() => {
+              setSessionEditing(true);
+              onEditClick?.();
+            }}
           >
             <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
             Edit
@@ -3736,14 +3748,16 @@ export function DetailsPanelAccordions({
             ),
             content: (
               <div className="flex flex-col gap-3">
-                {/* TODO: no destination defined yet for this link — see this
-                    component's own top doc comment. */}
-                <button type="button" className={viewAllLinkClassName}>
-                  View All
-                </button>
                 {/* lyra-body-md, not -sm — see `viewAllLinkClassName`'s own
                     comment just above for the same request. */}
                 <p className="lyra-body-md text-lyra-fg-secondary">{FILES_EMPTY_TEXT}</p>
+                {/* "View All" sits below the artifact list (here, the empty-
+                    state text above) per explicit request, rather than above
+                    it. TODO: no destination defined yet for this link — see
+                    this component's own top doc comment. */}
+                <button type="button" className={viewAllLinkClassName}>
+                  View All
+                </button>
               </div>
             ),
           },
@@ -4063,6 +4077,7 @@ export function CustomerInformationSidePanel({
   onStartInteraction,
   focusTabOverride,
   bodyOverride,
+  footerOverride,
   headerTitleOverride,
   headerTabsOverride,
 }: {
@@ -4225,6 +4240,18 @@ export function CustomerInformationSidePanel({
    * so their own instances of this panel are completely unaffected).
    */
   bodyOverride?: React.ReactNode;
+  /**
+   * Replaces this panel's normal footer chain (the record Save/Cancel
+   * footer, the Copilot/Overview `AIInput`, or nothing) with this element
+   * instead — same "override" idea as `bodyOverride` just above, and
+   * checked at the same priority (right after `matchState`'s own footer,
+   * ahead of everything else), since a `bodyOverride`'d body (e.g. the
+   * Session tab's editable content, `useSessionDetailsTabContent`) needs
+   * its OWN Save/Cancel footer to win regardless of whatever the normal
+   * Overview tab's record-edit state happens to be. `undefined` (the
+   * default) leaves the existing footer chain completely unaffected.
+   */
+  footerOverride?: React.ReactNode;
   /**
    * Replaces the fixed "Customer Information" header title (used whenever
    * `matchState` isn't set) — per later explicit request ("put the
@@ -4550,6 +4577,8 @@ export function CustomerInformationSidePanel({
               }}
             />
           )
+        ) : footerOverride !== undefined ? (
+          footerOverride
         ) : recordDraft.isDirty || overviewEditing ? (
           <CustomerRecordSaveFooter
             onSave={() => {

@@ -209,6 +209,7 @@ export const OUTCOME_DISPOSITION_OPTIONS: DispositionOption[] = [
   { value: "Escalated to Tier 2", label: "Escalated to Tier 2", category: "Escalation" },
   { value: "Escalated to Supervisor", label: "Escalated to Supervisor", category: "Escalation" },
   { value: "Escalated to Specialist Team", label: "Escalated to Specialist Team", category: "Escalation" },
+  { value: "Flagged for Review", label: "Flagged for Review", category: "Escalation" },
   // Follow-Up
   { value: "Follow-Up Required", label: "Follow-Up Required", category: "Follow-Up" },
   { value: "Customer Callback Scheduled", label: "Customer Callback Scheduled", category: "Follow-Up" },
@@ -228,6 +229,7 @@ export const OUTCOME_DISPOSITION_OPTIONS: DispositionOption[] = [
   // Account & Billing
   { value: "Billing Dispute Resolved", label: "Billing Dispute Resolved", category: "Account & Billing" },
   { value: "Refund Processed", label: "Refund Processed", category: "Account & Billing" },
+  { value: "Exception Approved", label: "Exception Approved", category: "Account & Billing" },
   { value: "Account Information Updated", label: "Account Information Updated", category: "Account & Billing" },
   // Other
   { value: "Information Provided", label: "Information Provided", category: "Other" },
@@ -1132,6 +1134,7 @@ export function TranscriptSessionSeparator({
   showAddParticipant = true,
   transferInKebabMenu = false,
   statusAndKebabBeforeOutcome = false,
+  controlsReadOnly = false,
   channelType,
   direction,
   isNewThread = false,
@@ -1379,6 +1382,17 @@ export function TranscriptSessionSeparator({
    *  explicit follow-up request (Advanced only). Default `false` (every
    *  other call site keeps this cluster in its original DOM order). */
   statusAndKebabBeforeOutcome?: boolean;
+  /** Locks the status tag, kebab, and Outcome button — visibly present but
+   *  non-interactive (`disabled`), NOT hidden — while leaving everything
+   *  else in this row (including "Open Details Panel") untouched. Distinct
+   *  from `isClosed` (below), which additionally hides Consult/Transfer/
+   *  Add Participant/Unassign & Dismiss entirely for a session that's
+   *  genuinely over; this is for a temporary, still-open state where the
+   *  agent just shouldn't be able to change status/outcome/reach kebab
+   *  actions yet — e.g. while reviewing an AI agent's still-live
+   *  conversation before deciding whether to take it over. Per explicit
+   *  request. Default `false` (every other call site is unaffected). */
+  controlsReadOnly?: boolean;
   /** This channel's real, typed channel — passed straight through from
    *  `InteractionTranscript`'s own `channelType` prop (one instance renders
    *  every historical session for a single channel, so this is the same
@@ -1995,6 +2009,7 @@ export function TranscriptSessionSeparator({
                   variant="icon"
                   size="icon-sm"
                   title="Outcome"
+                  disabled={controlsReadOnly}
                   className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2", statusAndKebabBeforeOutcome && "order-3")}
                   onClick={(e: React.MouseEvent) => e.stopPropagation()}
                 >
@@ -2020,7 +2035,7 @@ export function TranscriptSessionSeparator({
               // `isClosed`, so a just-closed CURRENT session reads
               // identically (no icon) rather than a static disabled one.
               !isClosed && (
-                <Button variant="icon" size="icon-sm" title="Outcome" className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2", statusAndKebabBeforeOutcome && "order-3")}>
+                <Button variant="icon" size="icon-sm" title="Outcome" disabled={controlsReadOnly} className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2", statusAndKebabBeforeOutcome && "order-3")}>
                   {/* Per explicit request ("make the outcome check button
                       a solid blue circle"): swaps the outline `CircleCheck`
                       lucide icon for lyra-ui's own `SuccessIconSolid` (a
@@ -2055,10 +2070,11 @@ export function TranscriptSessionSeparator({
               // own "More Options" tooltip on its kebab (channel-row.tsx),
               // including suppressing it while the dropdown is open via
               // `kebabMenuOpen`/`onOpenChange` below, same pattern.
-              <Tooltip content="More Options" placement="bottom" disabled={kebabMenuOpen}>
+              <Tooltip content="More Options" placement="bottom" disabled={kebabMenuOpen || controlsReadOnly}>
                 <KebabMenuButton
                   ariaLabel="More Options"
                   align="right"
+                  disabled={controlsReadOnly}
                   className={statusAndKebabBeforeOutcome ? "order-2" : undefined}
                   onOpenChange={setKebabMenuOpen}
                   items={
@@ -2129,7 +2145,7 @@ export function TranscriptSessionSeparator({
                 onSelectStatus={onSelectStatus}
                 onConfirmClose={onConfirmClose}
                 onCancelClose={onCancelClose}
-                disabled={isClosed}
+                disabled={isClosed || controlsReadOnly}
                 className={cn(outcomeAfterStatus && "order-1", statusAndKebabBeforeOutcome && "order-1")}
               />
             )}
@@ -2406,6 +2422,7 @@ export function InteractionTranscript({
   showSessionAddParticipant = true,
   sessionTransferInKebabMenu = false,
   sessionStatusAndKebabBeforeOutcome = false,
+  sessionControlsReadOnly = false,
   isNewThread = false,
   isCustomerTyping = false,
   onViewSessionDetails,
@@ -2719,6 +2736,10 @@ export function InteractionTranscript({
    *  Default `false` (every other call site keeps this cluster in its
    *  original DOM order). */
   sessionStatusAndKebabBeforeOutcome?: boolean;
+  /** Passed straight through to every `TranscriptSessionSeparator` below as
+   *  `controlsReadOnly` — see that prop's own doc comment. Default `false`
+   *  (every other call site is unaffected). */
+  sessionControlsReadOnly?: boolean;
   /** True for a brand-new, agent-initiated OUTBOUND thread with no real
    *  activity yet — the caller resolves this the same way as
    *  `isFreshLaunch` (`Interaction.startedFresh`), AND-ed with "the
@@ -3049,6 +3070,8 @@ export function InteractionTranscript({
         customerCard={customerContextOverview.customerCard}
         snapshot={customerContextOverview.snapshot}
         nextBestAction={customerContextOverview.nextBestAction}
+        nextBestActionContent={customerContextOverview.nextBestActionContent}
+        nextBestActionBare={customerContextOverview.nextBestActionBare}
         // Per explicit request ("put the customer summary content inside
         // the customer profile accordion") — see `detailedSummary`'s own
         // doc comment (lyra-ui/contact-overview.tsx) for what this renders.
@@ -3486,6 +3509,30 @@ export function InteractionTranscript({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveMessages.length]);
 
+  // Auto-scroll on ANY growth of the scrollable content, not just new
+  // messages — per explicit request, the Next Best Action block (an opaque
+  // `nextBestActionContent`/`customerContextOverview` ReactNode this
+  // component knows nothing about internally) can grow on its own terms
+  // (a step list advancing, a question appearing, a photo showing up) with
+  // no change to `liveMessages` at all, so the effect above alone can't
+  // catch it. A `ResizeObserver` on `contentWrapperRef` (the `<div
+  // className="w-full">` wrapping every session's rendered content, see
+  // its own render site below) fires on any such height change, generically
+  // — same "only if already at bottom" rule as above (`isAtBottomRef`),
+  // reusing the exact same `scrollToBottom` helper. Harmless overlap with
+  // the message-specific effect above (both just call the same idempotent
+  // scroll).
+  const contentWrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = contentWrapperRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (isAtBottomRef.current) scrollToBottom("smooth");
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const scrollToLatest = () => {
     scrollToBottom("smooth");
     setIsAtBottom(true);
@@ -3537,7 +3584,7 @@ export function InteractionTranscript({
             unaffected either way — `position: sticky` resolves against the
             nearest scrolling ancestor (the `overflow-y-auto` div above),
             not against this width constraint. */}
-        <div className="w-full">
+        <div ref={contentWrapperRef} className="w-full">
           {/* Per explicit request ("let's not have multiple threads in a
               chat anymore - simply hide the ones in the existing
               assignments"): only the CURRENT session (`lastSessionId`)
@@ -3708,6 +3755,7 @@ export function InteractionTranscript({
                   showAddParticipant={showSessionAddParticipant}
                   transferInKebabMenu={sessionTransferInKebabMenu}
                   statusAndKebabBeforeOutcome={sessionStatusAndKebabBeforeOutcome}
+                  controlsReadOnly={sessionControlsReadOnly}
                   // Voice/SMS direction-aware icon — see this component's
                   // own doc comment above for the `direction`/`channelType`
                   // props feeding it.
@@ -4038,15 +4086,16 @@ export function InteractionTranscript({
       </div>
       {/* Per explicit request ("if you scroll up in the transcript, add a
           sync to live button that scrolls to the bottom of the transcript
-          (match the lyra style)"): voice gets its own "Sync to Live"
-          affordance here instead of the plain "Scroll To Latest" pill
-          every other channel keeps — solid `variant="default"` (lyra-ui's
-          own primary-filled button, matching the reference screenshot's
-          filled/white-text look) rather than `outline`, no "N New" badge
-          (voice's live transcript has no per-message unread count to show
-          — see `newMessageCount`'s own doc comment, which is chat/SMS/
-          WhatsApp-specific). Same `scrollToBottom` the "Scroll To Latest"
-          button below calls — see that function's own doc comment.
+          (match the lyra style)"): voice gets its own floating scroll-to-
+          bottom affordance here — originally its own "Sync to Live" label
+          in a solid `variant="default"` button, later corrected per
+          explicit follow-up to read "Scroll To Latest" in the same
+          `outline` style the non-voice button below uses, for consistency
+          across channels. Still no "N New" badge (voice's live transcript
+          has no per-message unread count to show — see `newMessageCount`'s
+          own doc comment, which is chat/SMS/WhatsApp-specific). Same
+          `scrollToBottom` the "Scroll To Latest" button below calls — see
+          that function's own doc comment.
           `sticky`, NOT `absolute` like the "Scroll To Latest" version
           below — per explicit bug report ("the button should not scroll -
           it is currently scrolling"). `absolute` anchors to the nearest
@@ -4078,13 +4127,13 @@ export function InteractionTranscript({
       {!isAtBottom && channelType === "voice" && (
         <div className="pointer-events-none sticky bottom-4 z-[2] -mb-9 flex justify-center">
           <Button
-            variant="default"
+            variant="outline"
             size="lg"
             onClick={scrollToLatest}
-            className="pointer-events-auto rounded-full shadow-lg"
+            className="pointer-events-auto rounded-full bg-lyra-bg-surface-base text-lyra-fg-default shadow-lg"
           >
             <ArrowDown className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-            Sync to Live
+            Scroll To Latest
           </Button>
         </div>
       )}
