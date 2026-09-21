@@ -20,6 +20,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import {
+  AIInput,
   AppHeader,
   AppNameMenu,
   CXoneLogo,
@@ -223,8 +224,29 @@ import { VoiceCallControls } from "@/components/agent-next-gen-voice-call-contro
 // still chat-only, unchanged, since Premium's own "L" trigger and its
 // whole scripted Copilot walkthrough still depend on it being a chat.
 import { MARCUS_WEBB_ID, MARCUS_WEBB_CUSTOMER_ID, MARCUS_WEBB_CUSTOMER_NAME } from "@/components/agent-next-gen-marcus-webb-scenario";
-import { MarcusWebbNextBestActionCard } from "@/components/agent-next-gen-marcus-webb-next-best-action-card";
+import {
+  MarcusWebbNextBestActionCard,
+  MarcusWebbActionDetailPanelBody,
+  type MarcusWebbActionLogEntry,
+} from "@/components/agent-next-gen-marcus-webb-next-best-action-card";
+import {
+  KnowledgeArticleDetailPanelBody,
+  KnowledgeArticleLinkDetailBody,
+  type KnowledgeArticleCardData,
+  type KnowledgeArticleWebLink,
+} from "@/components/agent-next-gen-knowledge-article-card";
 import { VideoCallWindow, VideoCallFullScreen } from "@/components/agent-next-gen-video-window";
+// The Marcus Webb action-log detail panel and the "Do Something"
+// knowledge-article panel share ONE floating `InteriorPanel` overlay
+// (see `selectedDetailPanelContent`'s own doc comment at its render
+// site) — this is the union of everything that ONE panel can show.
+// `"article-link"` is reached by navigating WITHIN that panel (its own
+// `onBack`), not by opening a second, nested one — nesting isn't
+// supported anywhere in this app.
+type DetailPanelContent =
+  | { kind: "action-log"; entry: MarcusWebbActionLogEntry }
+  | { kind: "article"; article: KnowledgeArticleCardData }
+  | { kind: "article-link"; article: KnowledgeArticleCardData; link: KnowledgeArticleWebLink };
 import appIcon from "@/assets/app-icon.svg";
 import damagedHeadphonesImg from "@/assets/headphones.jpg";
 import {
@@ -736,6 +758,23 @@ function resolveInteractionLastCustomerResponseLabel(
   return latest ? formatCompactDateTime(latest) : undefined;
 }
 
+// Per explicit request, hold off on auto-dismissing the Marcus Webb
+// assignment once its scripted flow completes, while the agent is
+// testing — "hide, don't destroy": `onAssignmentClosed`'s call site
+// below stays fully wired, just gated on this flag. Flip back to `true`
+// to re-enable.
+const MARCUS_WEBB_AUTO_DISMISS_ON_CLOSE = false;
+
+// Per explicit request ("remove the ability to hang up from the
+// interactionNavItem overall") — "hide, don't destroy": the left-nav
+// channel builder's own `onEndCall` computation stays fully wired, just
+// gated off by this flag. Hanging up a call still works from the main
+// call-controls bar's own "End Call" button (`VoiceCallControls`'s
+// `onHangUp`) regardless of this flag — that's a separate, independent
+// code path that isn't affected either way. Flip back to `true` to
+// restore the left-nav's own standalone End Call icon.
+const SHOW_END_CALL_IN_INTERACTION_NAV_ROWS = false;
+
 /* ── MARCUS_WEBB_CALL_TRANSCRIPT ──
  *  Turn-by-turn transcript for Marcus's voice call, wired into his
  *  `Interaction.liveMessages.voice` (see the "L" keydown handler, below)
@@ -858,12 +897,34 @@ const MARCUS_WEBB_CALL_TRANSCRIPT: TranscriptMessage[] = [
  *  gets Popover's own existing `data-[side=top]:slide-in-from-bottom-2` /
  *  `slide-out-to-bottom-1` animate-in/out classes (popover.tsx) for free,
  *  with zero new CSS needed here. This component is purely the card's own
- *  content/copy. */
+ *  content/copy.
+ *
+ *  Per a later explicit follow-up request ("hide the contact snapshot and
+ *  review/takeover buttons and add a close button to the top right of the
+ *  toast. In addition, load the assignment tile in the left nav when the
+ *  toast comes in") — this reverses the "don't add the assignment until an
+ *  action is taken" behavior described above: the "L" keydown handler now
+ *  commits Marcus's interaction (and sets `marcusWebbReviewing`) the
+ *  instant the toast opens, not when Review/Takeover is clicked (see that
+ *  handler's own doc comment). With the tile already in the left nav, this
+ *  card became a lighter notice — Contact Snapshot and Takeover are hidden
+ *  behind `SHOW_MARCUS_NOTICE_DETAILS` below ("hide, don't destroy," same
+ *  as `SHOW_APPROVE_PROCESSING_STEPS`/`SHOW_DO_SOMETHING_INPUT` elsewhere
+ *  in this file), and a real close button was added. Per a further
+ *  explicit follow-up ("add the Review button back (dismiss the toast when
+ *  review is clicked and navigate to the assignment)"), Review itself is
+ *  unconditional again — it's the fast path straight into the
+ *  already-loaded tile, while Takeover stays reachable only from inside
+ *  the interaction (the "Reviewing this conversation" action bar's own
+ *  independent Takeover button, which flips `marcusWebbReviewing` false). */
+const SHOW_MARCUS_NOTICE_DETAILS = false;
+
 function MarcusWebbIncomingCallNotice({
   elapsedSeconds,
   contextOverview,
   onReview,
   onTakeover,
+  onClose,
 }: {
   elapsedSeconds: number;
   /** Same shape `buildCustomerContextOverviewInfo` returns for every other
@@ -872,10 +933,18 @@ function MarcusWebbIncomingCallNotice({
    *  (`marcusWebbContextOverviewInfo`, below `agentStatus`) rather than
    *  recomputed per render, same reasoning as that memo. */
   contextOverview: ReturnType<typeof buildCustomerContextOverviewInfo>;
-  // No `onDismiss` — per explicit request, this notice can no longer be
-  // dismissed on its own; Review/Takeover are the only two ways out.
+  // `onReview` drives the always-visible Review button below. `onTakeover`
+  // stays wired for whenever `SHOW_MARCUS_NOTICE_DETAILS` (below) is back
+  // on — see that flag's own doc comment.
   onReview: () => void;
   onTakeover: () => void;
+  /** Per explicit follow-up request ("add a close button to the top right
+   *  of the toast") — the one way to dismiss this notice now that Review/
+   *  Takeover are hidden by default. Only closes the notice itself; the
+   *  interaction is already committed into `interactions` regardless (see
+   *  the "L" keydown handler), so this doesn't need to touch anything
+   *  else. */
+  onClose: () => void;
 }) {
   const mm = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
   const ss = String(elapsedSeconds % 60).padStart(2, "0");
@@ -937,7 +1006,9 @@ function MarcusWebbIncomingCallNotice({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="lyra-heading-sm text-lyra-fg-default truncate">Marcus Webb</span>
-            <Tag variant="critical" className="shrink-0">Escalated</Tag>
+            {/* Per explicit follow-up request ("remove the pink rounded
+                rectangle to the right of marcus webb in the toast") — the
+                "Escalated" `Tag` that used to sit here is gone. */}
             <span className="shrink-0 rounded-lyra-sm border border-lyra-border-subtle px-1.5 py-0.5 lyra-body-sm text-lyra-fg-secondary tabular-nums">
               {mm}:{ss}
             </span>
@@ -946,13 +1017,28 @@ function MarcusWebbIncomingCallNotice({
             Voice Call escalation from AI Agent
           </p>
         </div>
-        {/* No close/"×" button here — per explicit request, this notice
-            cannot be dismissed by the agent; it only goes away once they
-            take an explicit action on it (Review or Takeover). See the
-            render site's own `Popover` doc comment (`onEscapeKeyDown`/
-            `onInteractOutside` both preventDefault for the same reason). */}
+        {/* Per explicit follow-up request ("add a close button to the top
+            right of the toast") — last flex child of this `items-start`
+            row, so it pins to the card's top-right corner for free with no
+            extra positioning. `ActionIconButton` + `Tooltip` + lucide `X`,
+            same icon-only-action convention this file already uses
+            elsewhere (e.g. the docked panel's own "Full Screen" button).
+            The render site's own `Popover` still `preventDefault()`s
+            Escape/outside-click (see that doc comment) — this button is
+            the one deliberate way to dismiss the notice now. */}
+        <Tooltip content="Close" placement="top">
+          <ActionIconButton
+            aria-label="Close"
+            size="sm"
+            onClick={onClose}
+            className="shrink-0 text-lyra-fg-secondary hover:text-lyra-fg-secondary"
+          >
+            <X className="h-4 w-4" strokeWidth={1.5} />
+          </ActionIconButton>
+        </Tooltip>
       </div>
 
+      {SHOW_MARCUS_NOTICE_DETAILS && (
       <div className="flex flex-col gap-3 px-4 pb-4 max-h-[70vh] overflow-y-auto">
         <Container variant="info" className="overflow-hidden p-0">
           <AccordionHeadless
@@ -1050,14 +1136,25 @@ function MarcusWebbIncomingCallNotice({
           </AccordionHeadless>
         </Container>
       </div>
+      )}
 
+      {/* Per a later explicit follow-up request ("add the Review button
+          back (dismiss the toast when review is clicked and navigate to
+          the assignment)") — Review is unconditional again, unlike
+          Takeover (still gated behind `SHOW_MARCUS_NOTICE_DETAILS`,
+          untouched): the agent can jump straight into Marcus's already-
+          loaded tile from here, but still takes over via the "Reviewing
+          this conversation" action bar's own button once inside, not a
+          second toast-level shortcut. */}
       <div className="flex items-center gap-2 border-t border-lyra-border-subtle p-3">
         <Button variant="outline" size="md" className="flex-1" onClick={onReview}>
           Review
         </Button>
-        <Button variant="default" size="md" className="flex-1" onClick={onTakeover}>
-          Takeover
-        </Button>
+        {SHOW_MARCUS_NOTICE_DETAILS && (
+          <Button variant="default" size="md" className="flex-1" onClick={onTakeover}>
+            Takeover
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -2304,17 +2401,17 @@ export function AgentWorkspaceAdvancedPage({
   // effect — the dependency array is evaluated as part of this call, so
   // referencing a not-yet-declared `const` would be a hard TDZ error.
   const [marcusWebbTriggered, setMarcusWebbTriggered] = useState(false);
-  // Per explicit request ("open a popover/toast that displays [a Copilot
-  // case-summary card]... do not add the assignment to the assignment
-  // panel until an action is taken on the popover toast"): pressing "L" no
-  // longer drops Marcus straight into `interactions` — it only builds the
-  // `Interaction` (unchanged from before) and holds it here, then opens
+  // Builds Marcus's `Interaction` and holds it here before opening
   // `MarcusWebbIncomingCallNotice` (this file's own top-of-file component —
-  // see its doc comment for the full "why"). The interaction itself isn't
-  // committed to `interactions` until the agent clicks "Review" or
-  // "Takeover" on that card (`commitMarcusWebbInteraction`, below) — a plain
-  // ref, not state, since holding it never needs to trigger a re-render on
-  // its own (only `marcusWebbNoticeOpen` toggling does that).
+  // see its doc comment for the full "why"). Per a later explicit
+  // follow-up request ("load the assignment tile in the left nav when the
+  // toast comes in"), the "L" handler now commits this into `interactions`
+  // immediately (`commitMarcusWebbInteraction`, below) rather than waiting
+  // for "Review"/"Takeover" — this ref still exists as the one shared
+  // source `commitMarcusWebbInteraction` reads from no matter which caller
+  // fires it, and stays a plain ref (not state) since holding it never
+  // needs to trigger a re-render on its own (only `marcusWebbNoticeOpen`
+  // toggling does that).
   const marcusWebbPendingInteractionRef = useRef<Interaction | null>(null);
   const [marcusWebbNoticeOpen, setMarcusWebbNoticeOpen] = useState(false);
   // Per explicit follow-up request ("when the agent clicks review from the
@@ -2358,12 +2455,14 @@ export function AgentWorkspaceAdvancedPage({
   }, [marcusWebbNoticeOpen]);
   // Feeds `MarcusWebbIncomingCallNotice`'s own Customer Profile/Contact
   // Snapshot content (`DetailsPanelAccordions`, via that card's
-  // `contextOverview` prop) — same `buildCustomerContextOverviewInfo` call
+  // `contextOverview` prop — currently unused while `SHOW_MARCUS_NOTICE_
+  // DETAILS` is off) — same `buildCustomerContextOverviewInfo` call
   // `customerContextOverviewInfo` (above) makes for whichever interaction
   // is actually active, just for Marcus specifically and computed once up
   // front, since this card needs to show that content BEFORE he's ever
-  // `activeInteraction` (he isn't added to `interactions` at all until the
-  // agent acts on the card — see `marcusWebbPendingInteractionRef` above).
+  // `activeInteraction` (added to `interactions` the instant the toast
+  // opens now, but not selected/active until the agent clicks his tile —
+  // see `marcusWebbPendingInteractionRef` above).
   // `isKnownCustomer=false` — Marcus is deliberately NOT a
   // `CREATE_NEW_CUSTOMERS` record (agent-next-gen-marcus-webb-scenario.ts's
   // own top-of-file comment), so this renders the exact same "no prior
@@ -2381,12 +2480,12 @@ export function AgentWorkspaceAdvancedPage({
       ),
     []
   );
-  // Actually adds Marcus's held interaction into `interactions` — called
-  // from both "Review" and "Takeover" (see the notice's own render site),
-  // never from "L" itself anymore. There's no dismiss/"×" path left on the
-  // notice at all now (per explicit request, it can only be resolved via
-  // Review or Takeover) — so this is always eventually called once the
-  // notice is showing, never left to just discard the pending interaction.
+  // Adds Marcus's held interaction into `interactions` — called from the
+  // "L" keydown handler itself now (per later explicit follow-up request,
+  // immediately when the toast opens, not gated behind a button click),
+  // and still from "Review"/"Takeover" too (see the notice's own render
+  // site) for when those are ever un-hidden — the dedup-by-id guard below
+  // makes calling this more than once harmless.
   const commitMarcusWebbInteraction = () => {
     const interaction = marcusWebbPendingInteractionRef.current;
     if (!interaction) return;
@@ -2452,11 +2551,23 @@ export function AgentWorkspaceAdvancedPage({
         // every other write (`handleInteractionStatusChange`).
         threadStatuses: { voice: "Open" },
       };
-      // Held, not committed — see `marcusWebbPendingInteractionRef`'s own
-      // doc comment above for the full "why".
+      // Per explicit follow-up request ("load the assignment tile in the
+      // left nav when the toast comes in"): committed immediately now,
+      // rather than held until Review/Takeover is clicked — reuses
+      // `commitMarcusWebbInteraction` unchanged (its own dedup-by-id guard
+      // makes it harmless if Review/Takeover ever call it again too, see
+      // that function's own doc comment). `setMarcusWebbReviewing(true)`
+      // right alongside it, so the tile's own Marcus-specific
+      // `controlsDisabled`/locked-kebab-and-outcome treatment is correct
+      // the instant it appears, not just after a click — same value
+      // `onReview` used to set. Deliberately NOT setting
+      // `activeInteractionId` here: the tile should just show up in the
+      // left nav, the agent still clicks it themselves to open it.
       marcusWebbPendingInteractionRef.current = interaction;
       setMarcusWebbNoticeOpen(true);
       setMarcusWebbTriggered(true);
+      commitMarcusWebbInteraction();
+      setMarcusWebbReviewing(true);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -2587,6 +2698,52 @@ export function AgentWorkspaceAdvancedPage({
   // state's own render site (further down) for the overlay itself, and
   // `focusCustomerPanelTab`'s own doc comment for the click-side wiring.
   const [customerInfoOverlayOpen, setCustomerInfoOverlayOpen] = useState(false);
+  // The Marcus Webb action-log detail panel and the "Do Something"
+  // knowledge-article panel used to be two SEPARATE floating
+  // `InteriorPanel` overlays with two separate pieces of state — per
+  // explicit follow-up request ("toggling between refund approved and
+  // tablet warranty coverage should change the content of the container
+  // — like how the home page works"), they're now ONE shared overlay
+  // (own render site further down) showing exactly one of three "views"
+  // at a time. `DetailPanelContent` is that union; `article-link` is the
+  // "drilled into one of an article's web links" view — reached by
+  // navigating WITHIN this one panel (via its new `onBack`, see
+  // `interior-panel.tsx`) rather than opening a second, nested panel
+  // (nesting isn't supported anywhere in this app).
+  const [selectedDetailPanelContent, setSelectedDetailPanelContent] = useState<DetailPanelContent | null>(null);
+  // Mirrors `selectedDetailPanelContent` but never resets to `null` — per
+  // explicit bug report (on the original single-purpose version of this
+  // panel), it used to go blank the instant it started closing (content
+  // was driven directly off the nullable selection state). This keeps
+  // showing the last real content throughout the close animation; `open`
+  // itself still tracks `selectedDetailPanelContent` directly.
+  const [lastDetailPanelContent, setLastDetailPanelContent] = useState<DetailPanelContent | null>(null);
+  useEffect(() => {
+    if (selectedDetailPanelContent) setLastDetailPanelContent(selectedDetailPanelContent);
+  }, [selectedDetailPanelContent]);
+  // Toggle-open: clicking whatever's ALREADY showing closes the panel
+  // (same semantics `selectedActionLogEntryId`'s own doc comment already
+  // established); clicking something else just swaps this one panel's
+  // content, per the "like the home page" request above.
+  const openDetailPanelContent = (next: DetailPanelContent) => {
+    setSelectedDetailPanelContent((current) => {
+      if (!current) return next;
+      if (current.kind === "action-log" && next.kind === "action-log" && current.entry.id === next.entry.id) {
+        return null;
+      }
+      if (current.kind === "article" && next.kind === "article" && current.article.id === next.article.id) {
+        return null;
+      }
+      return next;
+    });
+  };
+  // The DOM node the Next Best Action card's currently-active question
+  // portals into (see `MarcusWebbNextBestActionCard`'s own
+  // `questionSlotElement` doc comment) — fixed to the bottom of the
+  // interaction column, per explicit request, instead of scrolling with
+  // the rest of the transcript. A callback ref (not a plain `useRef`) so
+  // it's guaranteed set by the first render that needs to portal into it.
+  const [marcusQuestionSlotEl, setMarcusQuestionSlotEl] = useState<HTMLDivElement | null>(null);
   // "View Details"'s target session — voice and every other channel each
   // get their own single-purpose state (`selectedVoiceDetailsSession`/
   // `selectedSessionDetails`, kept separate rather than unified — the two
@@ -7013,44 +7170,75 @@ export function AgentWorkspaceAdvancedPage({
                     // formula exactly. Outcome (above) stays visible the
                     // whole time regardless, per the original request.
                     showConsultTransfer: false,
-                    showKebab: c.type === "voice" ? false : undefined,
+                    // Per explicit follow-up request ("always have the more
+                    // options available in the interactionNavItem") — the
+                    // kebab is unconditional now for every row, superseding
+                    // the earlier Marcus-only exception to a "hide kebab for
+                    // every voice channel" rule (a reopened Contact History
+                    // voice assignment, e.g. Nathan Cole, used to have no
+                    // kebab at all — that's the bug report this fixed).
+                    // `undefined` lets `ChannelRow`'s own default (`true`)
+                    // apply everywhere, voice or not, Marcus or not.
+                    showKebab: undefined,
                     alwaysShowOutcome: c.type === "voice" ? true : undefined,
-                    showDismissButton: c.type === "voice" ? interaction.closed || interaction.voiceCallEnded : undefined,
-                    // Per explicit follow-up request ("add an end call solid
-                    // red icon to the right of the outcome check buttons in
-                    // active call interactionNavitems") — mirrors
-                    // `AgentNextGenPage.tsx`'s own identical `onEndCall`
-                    // wiring: the exact same "is this channel a still-live
-                    // voice call" condition `showDismissButton` above negates
-                    // (`c.type === "voice" && !interaction.closed &&
-                    // !interaction.voiceCallEnded`) — including while it's on
-                    // hold (navigated away from), since that's still a live,
-                    // not-yet-hung-up call. Reuses the exact same
-                    // `voiceCallEnded` flag/state update the record-header's
-                    // own Hang Up button sets (see the `onHangUp` call site
-                    // above) rather than a parallel mechanism, so
-                    // `isOnVoiceCall`/the call-controls bar/Unassign & Dismiss
-                    // all still treat this call as ended immediately either
-                    // way. Only the ACTIVE interaction has a voice/video
-                    // window open to close — ending an on-hold call (a
-                    // different, inactive interaction) has no such window to
-                    // touch. `ChannelRow`/`InteractionChannel.onEndCall`
-                    // (lyra-ui, channel-row.tsx) already support this prop —
-                    // Phase 1 already wired it, this just mirrors it here.
-                    // Per explicit follow-up request ("if the agent is
-                    // reviewing an assignment the hang up should not be
-                    // available in the interactionNavItem"): while
-                    // `marcusWebbReviewing` is on, the agent is only
-                    // reviewing the AI agent's own live call, not actually
-                    // in control of it — the "Reviewing this conversation"
-                    // action bar's own doc comment covers the same idea for
-                    // the record-header's Hang Up (`VoiceCallControls`,
-                    // hidden entirely in that state) — so this tile's own
-                    // Hang Up icon is withheld here too (`undefined`, same
-                    // as every other "not available right now" case this
-                    // condition already covers) rather than letting the
-                    // agent end a call they haven't taken over yet.
+                    // "Unassign & Dismiss" is stripped from every row's
+                    // kebab dropdown outright (`ChannelRow`'s own
+                    // `stripPromotedChannelRowActions`, channel-row.tsx), so
+                    // the standalone icon is this action's only path from
+                    // the left nav now — unconditional for every non-voice
+                    // channel (chat/email/sms/etc. can be dismissed any
+                    // time), but per explicit follow-up request ("calls
+                    // cannot be dismissed until they are ended"), still
+                    // gated for voice on `interaction.closed`/
+                    // `voiceCallEnded` for every voice channel EXCEPT
+                    // Marcus. Per a later, explicit follow-up request
+                    // ("once the action is taken by the agent in the marcus
+                    // webb contact then add the dismiss and unassign icon
+                    // so the agent can remove it from their assignments"),
+                    // Marcus's own tile is a deliberate, scoped exception to
+                    // that general rule — once his one channel reads
+                    // "Resolved" (`handleMarcusWebbResolved`, fired by both
+                    // the Approve path AND the reject-then-remedy path's
+                    // `onRemedyIssued`), the agent can dismiss the
+                    // assignment without first hanging up the call. Every
+                    // OTHER voice channel still needs `closed`/
+                    // `voiceCallEnded` — this isn't a reversal of the
+                    // general rule, just a named carve-out for this one
+                    // scripted scenario.
+                    showDismissButton:
+                      c.type === "voice"
+                        ? interaction.closed ||
+                          interaction.voiceCallEnded ||
+                          (interaction.id === MARCUS_WEBB_ID && interaction.threadStatuses?.[c.id] === "Resolved")
+                        : true,
+                    // Locks the kebab and Outcome — visibly present but
+                    // non-interactive — for as long as the agent is only
+                    // reviewing Marcus's still-live AI-agent call
+                    // (`marcusWebbReviewing`), same "hasn't taken over yet"
+                    // gate `onEndCall` used to use below. Scoped to Marcus
+                    // only; every other channel's cluster is unaffected
+                    // (`undefined`). Deliberately doesn't cover the standalone
+                    // Dismiss icon above — dismissing was never part of this
+                    // lock, on either this left-nav copy or the transcript
+                    // header's own identical `controlsReadOnly` idea.
+                    controlsDisabled: interaction.id === MARCUS_WEBB_ID ? marcusWebbReviewing : undefined,
+                    // Per explicit follow-up request ("remove the ability to
+                    // hang up from the interactionNavItem overall") — "hide,
+                    // don't destroy," same pattern as
+                    // `HIDDEN_OUTBOUND_GROUP_IDS`/
+                    // `MARCUS_WEBB_AUTO_DISMISS_ON_CLOSE`/
+                    // `SHOW_APPROVE_PROCESSING_STEPS` elsewhere in this file:
+                    // `SHOW_END_CALL_IN_INTERACTION_NAV_ROWS` (defined near
+                    // those other flags) gates the whole computed handler
+                    // below off, rather than deleting it — the real, still
+                    // fully-working way to hang up a live call is the main
+                    // call-controls bar's own "End Call" button
+                    // (`VoiceCallControls`'s `onHangUp`, which independently
+                    // sets this exact same `voiceCallEnded` flag), so this
+                    // was always a redundant second entry point rather than
+                    // the only one.
                     onEndCall:
+                      SHOW_END_CALL_IN_INTERACTION_NAV_ROWS &&
                       c.type === "voice" &&
                       !interaction.closed &&
                       !interaction.voiceCallEnded &&
@@ -8257,6 +8445,9 @@ export function AgentWorkspaceAdvancedPage({
                                         }
                                         onDispositionUpdated={handleMarcusWebbResolved}
                                         onAssignmentClosed={() => {
+                                          // See `MARCUS_WEBB_AUTO_DISMISS_ON_CLOSE`'s own doc
+                                          // comment — held off for now while testing.
+                                          if (!MARCUS_WEBB_AUTO_DISMISS_ON_CLOSE) return;
                                           handleDismissInteraction(MARCUS_WEBB_ID);
                                           // Re-arms "L" — see `marcusWebbTriggered`'s own doc
                                           // comment (it's otherwise a one-shot flag that's
@@ -8279,13 +8470,46 @@ export function AgentWorkspaceAdvancedPage({
                                         onCustomerRespondedToTakeover={() =>
                                           handleMarcusWebbCustomerReply("I'll take store credit.")
                                         }
-                                        onRemedyIssued={(remedy) =>
+                                        onRemedyIssued={(remedy, note) => {
                                           handleMarcusWebbHumanAgentMessage(
                                             remedy === "store-credit"
                                               ? "Perfect — I've issued the full $200 as store credit to your account; you'll see it available for your next purchase."
-                                              : "Great — I've sent a discount code for your next order to the email on file."
-                                          )
+                                              : remedy === "discount-code"
+                                                ? "Great — I've sent a discount code for your next order to the email on file."
+                                                : `Understood — I'll go ahead and take care of that: ${note?.trim()}`
+                                          );
+                                          // The reject-then-remedy path's own
+                                          // "issue answered" moment — mirrors
+                                          // `onDispositionUpdated`'s identical
+                                          // call on the Approve path
+                                          // (`handleMarcusWebbResolved`,
+                                          // below in this same file), so both
+                                          // ways of resolving Marcus's
+                                          // exception converge on the one
+                                          // shared "Resolved" signal that now
+                                          // also reveals the Unassign &
+                                          // Dismiss icon (see `showDismiss
+                                          // Button` above and `onDismiss
+                                          // Channel` below).
+                                          handleMarcusWebbResolved();
+                                        }}
+                                        onActionLogEntryOpen={(entry) =>
+                                          openDetailPanelContent({ kind: "action-log", entry })
                                         }
+                                        selectedActionLogEntryId={
+                                          selectedDetailPanelContent?.kind === "action-log"
+                                            ? selectedDetailPanelContent.entry.id
+                                            : null
+                                        }
+                                        onViewArticle={(article) =>
+                                          openDetailPanelContent({ kind: "article", article })
+                                        }
+                                        selectedArticleId={
+                                          selectedDetailPanelContent?.kind === "article"
+                                            ? selectedDetailPanelContent.article.id
+                                            : null
+                                        }
+                                        questionSlotElement={marcusQuestionSlotEl}
                                       />
                                     ),
                                     nextBestActionBare: true,
@@ -8452,9 +8676,19 @@ export function AgentWorkspaceAdvancedPage({
                           // same as the LeftNav `ChannelRow` config's own
                           // `showDismissButton` just above; mirrors
                           // `AgentNextGenPage.tsx`'s own identical gating.
+                          // Same Marcus-only exception as that LeftNav copy
+                          // too — once his channel reads "Resolved," this
+                          // icon (here, "the top right of the contact")
+                          // doesn't have to wait for the call to actually be
+                          // hung up either.
                           onDismissChannel={
                             activeChannel &&
-                            !(activeChannelType === "voice" && !activeInteraction.closed && !activeInteraction.voiceCallEnded)
+                            !(
+                              activeChannelType === "voice" &&
+                              !activeInteraction.closed &&
+                              !activeInteraction.voiceCallEnded &&
+                              !(activeInteraction.id === MARCUS_WEBB_ID && activeChannelStatus === "Resolved")
+                            )
                               ? () => {
                                   if (activeInteraction.threads.length > 1) {
                                     handleDismissChannel(activeInteraction.id, activeChannel);
@@ -8699,6 +8933,61 @@ export function AgentWorkspaceAdvancedPage({
                             />
                           </div>
                         )}
+                        </div>
+                        {/* Marcus Webb's currently-active question (and the
+                            Contact Overview accordion, while one's pending)
+                            portal here (see `MarcusWebbNextBestActionCard`'s
+                            own `questionSlotElement` doc comment). A real
+                            `shrink-0` flex sibling of the transcript wrapper
+                            above — NOT `absolute` — per explicit bug report:
+                            floating it over the transcript (an earlier
+                            attempt, chosen to avoid "scrunching" the
+                            transcript's scroll height) instead covered real
+                            content behind it (the customer's photo) and, with
+                            no scroll mechanism of its own inside an
+                            `overflow-hidden` ancestor, silently clipped a
+                            tall options list with no way to reach the last
+                            option. `max-h-[50vh] overflow-y-auto` is the
+                            fix: bounded so the transcript above always keeps
+                            a fair share of the column, but scrollable so a
+                            tall card is always fully reachable instead of
+                            clipped. `empty:hidden` collapses it to nothing
+                            (matching the old "costs nothing while idle"
+                            behavior) whenever nothing's actually portaled
+                            into it. `max-w-[768px] mx-auto px-6` matches the
+                            transcript's own centered message column exactly
+                            (agent-next-gen-transcript.tsx). */}
+                        <div
+                          ref={setMarcusQuestionSlotEl}
+                          className="mx-auto flex w-full max-w-[768px] shrink-0 flex-col gap-3 overflow-y-auto px-6 pb-3 empty:hidden max-h-[50vh]"
+                        >
+                          {/* Per explicit request, every interaction OTHER
+                              than Marcus Webb gets an inert "ask a
+                              question" field here instead of this slot
+                              just collapsing to nothing — Marcus's own
+                              card (elsewhere in this same return, when
+                              active) portals its scripted questions AND
+                              its own real ask-flow into this same node via
+                              `questionSlotElement`; the two are mutually
+                              exclusive by construction (only one
+                              interaction is ever active), so there's never
+                              a collision between this ordinary child and
+                              that portal's writes. Fully uncontrolled/
+                              inert — no `value`/`onChange`/`onSubmit` —
+                              same "present but not wired to anything real
+                              yet" pattern already used for Copilot's own
+                              `AIInput` footer in
+                              agent-next-gen-customer-info-panel.tsx.
+                              Gated like `InteractionComposer` just below
+                              on closed/read-only, but per explicit
+                              decision NOT excluded for voice/email — this
+                              is a distinct affordance, not a reply
+                              mechanism. */}
+                          {activeInteraction.id !== MARCUS_WEBB_ID &&
+                            !activeInteraction.closed &&
+                            activeChannelStatus !== "Closed" && (
+                              <AIInput singleLine helperText="" placeholder="Ask a question..." className="w-full" />
+                            )}
                         </div>
                         {/* `activeChannelType !== "email" && !== "voice"` —
                             per explicit request, hidden for now on Email
@@ -9817,6 +10106,88 @@ export function AgentWorkspaceAdvancedPage({
               </InteriorPanel>
             )}
 
+            {/* Marcus Webb action-log detail / "Do Something" knowledge-
+                article detail — ONE shared floating `InteriorPanel`
+                overlay, same "separate overlay, doesn't disturb the
+                docked panel's own state" mechanic as the "View customer
+                info" overlay just above (per explicit request, "the same
+                overlay type of panel as when customer info is clicked
+                from the details panel"). Per a LATER explicit follow-up
+                ("toggling between refund approved and tablet warranty
+                coverage should change the content of the container —
+                like how the home page works"), this used to be TWO
+                separate overlays (one per content kind) — now it's one,
+                switching between `DetailPanelContent`'s three "views"
+                (see that type's own doc comment). `onBack` (new on
+                `InteriorPanel`/`ContainerHeader` — see interior-panel.tsx/
+                container-header.tsx) renders a back arrow to the left of
+                the title, shown only for the `"article-link"` view, to
+                return to the article without a second nested panel
+                (nesting isn't supported).
+
+                Per explicit bug report (on the original single-purpose
+                version of this panel), this used to gate the WHOLE
+                `InteriorPanel` on its own nullable selection state — the
+                same value also driving `open` — so the instant it
+                closed, that state became `null` and React unmounted the
+                panel in that same render, skipping its slide/fade
+                animation entirely (that animation depends on the
+                component staying mounted across an `open=true` →
+                `open=false` transition — see `interior-panel.tsx`'s own
+                width/opacity transition logic). Gating on
+                `activeInteraction` instead (mirroring
+                `customerInfoOverlayOpen`'s own gate just above) keeps it
+                mounted for the interaction's whole lifetime;
+                `lastDetailPanelContent` (never nulled) keeps its content
+                from going blank mid-close. */}
+            {activeInteraction && (
+              <InteriorPanel
+                open={!!selectedDetailPanelContent}
+                onClose={() => setSelectedDetailPanelContent(null)}
+                allowFullScreen
+                absoluteBreakpoint={Infinity}
+                className="z-[500]"
+                headerTitle={
+                  lastDetailPanelContent?.kind === "action-log"
+                    ? lastDetailPanelContent.entry.title
+                    : lastDetailPanelContent?.kind === "article"
+                      ? lastDetailPanelContent.article.title
+                      : lastDetailPanelContent?.kind === "article-link"
+                        ? lastDetailPanelContent.link.title
+                        : undefined
+                }
+                headerSubhead={
+                  lastDetailPanelContent?.kind === "action-log" ? lastDetailPanelContent.entry.timestamp : undefined
+                }
+                onBack={
+                  lastDetailPanelContent?.kind === "article-link"
+                    ? () =>
+                        setSelectedDetailPanelContent({ kind: "article", article: lastDetailPanelContent.article })
+                    : undefined
+                }
+                closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
+              >
+                {lastDetailPanelContent?.kind === "action-log" && (
+                  <MarcusWebbActionDetailPanelBody entry={lastDetailPanelContent.entry} />
+                )}
+                {lastDetailPanelContent?.kind === "article" && (
+                  <KnowledgeArticleDetailPanelBody
+                    data={lastDetailPanelContent.article}
+                    onViewLink={(link) =>
+                      setSelectedDetailPanelContent({
+                        kind: "article-link",
+                        article: lastDetailPanelContent.article,
+                        link,
+                      })
+                    }
+                  />
+                )}
+                {lastDetailPanelContent?.kind === "article-link" && (
+                  <KnowledgeArticleLinkDetailBody link={lastDetailPanelContent.link} />
+                )}
+              </InteriorPanel>
+            )}
+
           </Container>
 
           {/* Voice call controls — per explicit follow-up request ("move
@@ -10210,21 +10581,18 @@ export function AgentWorkspaceAdvancedPage({
             bodyPadding={false}
             className="border-0 bg-transparent p-0 shadow-none"
             onOpenAutoFocus={(e: Event) => e.preventDefault()}
-            // Per "do not add the assignment... until an action is taken
-            // on the popover toast" — sharpened by a later explicit
-            // request that this notice have no close/dismiss button at
-            // all — this card stays open until the agent explicitly
-            // clicks Review or Takeover, not because they happened to
-            // click elsewhere on the page, hit Escape, or dismissed it —
-            // same "explicit action required" spirit as the
-            // assignment-commit gate itself (`commitMarcusWebbInteraction`,
-            // above `agentStatus`).
+            // Escape/outside-click still `preventDefault()`d — per explicit
+            // follow-up request, the notice now has a real close button
+            // (`onClose` below) instead, which stays the one deliberate way
+            // to dismiss it rather than also allowing an accidental
+            // Escape/outside-click to do the same.
             onEscapeKeyDown={(e: Event) => e.preventDefault()}
             onInteractOutside={(e: Event) => e.preventDefault()}
             content={
               <MarcusWebbIncomingCallNotice
                 elapsedSeconds={marcusWebbNoticeElapsed}
                 contextOverview={marcusWebbContextOverviewInfo}
+                onClose={() => setMarcusWebbNoticeOpen(false)}
                 onReview={() => {
                   // Per explicit follow-up request, "Review" now navigates
                   // to the contact view too — same `setActiveInteractionId`
