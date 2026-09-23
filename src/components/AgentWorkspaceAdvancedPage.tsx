@@ -228,6 +228,10 @@ import {
   MarcusWebbNextBestActionCard,
   MarcusWebbActionDetailPanelBody,
   type MarcusWebbActionLogEntry,
+  MarcusWebbOrderDetailPanelBody,
+  MARCUS_WEBB_ORDER,
+  type MarcusWebbOrderInfo,
+  MarcusWebbTransactionsDetailPanelBody,
 } from "@/components/agent-next-gen-marcus-webb-next-best-action-card";
 import {
   KnowledgeArticleDetailPanelBody,
@@ -235,6 +239,7 @@ import {
   type KnowledgeArticleCardData,
   type KnowledgeArticleWebLink,
 } from "@/components/agent-next-gen-knowledge-article-card";
+import { InContactInteriorPanel } from "@/components/agent-next-gen-in-contact-panel";
 import { VideoCallWindow, VideoCallFullScreen } from "@/components/agent-next-gen-video-window";
 // The Marcus Webb action-log detail panel and the "Do Something"
 // knowledge-article panel share ONE floating `InteriorPanel` overlay
@@ -246,7 +251,10 @@ import { VideoCallWindow, VideoCallFullScreen } from "@/components/agent-next-ge
 type DetailPanelContent =
   | { kind: "action-log"; entry: MarcusWebbActionLogEntry }
   | { kind: "article"; article: KnowledgeArticleCardData }
-  | { kind: "article-link"; article: KnowledgeArticleCardData; link: KnowledgeArticleWebLink };
+  | { kind: "article-link"; article: KnowledgeArticleCardData; link: KnowledgeArticleWebLink }
+  | { kind: "order"; order: MarcusWebbOrderInfo }
+  | { kind: "customer" }
+  | { kind: "transactions"; id: string; note: string; timestamp: string };
 import appIcon from "@/assets/app-icon.svg";
 import damagedHeadphonesImg from "@/assets/headphones.jpg";
 import {
@@ -2732,6 +2740,21 @@ export function AgentWorkspaceAdvancedPage({
         return null;
       }
       if (current.kind === "article" && next.kind === "article" && current.article.id === next.article.id) {
+        return null;
+      }
+      // Per explicit request ("clicking Marcus Webb when Marcus Webb is
+      // open should close the panel — same with the order link"), these
+      // two get the same toggle-off treatment as action-log/article
+      // above. "customer" has no per-instance id (there's only ever one
+      // customer to show for the active interaction), so any "customer"
+      // → "customer" re-click toggles closed.
+      if (current.kind === "customer" && next.kind === "customer") {
+        return null;
+      }
+      if (current.kind === "order" && next.kind === "order" && current.order.orderId === next.order.orderId) {
+        return null;
+      }
+      if (current.kind === "transactions" && next.kind === "transactions" && current.id === next.id) {
         return null;
       }
       return next;
@@ -8509,6 +8532,52 @@ export function AgentWorkspaceAdvancedPage({
                                             ? selectedDetailPanelContent.article.id
                                             : null
                                         }
+                                        // Per explicit follow-up request
+                                        // ("this should behave the same as
+                                        // if I clicked between contact
+                                        // history items on the home page"),
+                                        // both links now go through the
+                                        // SAME `openDetailPanelContent`
+                                        // (its own toggle-off-if-same/swap-
+                                        // if-different semantics, above) —
+                                        // an EARLIER pass kept "customer"
+                                        // on the separate
+                                        // `customerInfoOverlayOpen` overlay
+                                        // and just closed it before opening
+                                        // the order panel (and vice versa),
+                                        // which avoided both being open at
+                                        // once but still visibly closed one
+                                        // panel and opened a different one
+                                        // — exactly the "opening and
+                                        // closing" flicker reported.
+                                        // `setCustomerInfoOverlayOpen(false)`
+                                        // stays here defensively, in case
+                                        // that OTHER overlay was left open
+                                        // via one of ITS OWN triggers
+                                        // elsewhere in the app (e.g. "View
+                                        // customer info" in the transcript
+                                        // toolbar, untouched by this
+                                        // change) — without it, both could
+                                        // still end up open together via
+                                        // that combination.
+                                        onOpenCustomerInfo={() => {
+                                          setCustomerInfoOverlayOpen(false);
+                                          openDetailPanelContent({ kind: "customer" });
+                                        }}
+                                        onOpenOrderInfo={() => {
+                                          setCustomerInfoOverlayOpen(false);
+                                          openDetailPanelContent({ kind: "order", order: MARCUS_WEBB_ORDER });
+                                        }}
+                                        onOpenTransactions={(round) => {
+                                          setCustomerInfoOverlayOpen(false);
+                                          openDetailPanelContent({ kind: "transactions", ...round });
+                                        }}
+                                        selectedTransactionsId={
+                                          selectedDetailPanelContent?.kind === "transactions"
+                                            ? selectedDetailPanelContent.id
+                                            : null
+                                        }
+                                        onDismissAndUnassign={() => handleDismissInteraction(MARCUS_WEBB_ID)}
                                         questionSlotElement={marcusQuestionSlotEl}
                                       />
                                     ),
@@ -10027,92 +10096,53 @@ export function AgentWorkspaceAdvancedPage({
                 `InteriorPanel` (which toggles between two different views
                 in the same slot, so a back arrow means something there),
                 this overlay only ever shows this one view — nothing to
-                arrow back TO — so it's dropped in favor of just the
-                `onClose` (×) button. `allowFullScreen` adds `InteriorPanel`'s
-                own built-in Maximize2/Minimize2 toggle to the header —
-                `ContainerHeader`'s "Right: actions + optional close button"
-                render order (container-header.tsx) already puts `actions`
-                (which `allowFullScreen`'s toggle joins, see
-                `fullScreenToggle`, interior-panel.tsx) BEFORE the close
-                button, so this lands to the close button's left with no
-                extra positioning needed. `absoluteBreakpoint={Infinity}`
-                forces `InteriorPanel` into its own absolute/overlay
-                rendering branch unconditionally (see that prop's own doc
-                comment, interior-panel.tsx) rather than the width-triggered
-                default — this is meant to always float on top, never dock
-                inline. `z-[500]` (via `className`) sits above the docked
-                Session Details panel's own `z-[5]` (see that wrapper's own
-                z-index doc comment above) so it visibly covers it — was
-                `z-[7]` originally (just above that `z-[5]`), but per
-                explicit follow-up request ("the panel slide-out should be
-                above the hover of the customer info panel") this also needs
-                to clear `CustomerInfoHoverPreview` — the `Popover` hover
-                preview of this same docked panel, rendered a few hundred
-                lines up, whose "View customer info" link is what opens this
-                very overlay in the first place. That popover's content is
-                a Radix `Popover.Content`, which portals straight to
-                `document.body` (popover.tsx) at that component's own
-                hardcoded `z-50`, and it was confirmed still open (hovered,
-                not yet dismissed) at the moment its own link opens this
-                overlay, so it was painting on top of the newly-opened
-                slide-out. `500` is deliberately NOT this same file's own
-                reserved top-most `z-[9999]` tier (the toast stack a few
-                hundred lines down, and the AppHeader menus — see either
-                one's own doc comment) — this overlay only needs to clear a
-                plain content popover, not outrank the app's own toasts/
-                menus, so it sits in the wide gap between the two instead of
-                risking a same-tier ordering fight with either one if it
-                happened to be open at the same time as this overlay. Also
-                below `left-nav.tsx`'s own `z-[600]` collapse-toggle chevron
-                (see that button's own z-index doc comment) — that button's
-                `-right-3` offset hangs it slightly into this same content
-                column, and it must stay clickable above this overlay
-                regardless. Gated on the same conditions as the docked panel
-                itself, since there's nothing for this to overlay/no
-                customer to show otherwise. */}
+                arrow back TO — so `onBack` is omitted (in favor of just the
+                `onClose` (×) button).
+
+                Renders via `InContactInteriorPanel` (agent-next-gen-in-
+                contact-panel.tsx) rather than a raw `InteriorPanel` — per
+                an explicit audit request, that shared wrapper is what
+                hardcodes `allowFullScreen`/`absoluteBreakpoint={Infinity}`/
+                `maxWidth={Infinity}`/`className="z-[500]"`/`closeIcon`, so
+                this call site and the Marcus Webb shared panel below can't
+                drift again the way they had (this one had `maxWidth`
+                removing its drag-resize cap; the other one didn't, even
+                though both can show the same customer-info content). See
+                that file's own doc comment for the full rationale on each
+                of those hardcoded values, including: `z-[500]` sits above
+                the docked Session Details panel's own `z-[5]` AND above
+                `CustomerInfoHoverPreview`'s Radix `Popover.Content` (hard-
+                coded `z-50`, portaled to `document.body`, confirmed still
+                open at the moment its own "View customer info" link opens
+                this very overlay) — deliberately NOT this file's own
+                reserved top-most `z-[9999]` tier (toasts/AppHeader menus),
+                and below `left-nav.tsx`'s own `z-[600]` collapse-toggle
+                chevron, which must stay clickable regardless. Gated on the
+                same conditions as the docked panel itself, since there's
+                nothing for this to overlay/no customer to show
+                otherwise. */}
             {!activeInteractionIsAgentCall && showPanelToggle && activeInteraction && (
-              <InteriorPanel
+              <InContactInteriorPanel
                 open={customerInfoOverlayOpen}
                 onClose={() => setCustomerInfoOverlayOpen(false)}
-                allowFullScreen
-                absoluteBreakpoint={Infinity}
-                // Per explicit request ("remove max-width on side panel
-                // overlay resize") — `InteriorPanel`'s own `maxWidth`
-                // defaults to 425 (interior-panel.tsx), which capped how far
-                // this overlay could be manually drag-resized before this
-                // (`usePanelDragResize`'s own drag math hard-clamps to
-                // `[minWidth, maxWidth]` — use-panel-drag-resize.ts).
-                // `Infinity` removes that cap entirely rather than swapping
-                // in some other still-arbitrary number — same "opt out of
-                // the built-in limit" idiom `absoluteBreakpoint={Infinity}`
-                // just above already uses on this exact component. Doesn't
-                // risk the panel actually overflowing its container: the
-                // rendered width is separately clamped to the parent's own
-                // measured width regardless of `maxWidth`
-                // (`displayWidth`/`Math.min(currentWidth, parentWidth)`,
-                // interior-panel.tsx), so the practical ceiling is just
-                // "however wide this overlay's container currently is."
-                // `minWidth` is untouched — only the upper bound was asked
-                // for.
-                maxWidth={Infinity}
-                className="z-[500]"
                 headerTitle={customerInfoOverlayContent.headerTitle}
                 headerSubhead={customerInfoOverlayContent.headerSubhead}
                 headerTabs={customerInfoOverlayContent.headerTabs}
                 footer={customerInfoOverlayContent.footer}
-                closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
               >
                 {customerInfoOverlayContent.body}
-              </InteriorPanel>
+              </InContactInteriorPanel>
             )}
 
             {/* Marcus Webb action-log detail / "Do Something" knowledge-
-                article detail — ONE shared floating `InteriorPanel`
-                overlay, same "separate overlay, doesn't disturb the
-                docked panel's own state" mechanic as the "View customer
-                info" overlay just above (per explicit request, "the same
-                overlay type of panel as when customer info is clicked
-                from the details panel"). Per a LATER explicit follow-up
+                article detail — ONE shared floating panel, rendered via
+                the same `InContactInteriorPanel` wrapper the "View
+                customer info" overlay just above uses (per explicit
+                request, "the same overlay type of panel as when customer
+                info is clicked from the details panel" — later
+                formalized into that shared wrapper once an audit found
+                the two had drifted on `maxWidth`, see that file's own
+                doc comment). Per a LATER explicit follow-up
                 ("toggling between refund approved and tablet warranty
                 coverage should change the content of the container —
                 like how the home page works"), this used to be TWO
@@ -10141,12 +10171,9 @@ export function AgentWorkspaceAdvancedPage({
                 `lastDetailPanelContent` (never nulled) keeps its content
                 from going blank mid-close. */}
             {activeInteraction && (
-              <InteriorPanel
+              <InContactInteriorPanel
                 open={!!selectedDetailPanelContent}
                 onClose={() => setSelectedDetailPanelContent(null)}
-                allowFullScreen
-                absoluteBreakpoint={Infinity}
-                className="z-[500]"
                 headerTitle={
                   lastDetailPanelContent?.kind === "action-log"
                     ? lastDetailPanelContent.entry.title
@@ -10154,18 +10181,47 @@ export function AgentWorkspaceAdvancedPage({
                       ? lastDetailPanelContent.article.title
                       : lastDetailPanelContent?.kind === "article-link"
                         ? lastDetailPanelContent.link.title
-                        : undefined
+                        : lastDetailPanelContent?.kind === "order"
+                          ? lastDetailPanelContent.order.itemName
+                          : lastDetailPanelContent?.kind === "customer"
+                            ? customerInfoOverlayContent.headerTitle
+                            : lastDetailPanelContent?.kind === "transactions"
+                              ? lastDetailPanelContent.note
+                              : undefined
                 }
                 headerSubhead={
-                  lastDetailPanelContent?.kind === "action-log" ? lastDetailPanelContent.entry.timestamp : undefined
+                  lastDetailPanelContent?.kind === "action-log"
+                    ? lastDetailPanelContent.entry.timestamp
+                    : lastDetailPanelContent?.kind === "customer"
+                      ? customerInfoOverlayContent.headerSubhead
+                      : lastDetailPanelContent?.kind === "transactions"
+                        ? lastDetailPanelContent.timestamp
+                        : undefined
                 }
+                // Per explicit request ("clicking Marcus Webb ... should
+                // behave the same as ... contact history items on the
+                // home page"), "customer" is now folded into this SAME
+                // shared panel (rather than the separate
+                // `customerInfoOverlayOpen` overlay) specifically so
+                // switching between it and "order" is one smooth content
+                // swap, not a close-then-reopen — matching every other
+                // pair of views this panel already handles. Its tabs/
+                // footer come straight from `customerInfoOverlayContent`
+                // (the same `useCustomerDetailsInteriorPanel` result the
+                // OTHER, still-separate "View customer info" overlay
+                // above uses) — reading it here is safe regardless of
+                // `customerInfoOverlayOpen`'s own value; see that const's
+                // own doc comment.
+                headerTabs={
+                  lastDetailPanelContent?.kind === "customer" ? customerInfoOverlayContent.headerTabs : undefined
+                }
+                footer={lastDetailPanelContent?.kind === "customer" ? customerInfoOverlayContent.footer : undefined}
                 onBack={
                   lastDetailPanelContent?.kind === "article-link"
                     ? () =>
                         setSelectedDetailPanelContent({ kind: "article", article: lastDetailPanelContent.article })
                     : undefined
                 }
-                closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
               >
                 {lastDetailPanelContent?.kind === "action-log" && (
                   <MarcusWebbActionDetailPanelBody entry={lastDetailPanelContent.entry} />
@@ -10185,7 +10241,14 @@ export function AgentWorkspaceAdvancedPage({
                 {lastDetailPanelContent?.kind === "article-link" && (
                   <KnowledgeArticleLinkDetailBody link={lastDetailPanelContent.link} />
                 )}
-              </InteriorPanel>
+                {lastDetailPanelContent?.kind === "order" && (
+                  <MarcusWebbOrderDetailPanelBody order={lastDetailPanelContent.order} />
+                )}
+                {lastDetailPanelContent?.kind === "customer" && customerInfoOverlayContent.body}
+                {lastDetailPanelContent?.kind === "transactions" && (
+                  <MarcusWebbTransactionsDetailPanelBody note={lastDetailPanelContent.note} />
+                )}
+              </InContactInteriorPanel>
             )}
 
           </Container>

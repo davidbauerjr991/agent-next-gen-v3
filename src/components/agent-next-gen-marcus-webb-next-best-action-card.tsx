@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, ChevronRight, CornerDownLeft, MessageSquareText, XCircle } from "lucide-react";
+import { Bot, CheckCircle2, ChevronRight, CornerDownLeft, MessageSquareText, XCircle } from "lucide-react";
 import {
   Accordion,
   AIInput,
@@ -16,7 +16,6 @@ import {
   Textarea,
   cn,
 } from "@nicecxone/lyra-ui";
-import { formatElapsedTime } from "@/components/agent-next-gen-shared-utils";
 import damagedHeadphonesImg from "@/assets/headphones.jpg";
 import {
   KnowledgeArticleSummaryRow,
@@ -337,12 +336,19 @@ const AGENT_REPLY: Record<Exclude<MarcusWebbNextBestActionSelection, "something-
     "Thanks for holding — I heard back from a supervisor, and unfortunately this refund wasn't approved as submitted. I'd like to offer you a replacement or store credit instead — which would you prefer?",
 };
 
-// Restored per explicit follow-up request ("add back in the steps after
-// the refund is approved/rejected") — was briefly hidden for demo/testing
-// pace ("it is taking time"), same "hide, don't destroy" flag still in
-// place if it needs to come back off again; see `approveBlock`'s own doc
-// comment, below, for exactly what this gates.
-const SHOW_APPROVE_PROCESSING_STEPS = true;
+// Was restored per an earlier explicit follow-up request ("add back in the
+// steps after the refund is approved/rejected"), then per a LATER explicit
+// request ("hide the approval steps and just show the agent working
+// animation when approve is clicked") turned back off again — "hide, don't
+// destroy" still applies: flipping this back to `true` restores the full
+// `AIProcess` step list with no other changes needed. While `false`,
+// `approveBlock` (below) doesn't render nothing — it falls back to the
+// same plain `Spinner` + status-line treatment Reject/Something else
+// already use elsewhere in this file (see this file's own top doc comment,
+// "drops the generic Spinner+elapsed-timer row for lyra-ui's own AIProcess
+// step list" — this flag now toggles between those same two looks, rather
+// than between the step list and nothing).
+const SHOW_APPROVE_PROCESSING_STEPS = false;
 
 // Per explicit request, hides the "Do something" `AIInput` for now ("I may
 // bring it back so don't delete it") — "hide, don't destroy," same pattern
@@ -352,6 +358,14 @@ const SHOW_APPROVE_PROCESSING_STEPS = true;
 // fully wired, so flipping this back to `true` restores the input with no
 // other changes needed.
 const SHOW_DO_SOMETHING_INPUT = false;
+
+// Per explicit request, hides the separate "Contact Overview" card now
+// that its facts are folded into the top-level bubble's own intro text
+// (see `MarcusWebbTaskCard`'s call site) — "hide, don't destroy," same
+// pattern as the two flags above. `contactOverviewItem`/
+// `buildContactOverviewContainer` stay fully defined; only the render
+// call site is gated.
+const SHOW_CONTACT_OVERVIEW = false;
 
 // "Approve"-only step list — see this file's own top doc comment for why
 // this is separate from `completed`/`AGENT_REPLY` above (Reject/Something
@@ -367,6 +381,11 @@ const APPROVE_STEP_LABELS = [
 // (`onPhotoRequested`) — step 2 completing just reveals the photo+note
 // block rendered locally below (see `rejectStepIndex`'s own render site).
 const REJECT_STEP_LABELS = ["AI Agent requesting photo of damaged item", "Waiting for customer response"];
+
+// "Something else" round's final `stepIndex` — see `SomethingElseRound`'s
+// own doc comment, above its state declaration, for the full step
+// breakdown (0 = performing, 1 = instruction card + analyzing, 2 = done).
+const SOMETHING_ELSE_STEPS = 2;
 
 // Second "how would you like to proceed?" question, asked once the
 // customer's photo comes back (see this file's own top doc comment) —
@@ -426,26 +445,25 @@ const REMEDY_OPTIONS: NextBestActionOption<RemedySelection>[] = [
 
 /** One entry in the growing, append-only action log rendered below the
  *  context bullets — see this file's own top doc comment for the full
- *  "simple" vs. "note" distinction. `"transactions"` is a third kind, per
- *  explicit follow-up request: same header row shape as `"note"` (icon +
- *  title + timestamp + actor), but rendered as a real expandable
- *  `Accordion` (`MarcusWebbInstructionTransactionsEntry`, below) opening
- *  straight to the customer's last-10-transactions table instead of
- *  opening a side panel — logged once per "Something else" submission
- *  (`handleTopLevelConfirm`). */
+ *  "simple" vs. "note" distinction. Per a later explicit follow-up, the
+ *  once-separate `"transactions"` kind (an inline expandable accordion)
+ *  is gone — a "Something else" instruction now renders as a plain
+ *  `ActionLogNoteEntry`-style row (title = the instruction itself,
+ *  truncated) that opens the transactions table in a side panel instead
+ *  of expanding inline, same as every other note row. See
+ *  `somethingElseRounds`' own render call site. */
 export interface MarcusWebbActionLogEntry {
   id: string;
-  kind: "simple" | "note" | "transactions";
+  kind: "simple" | "note";
   title: string;
   timestamp: string;
-  /** `"note"`/`"transactions"` only. */
+  /** `"note"` only. */
   icon?: React.ReactNode;
-  /** `"note"`/`"transactions"` only — always `"John Smith"` today (see
-   *  this file's own top doc comment for why). */
+  /** `"note"` only — always `"John Smith"` today (see this file's own top
+   *  doc comment for why). */
   actorName?: string;
-  /** `"note"` — the quoted line below the header row, shown in its own
-   *  side panel. `"transactions"` — the agent's typed instruction, shown
-   *  as the first line inside the expanded accordion. */
+  /** `"note"` only — the quoted line below the header row, shown in its
+   *  own side panel. */
   description?: string;
   /** `"note"` only — powers the side panel `onActionLogEntryOpen` opens:
    *  the question that was asked, and every option that was available. */
@@ -504,11 +522,87 @@ export function MarcusWebbActionDetailPanelBody({ entry }: { entry: MarcusWebbAc
   );
 }
 
+/** Placeholder order data for the new order-info side panel the top-level
+ *  bubble's "order for noise-cancelling headphones" link opens — per
+ *  explicit request, same static-scaffold-first convention as the
+ *  transactions table (`agent-next-gen-marcus-webb-transactions-panel.tsx`)
+ *  and the knowledge-article card: real-looking placeholder content, no
+ *  backend behind it yet. Same facts Contact Overview's own bullets
+ *  already used (order #48213, noise-cancelling headphones, $200, placed
+ *  last Tuesday, cracked ear cup). */
+export interface MarcusWebbOrderInfo {
+  orderId: string;
+  itemName: string;
+  price: string;
+  orderedDate: string;
+  status: string;
+  shippingAddress: string;
+}
+
+export const MARCUS_WEBB_ORDER: MarcusWebbOrderInfo = {
+  orderId: "#48213",
+  itemName: "Noise-Cancelling Headphones",
+  price: "$200.00",
+  orderedDate: "Last Tuesday",
+  status: "Delivered — customer reported a cracked ear cup",
+  shippingAddress: "412 Birchwood Lane, Springfield, IL 62704",
+};
+
+/** The side-panel body for the order-info panel — same field-row shape
+ *  (label above value) other detail panels in this app already use. */
+export function MarcusWebbOrderDetailPanelBody({ order }: { order: MarcusWebbOrderInfo }) {
+  const fields: { label: string; value: string }[] = [
+    { label: "Order ID", value: order.orderId },
+    { label: "Item", value: order.itemName },
+    { label: "Price", value: order.price },
+    { label: "Ordered", value: order.orderedDate },
+    { label: "Status", value: order.status },
+    { label: "Shipping address", value: order.shippingAddress },
+  ];
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      {fields.map((field) => (
+        <div key={field.label} className="flex flex-col gap-1">
+          <p className="lyra-body-sm-emphasis text-lyra-fg-default">{field.label}</p>
+          <p className="lyra-body-md text-lyra-fg-default">{field.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The side-panel body for a "Something else" instruction's transactions
+ *  table — per explicit follow-up request, this replaces the old inline
+ *  expandable accordion (`MarcusWebbInstructionTransactionsEntry`,
+ *  removed): the instruction row now opens this in a side panel instead,
+ *  same as every other note-row detail. Quotes the instruction itself
+ *  above the table since the row's own title is now that same text,
+ *  truncated — this is where the full, untruncated text is guaranteed
+ *  visible. */
+export function MarcusWebbTransactionsDetailPanelBody({ note }: { note: string }) {
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <p className="lyra-body-md text-lyra-fg-default">"{note}"</p>
+      <MarcusWebbTransactionsTable />
+    </div>
+  );
+}
+
 /** A plain milestone/state-change row — timestamp above bold title, no
- *  icon/border/click target. See this file's own top doc comment. */
+ *  icon/border/click target. See this file's own top doc comment.
+ *
+ *  `animate-in slide-in-from-bottom-4 fade-in-0 duration-200` — per
+ *  explicit request ("add animations to the notes and AI chats, use the
+ *  same animation as when an agent is chatting with a customer"), the
+ *  same entrance treatment this file already uses for the "Something
+ *  else" round's own live-appearing rows (see that render site's
+ *  identical classes). Safe on every re-render: each entry keeps the same
+ *  `key` (`entry.id`) once logged, so React never remounts an
+ *  already-rendered entry — this only plays once, the moment a NEW entry
+ *  is appended to `actionLog`. */
 function ActionLogSimpleEntry({ timestamp, title }: { timestamp: string; title: string }) {
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-0.5 animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
       <span className="lyra-body-sm text-lyra-fg-secondary">{timestamp}</span>
       <span className="lyra-body-md-emphasis text-lyra-fg-default">{title}</span>
     </div>
@@ -521,7 +615,31 @@ function ActionLogSimpleEntry({ timestamp, title }: { timestamp: string; title: 
  *  open) swaps in the same `bg-lyra-status-info-subtle` tint the Home
  *  page's Contact History rows use for their own "this row's summary is
  *  open" state (agent-next-gen-contact-history.tsx) — per explicit
- *  request, for visual consistency with that established pattern. */
+ *  request, for visual consistency with that established pattern.
+ *  `min-w-0 flex-1 truncate` on the title span — per a later explicit
+ *  request ("Something else" instructions use their own full text as
+ *  this title now, which can run long) — lets a long title truncate
+ *  with an ellipsis instead of pushing the timestamp/actor/chevron out
+ *  of the row or wrapping; harmless for every other (short, fixed)
+ *  title this component already renders.
+ *
+ *  `w-full` on the button itself — per explicit bug report (confirmed
+ *  via screenshot: a "Something else" round's instruction row rendered
+ *  as a narrow, content-sized pill instead of spanning the row). Root
+ *  cause: every OTHER caller renders this `<button>` as a DIRECT flex
+ *  item of a `flex flex-col` list (`actionLog.map(...)`), where the
+ *  parent's default `align-items: stretch` forces it full width
+ *  regardless of the button's own sizing — but a `<button>` (a form
+ *  control) is one of the few elements whose `width: auto` resolves via
+ *  shrink-to-fit/intrinsic sizing rather than "fill available space" the
+ *  way a plain `<div>` would, so as soon as ANY caller nests it one
+ *  level deeper inside its own wrapper div (the `somethingElseRounds`
+ *  render block does, for its entrance-animation classes — see that
+ *  call site), it's no longer a flex item and that stretch protection
+ *  disappears. Making the button explicitly `w-full` fixes it at the
+ *  source instead of leaning on incidental flex-stretch from whatever
+ *  happens to wrap it — harmless for every existing direct-flex-item
+ *  usage, which was already effectively full width. */
 function ActionLogNoteEntry({
   entry,
   selected,
@@ -537,7 +655,10 @@ function ActionLogNoteEntry({
       aria-current={selected ? "true" : undefined}
       onClick={onClick}
       className={cn(
-        "flex flex-col gap-1 rounded-lyra-md border p-3 text-left transition-colors",
+        // Entrance animation — see `ActionLogSimpleEntry`'s own doc
+        // comment just above for the "why"/safety-on-rerender reasoning;
+        // identical classes, same stable-`key`-per-entry guarantee.
+        "flex w-full flex-col gap-1 rounded-lyra-md border p-3 text-left transition-colors animate-in slide-in-from-bottom-4 fade-in-0 duration-200",
         selected
           ? "border-lyra-border-active bg-lyra-status-info-subtle"
           : "border-lyra-border-subtle bg-lyra-bg-surface-base hover:border-lyra-state-border-hover-neutral"
@@ -545,10 +666,14 @@ function ActionLogNoteEntry({
     >
       <div className="flex items-center gap-2">
         {entry.icon}
-        <span className="lyra-body-md-emphasis text-lyra-fg-default">{entry.title}</span>
-        <span className="lyra-body-sm text-lyra-fg-secondary">{entry.timestamp}</span>
-        {entry.actorName && <span className="lyra-body-sm text-lyra-fg-secondary">{entry.actorName}</span>}
-        <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-lyra-fg-secondary" strokeWidth={1.5} aria-hidden="true" />
+        <span className="lyra-body-md-emphasis text-lyra-fg-default min-w-0 flex-1 truncate">{entry.title}</span>
+        <span className="lyra-body-sm text-lyra-fg-secondary shrink-0">{entry.timestamp}</span>
+        {entry.actorName && <span className="lyra-body-sm text-lyra-fg-secondary shrink-0">{entry.actorName}</span>}
+        <ChevronRight
+          className="ml-auto h-4 w-4 shrink-0 text-lyra-fg-secondary"
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
       </div>
       {entry.description && (
         <p className="lyra-body-sm text-lyra-fg-secondary">"{entry.description}"</p>
@@ -557,111 +682,71 @@ function ActionLogNoteEntry({
   );
 }
 
-/** Per explicit follow-up request ("have the instruction container be an
- *  accordion open to the list of transactions") — the `"transactions"`
- *  kind's own render, in place of `ActionLogNoteEntry`'s side-panel-
- *  opening button. Styled as a bordered card the same way
- *  `CUSTOMER_INFO_ACCORDION_CLASSNAME` (agent-next-gen-customer-info-
- *  panel.tsx) styles every other single-item accordion in this app, just
- *  with a plain surface background to match `ActionLogNoteEntry`'s own
- *  sibling rows instead of that constant's own tinted one.
- *
- *  Mounts CLOSED and flips itself open on a `setTimeout(0)` right after,
- *  rather than starting pre-opened via `defaultValue` — confirmed via a
- *  screenshot bug (a SECOND entry, added right after a first one that
- *  worked fine, rendered with its content collapsed to zero height
- *  despite Radix reporting `data-state="open"` on inspection) that
- *  mounting a Radix `Accordion` already-open races its own height
- *  animation: the `animate-accordion-down` keyframe reads
- *  `--radix-accordion-content-height` before the `ResizeObserver` that
- *  sets it has necessarily measured anything yet, so it can animate from
- *  (and land on) zero. Deferring the open by one tick makes this a real
- *  closed→open transition instead — the exact same, well-exercised path
- *  every other accordion in this app already uses when a real click
- *  opens it (never "starts pre-opened"), which is why only THIS
- *  "immediately expanded" pattern hit the race. */
-function MarcusWebbInstructionTransactionsEntry({ entry }: { entry: MarcusWebbActionLogEntry }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setOpen(true), 0);
-    return () => window.clearTimeout(timeout);
-  }, []);
-  return (
-    <Accordion
-      value={open ? entry.id : ""}
-      onValueChange={() => setOpen((v) => !v)}
-      items={[
-        {
-          id: entry.id,
-          icon: entry.icon,
-          title: entry.title,
-          endSlot: (
-            <span className="flex items-center gap-2 lyra-body-sm text-lyra-fg-secondary">
-              <span>{entry.timestamp}</span>
-              {entry.actorName && <span>{entry.actorName}</span>}
-            </span>
-          ),
-          content: (
-            <div className="flex flex-col gap-3">
-              {entry.description && (
-                <p className="lyra-body-md text-lyra-fg-default">"{entry.description}"</p>
-              )}
-              <MarcusWebbTransactionsTable />
-            </div>
-          ),
-        },
-      ]}
-      className="rounded-lyra-md border border-lyra-border-subtle bg-lyra-bg-surface-base overflow-hidden"
-    />
-  );
-}
-
 /** Every `activeQuestionItem` — the top-level "How would you like to
  *  proceed?", the post-takeover "Suggested remedies," and the post-photo
- *  "How would you like to proceed?" decision — renders inline in the
- *  card's own scrolling content now, never portaled into the page's fixed
- *  bottom slot (`questionSlotElement`). Per explicit request, in three
- *  steps: first remedies alone, then the top-level question too, then
- *  finally the post-photo decision ("none of these should be fixed").
- *  The fixed slot itself still exists for the (currently hidden) "Do
- *  something" `AIInput` (`commandSlotContent`) — see `portalToQuestionSlot`
- *  below — just nothing question-shaped uses it anymore. Takes the same
- *  `{ id, title, content }` shape `activeQuestionItem` always builds (not
- *  a `MarcusWebbActionLogEntry` — this is a live pending question, not a
- *  logged event, so it has no icon/timestamp/actor).
+ *  "How would you like to proceed?" decision — renders as an incoming
+ *  chat message FROM the AI agent, per explicit request (with a reference
+ *  screenshot): an avatar + sender name + timestamp header, then a gray
+ *  message bubble holding the question text and (while it's still the
+ *  live `activeQuestionItem`) its options below it. Modeled on lyra-ui's
+ *  `ChatMessage` (`chat-message.tsx`) — same avatar size/shape
+ *  (`h-7 w-7 rounded-full`), same bubble corner squared toward the avatar
+ *  (`rounded-tl-none`), same gray "other party" bubble background
+ *  (`bg-lyra-state-hover`), and the same `"{timestamp} · {name}"` header
+ *  convention already established there — built locally rather than
+ *  reusing `ChatMessage` directly since that component takes a plain
+ *  `initials: string` for its avatar (not an icon) and has no notion of
+ *  "keep rendering after answered, just without the options." Full width
+ *  (not `ChatMessage`'s `max-w-[80%]`) since it holds real form content,
+ *  not a short text message.
  *
- *  Mounts CLOSED and flips itself open on a `setTimeout(0)`, exactly like
- *  `MarcusWebbInstructionTransactionsEntry` above — this card appears as a
- *  new sibling below content that's already rendered (Contact Overview,
- *  any existing action-log entries), the same situation that already
- *  confirmed a Radix `Accordion` mounted pre-opened via `defaultValue` can
- *  race its own `ResizeObserver`-driven height measurement and land at
- *  zero height. `bg-lyra-bg-active-subtle` (rather than the plain surface
- *  `ActionLogNoteEntry`'s sibling rows use) keeps it visually distinct as
- *  "awaiting your input," now that it's lost the fixed slot's own floating
- *  `Container variant="neutral-subtle" shadow-lg` treatment.
+ *  Per explicit follow-up (screenshot 2), the bubble's TEXT stays visible
+ *  once its question has been answered — it doesn't disappear the way
+ *  the old `Accordion`-based card used to — only its options go away.
+ *  This component itself doesn't know "answered or not"; the caller
+ *  simply stops passing `children` once the question is no longer the
+ *  live `activeQuestionItem` (see `askedQuestions`, below).
  *
- *  No `key` needed: this component uses a CONTROLLED `value` (not
- *  `defaultValue`), so when `item` swaps in place while it stays mounted
- *  (e.g. the top-level question going from "next-best-action" straight
- *  back to itself after a "something else" round, or one question type
- *  swapping to another without `activeQuestionItem` ever going `null` in
- *  between), the `Accordion`'s `value` just re-syncs to the new `item.id`
- *  — no remount, no re-trigger of the closed→open effect, so an
- *  already-open card just swaps its content in place. */
-function MarcusWebbInlineQuestionCard({ item }: { item: { id: string; title: string; content: React.ReactNode } }) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setOpen(true), 0);
-    return () => window.clearTimeout(timeout);
-  }, []);
+ *  `title` widened from `string` to `React.ReactNode` (and its own
+ *  `<p>` wrapper dropped in favor of the caller supplying its own markup)
+ *  per a later explicit request: the top-level bubble's intro is now a
+ *  multi-paragraph narrative with inline links (see its own call site),
+ *  which can't be wrapped in a single outer `<p>`. Remedies/photo-decision
+ *  still just pass a plain string, wrapped in their own `<p>` at their own
+ *  call sites — see `activeQuestionItem`'s `"remedies"`/`"photo-decision"`
+ *  branches.
+ *
+ *  `animate-in slide-in-from-bottom-4 fade-in-0 duration-200` on the
+ *  outer wrapper — see `ActionLogSimpleEntry`'s own doc comment for the
+ *  "why"/safety reasoning (same explicit request, same stable-`key`-per-
+ *  bubble guarantee: `askedQuestions`/the completion bubble/etc. all key
+ *  each `MarcusWebbAiChatBubble` by a stable id, so this only plays once
+ *  per bubble, the moment it first appears). */
+function MarcusWebbAiChatBubble({
+  title,
+  timestamp,
+  children,
+}: {
+  title: React.ReactNode;
+  timestamp: string;
+  children?: React.ReactNode;
+}) {
   return (
-    <Accordion
-      value={open ? item.id : ""}
-      onValueChange={() => setOpen((v) => !v)}
-      items={[item]}
-      className="rounded-lyra-md border border-lyra-border-subtle bg-lyra-bg-active-subtle overflow-hidden"
-    />
+    <div className="flex flex-col items-start gap-1 animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+      <span className="lyra-body-sm text-lyra-fg-secondary px-1">{timestamp} · Cognigy AI Agent</span>
+      <div className="flex w-full items-start gap-2">
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lyra-bg-primary text-lyra-fg-on-primary"
+          aria-hidden="true"
+        >
+          <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-3 rounded-lyra-lg rounded-tl-none bg-lyra-state-hover px-4 py-3">
+          {title}
+          {children}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -736,6 +821,16 @@ function NextBestActionOptionPicker<T extends string>({
             key={option.value}
             className={cn(
               "flex flex-col gap-2 rounded-lyra-md border p-3 transition-colors",
+              // `has-[[role=radio]:focus-visible]` — per explicit request,
+              // this option now reads as a BUTTON (see `RadioGroupItem`'s
+              // own `className` below, which visually hides the radio
+              // circle) rather than a radio-list row, but the underlying
+              // control is still a real Radix radio for accessible
+              // single-select semantics. Hiding it moves its own
+              // `focus-visible` ring off-screen with it, so the ring is
+              // re-anchored here, on the row a keyboard user actually
+              // sees, instead of being lost entirely.
+              "has-[[role=radio]:focus-visible]:ring-2 has-[[role=radio]:focus-visible]:ring-lyra-border-focus",
               isSelected
                 ? "border-lyra-border-active bg-lyra-bg-active-subtle"
                 : "border-lyra-border-subtle bg-lyra-bg-surface-base hover:border-lyra-state-border-hover-neutral"
@@ -744,7 +839,16 @@ function NextBestActionOptionPicker<T extends string>({
             <div className="flex items-start gap-2">
               <RadioGroupItem
                 value={option.value}
-                className="flex-1 items-start"
+                // `[&_[role=radio]]:sr-only` — hides just the visible
+                // circle indicator (not exposed as its own prop by
+                // lyra-ui's `RadioGroupItem`, and not worth modifying that
+                // core component for yet) while keeping it in the
+                // accessibility tree and focusable. Clicking anywhere in
+                // this row already selects the radio regardless — it's
+                // nested inside `RadioGroupItem`'s own wrapping `<label>`,
+                // which forwards clicks to it independent of the circle's
+                // visibility.
+                className="flex-1 items-start [&_[role=radio]]:sr-only"
                 label={
                   <span className="flex flex-col gap-0.5">
                     <span className="lyra-body-md-emphasis text-lyra-fg-default">{option.title}</span>
@@ -796,6 +900,139 @@ function NextBestActionOptionPicker<T extends string>({
   );
 }
 
+/** The top-level bubble's own options UI — per explicit request ("I would
+ *  like this to feel like a conversation with the AI agent so restyle
+ *  all three for now"), a "task card" instead of `NextBestActionOption
+ *  Picker`'s stacked radio-cards: options render as a row of pill
+ *  buttons (title only), the SELECTED option's own description shows
+ *  below the row (not every option's, unlike the old picker), a note
+ *  field appears there too when the option has one, and a single
+ *  "Perform Task" button replaces the old per-row/per-note
+ *  `InlineSubmitButton`. Used ONLY for the top-level question — remedies
+ *  and photo-decision keep `NextBestActionOptionPicker` exactly as
+ *  shipped, unaffected.
+ *
+ *  `phase` drives what actually renders once a task is performed:
+ *  `"picking"` is this row-of-buttons state (covers "nothing chosen
+ *  yet," a chosen-but-not-yet-confirmed option, AND — since Reject and
+ *  Something else don't have their own completion screens yet — is also
+ *  what's showing right up until either of those actually fires); the
+ *  caller (see `topLevelPhase`, computed in `MarcusWebbNextBestAction
+ *  Card`) only ever passes `"processing"`/`"completed"` for Approve.
+ *  Both `"processing"` and `"completed"` render nothing HERE — per
+ *  explicit follow-up ("the processing approval should show after the
+ *  refund approved note, not inside the AI chat bubble"), the
+ *  `approveBlock`/`AIProcess` "Processing the approval" loader stays in
+ *  its ORIGINAL position instead (the "pure history" block, after the
+ *  action log's "Refund approved" entry — see `MarcusWebbNextBestAction
+ *  Card`'s own render), and the completion message/buttons (screenshot
+ *  3) are their own separate new chat bubble, further below still (see
+ *  `completionTimestamp`'s own render call site). This component's job
+ *  ends once a task is confirmed — everything after that is someone
+ *  else's render. */
+function MarcusWebbTaskCard<T extends string>({
+  options,
+  selected,
+  onSelectedChange,
+  onConfirm,
+  confirmDisabled,
+  notes,
+  phase,
+}: {
+  options: NextBestActionOption<T>[];
+  selected: T | undefined;
+  onSelectedChange: (value: T) => void;
+  onConfirm: (value: T) => void;
+  confirmDisabled: boolean;
+  notes?: Partial<
+    Record<T, { value: string; onChange: (value: string) => void; placeholder?: string; label?: string }>
+  >;
+  phase: "picking" | "processing" | "completed";
+}) {
+  // Per explicit follow-up, neither Approve sub-phase renders anything
+  // inside the original bubble anymore — see this component's own doc
+  // comment above.
+  if (phase !== "picking") return null;
+
+  const note = selected ? notes?.[selected] : undefined;
+  const selectedOption = options.find((option) => option.value === selected);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Per explicit follow-up request ("you can remove 'How would you
+          like to proceed' after the agent proceeds"), this lives here —
+          in the `"picking"` phase only — rather than in the bubble's own
+          fixed intro text. Once the agent actually proceeds (Reject
+          freezes the bubble entirely, Approve moves to `"processing"`/
+          `"completed"`), this component stops rendering this line right
+          along with the rest of the row-of-buttons UI, with no separate
+          state needed. "Something else" rounds stay on `"picking"`
+          (per `topLevelPhase`'s own doc comment), so the question
+          correctly reappears for another round instead of vanishing. */}
+      <p className="lyra-body-md-emphasis text-lyra-fg-default">How would you like to proceed?</p>
+      {/* `selected ?? ""` — same Radix uncontrolled-when-`undefined`
+          gotcha `NextBestActionOptionPicker` already documents. */}
+      <RadioGroup value={selected ?? ""} onValueChange={(value) => onSelectedChange(value as T)}>
+        <div className="flex flex-wrap gap-2">
+          {options.map((option) => {
+            const isSelected = selected === option.value;
+            return (
+              <RadioGroupItem
+                key={option.value}
+                value={option.value}
+                className={cn(
+                  "rounded-lyra-md border px-3 py-2 [&_[role=radio]]:sr-only",
+                  "has-[[role=radio]:focus-visible]:ring-2 has-[[role=radio]:focus-visible]:ring-lyra-border-focus",
+                  isSelected
+                    ? "border-lyra-border-active bg-lyra-bg-active-subtle"
+                    : "border-lyra-border-subtle bg-lyra-bg-surface-base hover:border-lyra-state-border-hover-neutral"
+                )}
+                label={
+                  <span className="flex items-center gap-1.5 lyra-body-md-emphasis text-lyra-fg-default">
+                    {isSelected && (
+                      <CheckCircle2
+                        className="h-4 w-4 text-lyra-status-success-strong"
+                        strokeWidth={1.5}
+                        aria-hidden="true"
+                      />
+                    )}
+                    {option.title}
+                  </span>
+                }
+              />
+            );
+          })}
+        </div>
+      </RadioGroup>
+      {selectedOption?.description && !note && (
+        <p className="lyra-body-sm text-lyra-fg-secondary">{selectedOption.description}</p>
+      )}
+      {note && (
+        <div className="flex flex-col gap-1.5">
+          {note.label && <Label label={note.label} labelFor={`${selected}-note`} />}
+          <Textarea
+            id={`${selected}-note`}
+            rows={3}
+            placeholder={note.placeholder}
+            value={note.value}
+            onChange={(e) => note.onChange(e.target.value)}
+          />
+        </div>
+      )}
+      {selected && (
+        <Button
+          variant="default"
+          size="md"
+          className="self-start"
+          disabled={confirmDisabled}
+          onClick={() => onConfirm(selected)}
+        >
+          Perform Task
+        </Button>
+      )}
+    </div>
+  );
+}
 
 export function MarcusWebbNextBestActionCard({
   onComplete,
@@ -815,6 +1052,11 @@ export function MarcusWebbNextBestActionCard({
   onViewArticle,
   selectedActionLogEntryId,
   selectedArticleId,
+  onOpenCustomerInfo,
+  onOpenOrderInfo,
+  onOpenTransactions,
+  selectedTransactionsId,
+  onDismissAndUnassign,
   questionSlotElement,
 }: {
   /** For Something else, fired once (after its 4s spinner) with the
@@ -877,6 +1119,37 @@ export function MarcusWebbNextBestActionCard({
    *  `onActionLogEntryOpen`'s own); this card only calls back with
    *  whichever article was clicked. */
   onViewArticle?: (article: KnowledgeArticleCardData) => void;
+  /** Fired when the top-level bubble's "Marcus Webb" inline link is
+   *  clicked — the caller is expected to open the real Customer
+   *  Information overlay (e.g. `focusCustomerPanelTab("Overview")`). */
+  onOpenCustomerInfo?: () => void;
+  /** Fired when the top-level bubble's order inline link is clicked —
+   *  the caller is expected to show placeholder order info in a side
+   *  panel (via `MarcusWebbOrderDetailPanelBody`, exported above), the
+   *  same floating-`InteriorPanel` mechanism `onActionLogEntryOpen`/
+   *  `onViewArticle` already use. */
+  onOpenOrderInfo?: () => void;
+  /** Fired when a "Something else" round's instruction row is clicked —
+   *  per explicit follow-up request, that row now opens the customer's
+   *  last-10-transactions table in a side panel (rather than expanding
+   *  inline the way it used to), the same floating-`InteriorPanel`
+   *  mechanism `onActionLogEntryOpen`/`onViewArticle`/`onOpenOrderInfo`
+   *  already use. `id` lets the caller round-trip it back via
+   *  `selectedTransactionsId` (below), and `note`/`timestamp` are
+   *  exactly what that round's row itself already shows. */
+  onOpenTransactions?: (round: { id: string; note: string; timestamp: string }) => void;
+  /** The `id` (see `onOpenTransactions`'s own `round.id`) of whichever
+   *  "Something else" instruction row's side panel is currently open —
+   *  same "caller reflects it back for the selected-state highlight"
+   *  contract as `selectedActionLogEntryId`/`selectedArticleId` below. */
+  selectedTransactionsId?: string | null;
+  /** Fired when "Dismiss And Unassign" is clicked on the top-level
+   *  bubble's post-approval completion screen — the caller is expected
+   *  to actually dismiss/unassign this whole interaction (unconditionally,
+   *  unlike `onAssignmentClosed` above, which stays gated behind
+   *  `MARCUS_WEBB_AUTO_DISMISS_ON_CLOSE` for its own, automatic-
+   *  completion flow — this one is a direct, explicit agent click). */
+  onDismissAndUnassign?: () => void;
   /** The `id` of the note entry whose side panel is currently open (or
    *  `null`/omitted) — drives `ActionLogNoteEntry`'s own selected-state
    *  highlight. The caller owns whether a second click on the same entry
@@ -893,7 +1166,7 @@ export function MarcusWebbNextBestActionCard({
    *  Per explicit request ("none of these should be fixed"), NONE of the
    *  three `activeQuestionItem` questions (top-level, post-takeover
    *  remedies, post-photo decision) use this anymore — all three render
-   *  inline now (see `MarcusWebbInlineQuestionCard` below). This prop
+   *  inline now, as chat bubbles (see `MarcusWebbAiChatBubble` below). This prop
    *  still exists for the (currently hidden, `SHOW_DO_SOMETHING_INPUT`)
    *  "Do something" `AIInput` (`commandSlotContent`), which still portals
    *  here if it's ever re-enabled. Everything else on this card (bullets,
@@ -906,14 +1179,6 @@ export function MarcusWebbNextBestActionCard({
   const [selected, setSelected] = useState<MarcusWebbNextBestActionSelection | undefined>(undefined);
   const [customNote, setCustomNote] = useState("");
   const [confirmed, setConfirmed] = useState<MarcusWebbNextBestActionSelection | undefined>(undefined);
-  // Snapshot of the FIRST "something else" note, read by the `onComplete`
-  // effect below (fires once, 4s after `confirmed` first becomes truthy —
-  // see that effect's own `[confirmed]`-only deps) — a ref, not state,
-  // since `handleTopLevelConfirm` now clears `customNote` synchronously
-  // right after logging each submission (so the picker's textarea comes
-  // back empty for the next round), which would otherwise already be
-  // empty by the time that delayed effect reads it.
-  const noteForCompletionRef = useRef("");
 
   // The growing action log — see this file's own top doc comment for the
   // full "simple" vs. "note" distinction and every point below that logs
@@ -921,6 +1186,15 @@ export function MarcusWebbNextBestActionCard({
   const [actionLog, setActionLog] = useState<MarcusWebbActionLogEntry[]>([]);
   const nextLogId = useRef(0);
   const nowTimestamp = () => new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  // Every distinct `activeQuestionItem.id` this card has ever shown,
+  // recorded once (with a timestamp frozen at first appearance) the
+  // moment it first becomes active — see the effect right after
+  // `activeQuestionItem` is computed, below, and `MarcusWebbAiChatBubble`'s
+  // own doc comment for why this exists: per explicit request, an
+  // answered question's chat bubble stays visible (just without its
+  // options), so it can't simply be read off the ephemeral
+  // `activeQuestionItem` the way the old design was.
+  const [askedQuestions, setAskedQuestions] = useState<{ id: string; title: React.ReactNode; timestamp: string }[]>([]);
   const logMilestone = (title: string) => {
     setActionLog((log) => [...log, { id: String(nextLogId.current++), kind: "simple", title, timestamp: nowTimestamp() }]);
   };
@@ -938,36 +1212,49 @@ export function MarcusWebbNextBestActionCard({
     setActionLog((log) => [...log, full]);
     return full;
   };
-  // Local, self-contained elapsed timer — deliberately NOT the page's own
-  // shared `clockTick` (this component still only takes the one narrow
-  // `onComplete` callback — see this file's own top doc comment — not a
-  // clock/tick prop), started the instant a choice is confirmed.
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  // Flips true 4 simulated seconds after confirming — the "AI agent
-  // finished performing this" state (see this component's own top doc
-  // comment for the bug report this fixes: the spinner used to run
-  // forever). Depending the interval effect below on this too (not just
-  // `confirmed`) is what actually freezes the timer at that point — once
-  // `completed` is true, the guard skips creating a new interval, so
-  // `elapsedSeconds` simply stops advancing.
-  const [completed, setCompleted] = useState(false);
-  // Something else only now — Approve uses `approveStepIndex` below, Reject
-  // uses its own reason/step machinery further down (see this file's own
-  // top doc comment).
+  // "Something else" only — per explicit follow-up request (with a
+  // reference screenshot), this went from one instant, synchronous
+  // `actionLog` append to a real, REPEATABLE multi-step animated round:
+  // (0) "AI agent is performing this now…" spinner, no instruction card
+  // yet; (1) the "Instruction sent" card appears (animated in) and a
+  // SECOND, separate "AI agent is analyzing…" spinner starts; (2) that
+  // analyzing spinner is replaced by a brand-new chat bubble with an
+  // analysis message + a fresh row of buttons. A growing LIST of rounds
+  // (not a few flat pieces of state), same reasoning `rejectRounds` below
+  // already established for the same kind of "this needs to work again
+  // on repeat" requirement — the OLD `completed`/`elapsedSeconds`
+  // mechanism this replaces only ever fired once (its effect was keyed on
+  // `[confirmed]`, which doesn't change value between repeat "something
+  // else" submissions, so a second round's spinner never played). See
+  // the render call site (below the action log) for how each round's
+  // step maps to what's on screen, and `SOMETHING_ELSE_STEPS` for the
+  // step-advance effect that drives it.
+  interface SomethingElseRound {
+    note: string;
+    timestamp: string;
+    stepIndex: number;
+  }
+  const [somethingElseRounds, setSomethingElseRounds] = useState<SomethingElseRound[]>([]);
+  const lastSomethingElseRound = somethingElseRounds[somethingElseRounds.length - 1];
   useEffect(() => {
-    if (!confirmed || confirmed === "approve" || confirmed === "reject" || completed) return;
-    const interval = window.setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
-    return () => window.clearInterval(interval);
-  }, [confirmed, completed]);
-  useEffect(() => {
-    if (!confirmed || confirmed === "approve" || confirmed === "reject") return;
+    if (!lastSomethingElseRound || lastSomethingElseRound.stepIndex >= SOMETHING_ELSE_STEPS) return;
+    const idx = somethingElseRounds.length - 1;
     const timeout = window.setTimeout(() => {
-      setCompleted(true);
-      onComplete?.(`Thanks for holding — before we finish up, I wanted to follow up on this: ${noteForCompletionRef.current}`);
-    }, 4000);
+      // Fires on the 1→2 transition — roughly the same "a few seconds
+      // after submitting" timing the old fixed 4000ms timer had, just
+      // driven by this round's own real progress now instead of a
+      // decoupled clock, per explicit request to keep this transcript
+      // message alongside the new in-card bubble.
+      if (lastSomethingElseRound.stepIndex === 1) {
+        onComplete?.(
+          `Thanks for holding — before we finish up, I wanted to follow up on this: ${lastSomethingElseRound.note}`
+        );
+      }
+      setSomethingElseRounds((rounds) => rounds.map((r, i) => (i === idx ? { ...r, stepIndex: r.stepIndex + 1 } : r)));
+    }, 1500);
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmed]);
+  }, [lastSomethingElseRound?.stepIndex, somethingElseRounds.length]);
 
   // Reject only — per explicit request ("treat this like an actual Claude
   // session"), this is a growing LIST of rounds rather than a few flat
@@ -1274,8 +1561,13 @@ export function MarcusWebbNextBestActionCard({
   // "hide, don't destroy": the underlying simulated process (timers,
   // `onAgentContactedCustomer`/`onCustomerApprovedResolution`/
   // `onDispositionUpdated` callbacks, the eventual "Refund approved" log
-  // entry) runs the same regardless of this flag — only this VISUAL step
-  // list is toggled.
+  // entry) runs the same regardless of this flag — only this VISUAL
+  // treatment is toggled, between the step list and a plain spinner row.
+  // The plain-spinner branch only renders while still actually in
+  // progress (`approveStepIndex < APPROVE_STEP_LABELS.length`) — once the
+  // last step's callback has fired, this simply disappears (same as
+  // `AIProcess` would auto-collapse to, just with nothing left to show
+  // afterward) and the separate completion bubble elsewhere takes over.
   const approveBlock = SHOW_APPROVE_PROCESSING_STEPS ? (
     <AIProcess
       expanded={approveExpanded}
@@ -1283,7 +1575,61 @@ export function MarcusWebbNextBestActionCard({
       label="Processing the approval"
       steps={approveSteps}
     />
+  ) : approveStepIndex < APPROVE_STEP_LABELS.length ? (
+    <div className="flex items-center gap-2 px-1">
+      <Spinner size="sm" />
+      <span className="lyra-body-sm text-lyra-fg-secondary">AI agent is working…</span>
+    </div>
   ) : null;
+
+  // Drives `MarcusWebbTaskCard`'s phase for the top-level bubble —
+  // `"processing"`/`"completed"` both just tell it to stop showing the
+  // row of buttons; the loader itself (`approveBlock`) and the
+  // completion bubble render elsewhere (see the "pure history" block's
+  // `confirmed === "approve" ? approveBlock : ...`, and
+  // `completionTimestamp`'s own render call site, respectively — per
+  // explicit follow-up, neither lives inside the original bubble).
+  // Reject/Something else don't have their own phases yet ("we will
+  // update the reject and something else later") — they stay on
+  // `"picking"`, which is exactly what `MarcusWebbTaskCard` already
+  // renders for "nothing/still choosing."
+  const topLevelPhase: "picking" | "processing" | "completed" =
+    confirmed === "approve" ? (approveStepIndex >= APPROVE_STEP_LABELS.length ? "completed" : "processing") : "picking";
+
+  // Shared between the original bubble's own `MarcusWebbTaskCard` and
+  // every "Something else" round's follow-up bubble's own — same
+  // Approve/Reject/Something-else picker, wherever it's currently live.
+  const topLevelNotes = {
+    reject: {
+      value: lastRejectRound.reason,
+      onChange: (value: string) => updateLastRejectRound({ reason: value }),
+      placeholder: "e.g. the damage report needs photos before this can be approved...",
+      label: "Enter a reason",
+    },
+    "something-else": {
+      value: customNote,
+      onChange: setCustomNote,
+      placeholder: "Describe what you'd like the AI agent to do instead (e.g. ask for photos of the damage first)...",
+    },
+  };
+
+  // Per a later explicit follow-up ("put the followup in a new
+  // conversation bubble below the refund note and latest actions - keep
+  // it like a conversation"), the completion text/buttons (screenshot 3)
+  // are their own NEW chat bubble now, not appended inside the original
+  // question bubble — `MarcusWebbTaskCard`'s `"completed"` phase renders
+  // nothing there anymore (see its own call site below); this timestamp,
+  // captured once the moment `topLevelPhase` first reaches `"completed"`
+  // (not recomputed every render), is for that SEPARATE bubble, rendered
+  // at the very end of this card (after the action log/history), same
+  // pattern `askedQuestions` already uses to freeze a timestamp at the
+  // moment something first happens.
+  const [completionTimestamp, setCompletionTimestamp] = useState<string | null>(null);
+  useEffect(() => {
+    if (topLevelPhase !== "completed") return;
+    setCompletionTimestamp((prev) => prev ?? nowTimestamp());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topLevelPhase]);
 
   // Takeover only — see this file's own top doc comment. Fires the human
   // agent's greeting then the customer's reply once, on a short delay,
@@ -1362,30 +1708,15 @@ export function MarcusWebbNextBestActionCard({
     // Per explicit follow-up request ("this way they can keep requesting
     // something else and the approve / reject doesn't go away until one
     // is selected") — Something else no longer goes through the shared
-    // `logDecision` (that's approve-only now): it logs its own
-    // `"transactions"`-kind entry instead (rendered inline as an
-    // expandable accordion opening straight to the customer's last-10-
-    // transactions table — `MarcusWebbInstructionTransactionsEntry`,
-    // below), then clears the picker's own fields so it comes back empty
-    // for another round. `noteForCompletionRef` snapshots the note BEFORE
-    // clearing `customNote` — the `onComplete` effect below reads live
-    // `customNote` on a 4s delay, which would otherwise already be empty
-    // by the time it fires.
+    // `logDecision` (that's approve-only now). Per a LATER explicit
+    // follow-up, it no longer logs an instant `actionLog` entry either —
+    // it just starts a new `somethingElseRound` (see that state's own
+    // doc comment); the round's own step-advance effect is what actually
+    // shows the "Instruction sent" card, a few real seconds later, as
+    // part of the new animated sequence.
     if (value === "something-else") {
       const note = customNote.trim();
-      noteForCompletionRef.current = note;
-      setActionLog((log) => [
-        ...log,
-        {
-          id: String(nextLogId.current++),
-          kind: "transactions",
-          title: "Instruction sent",
-          timestamp: nowTimestamp(),
-          actorName: "John Smith",
-          icon: <MessageSquareText className="h-4 w-4 text-lyra-fg-secondary" strokeWidth={1.5} aria-hidden="true" />,
-          description: note,
-        },
-      ]);
+      setSomethingElseRounds((rounds) => [...rounds, { note, timestamp: nowTimestamp(), stepIndex: 0 }]);
       setCustomNote("");
       setSelected(undefined);
       return;
@@ -1437,12 +1768,12 @@ export function MarcusWebbNextBestActionCard({
   // the post-photo "Reject and provide another reason") captures its
   // reason inline on its own question via `notes`, so `reasonSubmitted`
   // is always already true by the time a round exists to check.
-  let activeQuestionItem: { id: string; title: string; content: React.ReactNode } | null = null;
+  let activeQuestionItem: { id: string; title: React.ReactNode; content: React.ReactNode } | null = null;
   if (takenOver) {
     if (!remedyConfirmed) {
       activeQuestionItem = {
         id: "remedies",
-        title: "Suggested remedies",
+        title: <p className="lyra-body-md text-lyra-fg-default">Suggested remedies</p>,
         content: (
           <NextBestActionOptionPicker
             options={REMEDY_OPTIONS}
@@ -1461,7 +1792,7 @@ export function MarcusWebbNextBestActionCard({
         ),
       };
     }
-  } else if (!confirmed || confirmed === "something-else") {
+  } else if (confirmed !== "reject") {
     // Per explicit follow-up request ("this way they can keep requesting
     // something else and the approve / reject doesn't go away until one
     // is selected") — "Something else" is the one option that doesn't
@@ -1470,33 +1801,76 @@ export function MarcusWebbNextBestActionCard({
     // logs correctly and the eventual `onComplete` reply still fires),
     // but this condition treats that value the same as "nothing answered
     // yet," so the SAME picker below just keeps reappearing after each
-    // submission. Approve/Reject are the only two values that actually
-    // fall through past this branch for good.
+    // submission. Reject is the only value that actually falls through
+    // past this branch for good (into "photo-decision", below) — Approve
+    // now ALSO stays on this branch (condition widened from
+    // `!confirmed || confirmed === "something-else"` to `confirmed !==
+    // "reject"`), per later explicit request: the bubble needs to stay
+    // "live" through Approve's own in-bubble processing/completion
+    // phases (`topLevelPhase`, computed above) instead of freezing the
+    // instant Approve is picked, the way it used to (and the way Reject
+    // still does).
     activeQuestionItem = {
       id: "next-best-action",
-      title: "How would you like to proceed?",
-      content: (
-        <NextBestActionOptionPicker
-          options={OPTIONS}
-          selected={selected}
-          onSelectedChange={setSelected}
-          onConfirm={handleTopLevelConfirm}
-          confirmDisabled={confirmDisabled}
-          notes={{
-            reject: {
-              value: lastRejectRound.reason,
-              onChange: (value) => updateLastRejectRound({ reason: value }),
-              placeholder: "e.g. the damage report needs photos before this can be approved...",
-              label: "Enter a reason",
-            },
-            "something-else": {
-              value: customNote,
-              onChange: setCustomNote,
-              placeholder: "Describe what you'd like the AI agent to do instead (e.g. ask for photos of the damage first)...",
-            },
-          }}
-        />
+      // Per explicit request, Contact Overview's own facts (see
+      // `contactOverviewItem`, now hidden via `SHOW_CONTACT_OVERVIEW`)
+      // are folded into this intro, rephrased as first-person AI
+      // narrative — same underlying facts (order #48213, noise-cancelling
+      // headphones, $200 refund vs. $100 auto-approval limit, cracked ear
+      // cup), just narrated instead of bulleted. "Marcus Webb" and the
+      // order reference are real inline links — same established pattern
+      // as `previousAgent.name` in lyra-ui's `contact-overview.tsx` (a
+      // bare `<button type="button">`, not the `Button` component,
+      // styled `text-lyra-fg-link hover:underline`) — opening the real
+      // Customer Information overlay and a new placeholder order-info
+      // side panel, respectively (see `onOpenCustomerInfo`/
+      // `onOpenOrderInfo` props).
+      title: (
+        <>
+          <p className="lyra-body-md text-lyra-fg-default">
+            Hello, I am on a call with{" "}
+            <button
+              type="button"
+              onClick={onOpenCustomerInfo}
+              className="lyra-body-md-emphasis text-lyra-fg-link hover:underline focus-visible:outline-none"
+            >
+              Marcus Webb
+            </button>
+            . He has an{" "}
+            <button
+              type="button"
+              onClick={onOpenOrderInfo}
+              className="lyra-body-md-emphasis text-lyra-fg-link hover:underline focus-visible:outline-none"
+            >
+              order for noise-cancelling headphones
+            </button>{" "}
+            that he placed last Tuesday. He reported the item arrived with a cracked ear cup.
+          </p>
+          <p className="lyra-body-md text-lyra-fg-default">
+            I've confirmed the $200 refund qualifies, but it exceeds our $100 auto-approval limit, so I've placed
+            Marcus on hold pending your sign-off.
+          </p>
+        </>
       ),
+      // Per explicit follow-up request, this bubble's OWN picker only
+      // shows for as long as no "Something else" round has ever started —
+      // the moment the first one does, the live picker hands off to that
+      // round's own follow-up bubble instead (see the new
+      // `somethingElseRounds.map(...)` render block, below the action
+      // log), matching the same "earlier bubble freezes once you've
+      // moved on" pattern Approve/Reject already established.
+      content:
+        somethingElseRounds.length === 0 ? (
+          <MarcusWebbTaskCard
+            options={OPTIONS}
+            selected={selected}
+            onSelectedChange={setSelected}
+            onConfirm={handleTopLevelConfirm}
+            confirmDisabled={confirmDisabled}
+            notes={topLevelNotes}
+            phase={topLevelPhase}
+          />
+        ) : null,
     };
   } else if (
     confirmed === "reject" &&
@@ -1506,7 +1880,7 @@ export function MarcusWebbNextBestActionCard({
   ) {
     activeQuestionItem = {
       id: "photo-decision",
-      title: "How would you like to proceed?",
+      title: <p className="lyra-body-md text-lyra-fg-default">How would you like to proceed?</p>,
       content: (
         <NextBestActionOptionPicker
           options={PHOTO_DECISION_OPTIONS}
@@ -1534,6 +1908,19 @@ export function MarcusWebbNextBestActionCard({
       ),
     };
   }
+
+  // Records each distinct question `id` the moment it first becomes
+  // `activeQuestionItem` — see `askedQuestions`'/`MarcusWebbAiChatBubble`'s
+  // own doc comments. Repeated "something else" rounds keep the SAME id
+  // active (`next-best-action` staying active across rounds, per that
+  // branch's own doc comment above) so they never re-append here — the
+  // bubble just keeps showing its live picker throughout, unchanged.
+  useEffect(() => {
+    if (!activeQuestionItem) return;
+    const id = activeQuestionItem.id;
+    const title = activeQuestionItem.title;
+    setAskedQuestions((prev) => (prev.some((q) => q.id === id) ? prev : [...prev, { id, title, timestamp: nowTimestamp() }]));
+  }, [activeQuestionItem?.id, activeQuestionItem?.title]);
 
   // Placeholder in the slot whenever nothing's scripted-pending — no LLM
   // wired up yet (see `commandInputValue`'s own doc comment above), but
@@ -1580,11 +1967,114 @@ export function MarcusWebbNextBestActionCard({
           per explicit follow-up request, it's no longer hidden after the
           agent's first selection. It's initial context, not something
           awaiting an answer, so it never portals either. */}
-      {buildContactOverviewContainer()}
+      {SHOW_CONTACT_OVERVIEW && buildContactOverviewContainer()}
+      {/* The top-level "How would you like to proceed?" question's own
+          chat bubble — rendered here, right after Contact Overview, which
+          is also where it first appears live. It stays here permanently
+          once answered too (text visible, no options) — see
+          `askedQuestions`'/`MarcusWebbAiChatBubble`'s own doc comments —
+          so `actionLog`'s "Refund rejected"/etc. entry, logged right
+          below, correctly reads as happening AFTER this bubble was asked,
+          not before it. */}
+      {askedQuestions
+        .filter((q) => q.id === "next-best-action")
+        .map((q) => (
+          <MarcusWebbAiChatBubble key={q.id} title={q.title} timestamp={q.timestamp}>
+            {activeQuestionItem?.id === q.id && activeQuestionItem.content}
+          </MarcusWebbAiChatBubble>
+        ))}
+      {/* Each "Something else" round's own animated sequence — per
+          explicit follow-up request (with a reference screenshot):
+          "AI agent is performing this now…" (no instruction card yet) →
+          the "Instruction sent" card appears (animated in) + a SEPARATE
+          "AI agent is analyzing…" spinner starts → that analyzing spinner
+          is replaced by a brand-new chat bubble with an analysis message
+          and a fresh row of buttons. Since a new round can only start
+          once the previous one's follow-up bubble has already appeared
+          (no buttons exist to submit another round until then), every
+          round except possibly the last is always fully at
+          `stepIndex >= SOMETHING_ELSE_STEPS` — this is a single ordered
+          `.map()`, no interleaving against `actionLog` needed (nothing
+          here is logged into `actionLog` at all anymore — see
+          `somethingElseRounds`'s own doc comment). Only the LAST round's
+          follow-up bubble ever shows a live picker, and only while
+          `confirmed !== "reject"` (Approve/Reject can only happen from
+          whichever bubble is currently live, so this mirrors the exact
+          same gating the original bubble's own `content` above uses). */}
+      {somethingElseRounds.map((round, i) => (
+        <React.Fragment key={i}>
+          <div className="flex items-center gap-2 px-1 animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+            {round.stepIndex >= 1 ? (
+              <CheckCircle2 className="h-4 w-4 text-lyra-status-success-strong" strokeWidth={1.5} aria-hidden="true" />
+            ) : (
+              <Spinner size="sm" />
+            )}
+            <span className="lyra-body-sm text-lyra-fg-secondary">
+              {round.stepIndex >= 1 ? "AI agent finished performing this." : "AI agent is performing this now…"}
+            </span>
+          </div>
+          {round.stepIndex >= 1 && (
+            <div className="animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+              <ActionLogNoteEntry
+                entry={{
+                  id: `something-else-${i}`,
+                  kind: "note",
+                  // Per explicit follow-up request, the instruction ITSELF
+                  // is this row's title (truncated by `ActionLogNoteEntry`
+                  // if long) instead of a generic "Instruction sent" label
+                  // — no separate `description` quote below it, since that
+                  // would just repeat this same text a second time.
+                  title: round.note,
+                  timestamp: round.timestamp,
+                  actorName: "John Smith",
+                  icon: (
+                    <MessageSquareText className="h-4 w-4 text-lyra-fg-secondary" strokeWidth={1.5} aria-hidden="true" />
+                  ),
+                }}
+                selected={selectedTransactionsId === `something-else-${i}`}
+                onClick={() =>
+                  onOpenTransactions?.({ id: `something-else-${i}`, note: round.note, timestamp: round.timestamp })
+                }
+              />
+            </div>
+          )}
+          {round.stepIndex === 1 && (
+            <div className="flex items-center gap-2 px-1 animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+              <Spinner size="sm" />
+              <span className="lyra-body-sm text-lyra-fg-secondary">AI agent is analyzing…</span>
+            </div>
+          )}
+          {round.stepIndex >= SOMETHING_ELSE_STEPS && (
+            <MarcusWebbAiChatBubble
+              title={
+                <>
+                  <p className="lyra-body-md text-lyra-fg-default">
+                    I have analyzed the order history and it appears Marcus Webb has 5 damaged product claims in the
+                    last 10 transactions. This is an alarmingly high amount.
+                  </p>
+                </>
+              }
+              timestamp={round.timestamp}
+            >
+              {i === somethingElseRounds.length - 1 && confirmed !== "reject" && (
+                <MarcusWebbTaskCard
+                  options={OPTIONS}
+                  selected={selected}
+                  onSelectedChange={setSelected}
+                  onConfirm={handleTopLevelConfirm}
+                  confirmDisabled={confirmDisabled}
+                  notes={topLevelNotes}
+                  phase={topLevelPhase}
+                />
+              )}
+            </MarcusWebbAiChatBubble>
+          )}
+        </React.Fragment>
+      ))}
       {/* Per explicit request ("none of these should be fixed"), NONE of
           the `activeQuestionItem` questions portal into the fixed bottom
-          slot anymore — all three render inline below instead (see
-          `MarcusWebbInlineQuestionCard`). This still portals
+          slot anymore — all three render inline as chat bubbles instead
+          (see `MarcusWebbAiChatBubble`). This still portals
           `commandSlotContent` (the currently-hidden "Do something"
           `AIInput`) — the only thing left that can occupy the fixed slot
           — which itself only ever renders when `activeQuestionItem` is
@@ -1596,8 +2086,6 @@ export function MarcusWebbNextBestActionCard({
           {actionLog.map((entry) =>
             entry.kind === "simple" ? (
               <ActionLogSimpleEntry key={entry.id} timestamp={entry.timestamp} title={entry.title} />
-            ) : entry.kind === "transactions" ? (
-              <MarcusWebbInstructionTransactionsEntry key={entry.id} entry={entry} />
             ) : (
               <ActionLogNoteEntry
                 key={entry.id}
@@ -1637,6 +2125,15 @@ export function MarcusWebbNextBestActionCard({
       {!takenOver && confirmed && (
         <div className="flex flex-col gap-3">
           {confirmed === "approve" ? (
+            // Per explicit follow-up ("the processing approval should
+            // show after the refund approved note, not inside the AI
+            // chat bubble") — `approveBlock` renders HERE, its original
+            // spot (after the action log's "Refund approved" entry
+            // above), not inside the top-level bubble. An earlier pass
+            // moved it into the bubble via `MarcusWebbTaskCard`'s
+            // `"processing"` phase; that phase (and `"completed"`) now
+            // render nothing there instead — see that component's own
+            // doc comment.
             approveBlock
           ) : confirmed === "reject" ? (
             <div className="flex flex-col gap-4">
@@ -1683,32 +2180,68 @@ export function MarcusWebbNextBestActionCard({
               {approvedAfterReject && approveBlock}
             </div>
           ) : (
-            <div className="flex items-center gap-2 px-1">
-              {completed ? (
-                <CheckCircle2 className="h-4 w-4 text-lyra-status-success-strong" strokeWidth={1.5} aria-hidden="true" />
-              ) : (
-                <Spinner size="sm" />
-              )}
-              <span className="lyra-body-sm text-lyra-fg-secondary flex-1">
-                {completed ? "AI agent finished performing this." : "AI agent is performing this now…"}
-              </span>
-              <span className="lyra-body-sm text-lyra-fg-secondary">{formatElapsedTime(elapsedSeconds)}</span>
-            </div>
+            // "Something else" — per explicit follow-up, this used to be a
+            // plain inline spinner/checkmark row here; it's now the
+            // `somethingElseRounds` sequence rendered in its own dedicated
+            // block instead (right after the top-level bubble, before this
+            // one), so there's nothing left for this branch to show.
+            null
           )}
         </div>
       )}
-      {/* Whichever question is currently pending — top-level, post-takeover
-          remedies, or post-photo decision — renders inline here, per
-          explicit request ("none of these should be fixed"). Placed AFTER
-          the pure-history block above (rather than right after the action
-          log) so the post-photo decision correctly reads below round 0's
-          own `AIProcess`/photo instead of above it — the top-level and
-          remedies questions are unaffected by this position, since that
-          history block renders nothing while either of those is active
-          (`confirmed`/`takenOver` gate it off in both cases). See
-          `MarcusWebbInlineQuestionCard`'s own doc comment, and the portal
-          call site above (which no longer carries any question). */}
-      {activeQuestionItem && <MarcusWebbInlineQuestionCard item={activeQuestionItem} />}
+      {/* The post-takeover "Suggested remedies" and post-photo-decision
+          chat bubbles both render here — after the pure-history block
+          above — because that's the position each of them first appears
+          live in: the remedies question replaces the top-level one
+          entirely (`takenOver` short-circuits the history block, so
+          nothing renders above this point in that flow), and the
+          post-photo decision genuinely needs to read below round 0's own
+          `AIProcess`/photo. `.filter(id !== "next-best-action")` covers
+          both ids together (they're mutually exclusive in the common
+          flow) and, in the rare case an agent takes over mid-reject
+          (leaving a still-unanswered photo-decision bubble behind when
+          remedies takes over), keeps both in the order they were asked —
+          same "stays visible once answered" behavior as the top-level
+          bubble above. See `askedQuestions`'/`MarcusWebbAiChatBubble`'s
+          own doc comments. */}
+      {askedQuestions
+        .filter((q) => q.id !== "next-best-action")
+        .map((q) => (
+          <MarcusWebbAiChatBubble key={q.id} title={q.title} timestamp={q.timestamp}>
+            {activeQuestionItem?.id === q.id && activeQuestionItem.content}
+          </MarcusWebbAiChatBubble>
+        ))}
+      {/* Per explicit follow-up request ("put the followup in a new
+          conversation bubble below the refund note and latest actions -
+          keep it like a conversation"), Approve's completion message
+          (screenshot 3) is its OWN new chat bubble, rendered at the very
+          end — after the action log's "Refund approved"/"Disposition
+          updated..." entries above — rather than appended inside the
+          original "How would you like to proceed?" bubble
+          (`MarcusWebbTaskCard`'s `"completed"` phase renders nothing, by
+          design; see its own doc comment). `completionTimestamp` is
+          `null` until `topLevelPhase` first reaches `"completed"`, so
+          this simply doesn't render until then. */}
+      {completionTimestamp && (
+        <MarcusWebbAiChatBubble
+          title={
+            <p className="lyra-body-md text-lyra-fg-default">
+              Excellent. I have approved the refund and responded to Marcus. I will let you know if there is any
+              further issue with this contact.
+            </p>
+          }
+          timestamp={completionTimestamp}
+        >
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="md" onClick={onDismissAndUnassign}>
+              Dismiss And Unassign
+            </Button>
+            <Button variant="outline" size="md" onClick={() => {}}>
+              Something Else
+            </Button>
+          </div>
+        </MarcusWebbAiChatBubble>
+      )}
     </div>
   );
 }
