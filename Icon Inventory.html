@@ -1,0 +1,440 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Icon Inventory</title>
+<meta name="description" content="Every lucide-react icon used in agent-next-gen-v3, the button or element it's attached to, and its matching legacy CCF icon name — styled with real lyra-ui tokens.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+:root {
+  /* ---- lyra-ui tokens (light), pulled from lyra-ui/src/styles/lyra-tokens.css ---- */
+  --lyra-color-bg-surface-base: #ffffff;
+  --lyra-color-bg-surface-canvas: #FBFCFE;
+  --lyra-color-bg-surface-shell: #F5F7F9;
+  --lyra-color-bg-active-subtle: #F1F7FE;
+  --lyra-color-fg-default: rgba(0, 0, 0, 0.80);
+  --lyra-color-fg-secondary: rgba(0, 0, 0, 0.60);
+  --lyra-color-fg-link: #185ba4;
+  --lyra-color-fg-inverse: #ffffff;
+  --lyra-color-border-subtle: rgba(0, 0, 0, 0.10);
+  --lyra-color-border-soft: rgba(0, 0, 0, 0.16);
+  --lyra-color-border-active: #185BA4;
+  --lyra-color-status-success-strong: #23722D;
+  --lyra-color-status-success-subtle: #ebfaed;
+  --lyra-color-status-info-strong: #2D5BB9;
+  --lyra-color-status-info-subtle: #f0f5ff;
+  --lyra-radius-xs: 4px;
+  --lyra-radius-sm: 6px;
+  --lyra-radius-md: 8px;
+  --lyra-radius-lg: 12px;
+  --lyra-radius-round: 999px;
+
+  /* page-level roles built on top of the tokens above */
+  --bg: var(--lyra-color-bg-surface-canvas);
+  --surface: var(--lyra-color-bg-surface-base);
+  --surface-2: var(--lyra-color-bg-surface-shell);
+  --border: var(--lyra-color-border-subtle);
+  --text: var(--lyra-color-fg-default);
+  --text-2: var(--lyra-color-fg-secondary);
+  --accent: var(--lyra-color-fg-link);
+  --header-bg: #14161c;
+  --header-text: rgba(255,255,255,0.92);
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --lyra-color-bg-surface-base: #1f1f1e;
+    --lyra-color-bg-surface-canvas: #141414;
+    --lyra-color-bg-surface-shell: #2e2e2e;
+    --lyra-color-bg-active-subtle: rgba(72, 150, 236, 0.12);
+    --lyra-color-fg-default: rgba(255, 255, 255, 0.80);
+    --lyra-color-fg-secondary: rgba(255, 255, 255, 0.60);
+    --lyra-color-fg-link: #a7d0fe;
+    --lyra-color-fg-inverse: #1f1f1e;
+    --lyra-color-border-subtle: rgba(255, 255, 255, 0.10);
+    --lyra-color-border-soft: rgba(255, 255, 255, 0.16);
+    --lyra-color-border-active: #4896ec;
+    --lyra-color-status-success-strong: #64b96f;
+    --lyra-color-status-success-subtle: rgba(33, 116, 44, 0.20);
+    --lyra-color-status-info-strong: #789fed;
+    --lyra-color-status-info-subtle: rgba(37, 88, 193, 0.20);
+    --bg: var(--lyra-color-bg-surface-canvas);
+    --surface: var(--lyra-color-bg-surface-base);
+    --surface-2: var(--lyra-color-bg-surface-shell);
+    --border: var(--lyra-color-border-subtle);
+    --text: var(--lyra-color-fg-default);
+    --text-2: var(--lyra-color-fg-secondary);
+    --accent: var(--lyra-color-fg-link);
+    --header-bg: #0a0b0e;
+    --header-text: rgba(255,255,255,0.92);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --lyra-color-bg-surface-base: #1f1f1e;
+  --lyra-color-bg-surface-canvas: #141414;
+  --lyra-color-bg-surface-shell: #2e2e2e;
+  --lyra-color-bg-active-subtle: rgba(72, 150, 236, 0.12);
+  --lyra-color-fg-default: rgba(255, 255, 255, 0.80);
+  --lyra-color-fg-secondary: rgba(255, 255, 255, 0.60);
+  --lyra-color-fg-link: #a7d0fe;
+  --lyra-color-fg-inverse: #1f1f1e;
+  --lyra-color-border-subtle: rgba(255, 255, 255, 0.10);
+  --lyra-color-border-soft: rgba(255, 255, 255, 0.16);
+  --lyra-color-border-active: #4896ec;
+  --lyra-color-status-success-strong: #64b96f;
+  --lyra-color-status-success-subtle: rgba(33, 116, 44, 0.20);
+  --lyra-color-status-info-strong: #789fed;
+  --lyra-color-status-info-subtle: rgba(37, 88, 193, 0.20);
+  --bg: var(--lyra-color-bg-surface-canvas);
+  --surface: var(--lyra-color-bg-surface-base);
+  --surface-2: var(--lyra-color-bg-surface-shell);
+  --border: var(--lyra-color-border-subtle);
+  --text: var(--lyra-color-fg-default);
+  --text-2: var(--lyra-color-fg-secondary);
+  --accent: var(--lyra-color-fg-link);
+  --header-bg: #0a0b0e;
+  --header-text: rgba(255,255,255,0.92);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  padding-inline: 16px;
+  padding-block: 28px;
+}
+.wrap { max-width: 1240px; margin: 0 auto; }
+
+/* ---- lyra-ui type scale (lyra-tokens.css: .lyra-heading-*, .lyra-body-*) ---- */
+.lyra-heading-lg { font-size: 20px; line-height: 24px; font-weight: 600; letter-spacing: -0.01rem; }
+.lyra-body-md { font-size: 14px; line-height: 20px; font-weight: 400; letter-spacing: 0; }
+.lyra-body-md-emphasis { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0; }
+.lyra-body-sm { font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: 0.01rem; }
+.lyra-body-sm-emphasis { font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.01rem; }
+.lyra-body-xs { font-size: 10px; line-height: 14px; font-weight: 400; letter-spacing: 0.01rem; }
+
+.page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+h1 {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.sub {
+  color: var(--text-2);
+  font-size: 14px;
+  max-width: 75ch;
+  line-height: 1.5;
+}
+.sub a { color: var(--accent); }
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.search {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--lyra-radius-md);
+  padding: 8px 12px;
+}
+.search:focus-within { border-color: var(--lyra-color-border-active); box-shadow: 0 0 0 1px var(--lyra-color-border-active); }
+.search input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  width: 100%;
+  font-family: var(--sans);
+}
+.search input::placeholder { color: var(--text-2); opacity: .7; }
+.search svg { flex-shrink: 0; color: var(--text-2); width: 16px; height: 16px; }
+.count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--lyra-radius-md);
+  overflow: hidden;
+}
+.view-toggle button {
+  border: none;
+  background: var(--surface);
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.view-toggle button + button { border-left: 1px solid var(--border); }
+.view-toggle button[aria-pressed="true"] { background: var(--lyra-color-bg-active-subtle); color: var(--lyra-color-border-active); }
+
+.icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--lyra-radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.icon-box svg { width: 18px; height: 18px; stroke: currentColor; }
+
+.name-tag {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ccf-pill {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--lyra-color-status-success-subtle);
+  color: var(--lyra-color-status-success-strong);
+  border-radius: var(--lyra-radius-xs);
+  padding: 2px 6px;
+  margin: 1px 4px 1px 0;
+}
+.ccf-none {
+  color: var(--text-2);
+  font-style: italic;
+  font-size: 12px;
+}
+mark {
+  background: var(--lyra-color-status-info-subtle);
+  color: var(--lyra-color-status-info-strong);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* ---- Table view (lyra-ui table.tsx: h-10 rows, px-3, border-lyra-border-subtle, rounded-lyra-lg) ---- */
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--lyra-radius-lg);
+  background: var(--surface);
+}
+table { width: 100%; border-collapse: collapse; min-width: 920px; }
+thead th {
+  position: sticky;
+  top: 0;
+  background: var(--header-bg);
+  color: var(--header-text);
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 10px 12px;
+  z-index: 2;
+}
+thead th:nth-child(1), thead th:nth-child(2) { position: sticky; left: 0; z-index: 3; }
+thead th:nth-child(1) { left: 0; width: 44px; }
+thead th:nth-child(2) { left: 44px; }
+thead th:first-child { border-top-left-radius: var(--lyra-radius-lg); }
+thead th:last-child { border-top-right-radius: var(--lyra-radius-lg); }
+tbody tr { border-top: 1px solid var(--border); }
+tbody tr:hover { background: var(--surface-2); }
+tbody tr:hover td:nth-child(1), tbody tr:hover td:nth-child(2) { background: var(--surface-2); }
+td { padding: 10px 12px; font-size: 13px; vertical-align: top; line-height: 1.5; color: var(--text); }
+td:nth-child(1), td:nth-child(2) {
+  position: sticky;
+  background: var(--surface);
+  z-index: 1;
+}
+td:nth-child(1) { left: 0; }
+td:nth-child(2) { left: 44px; box-shadow: 1px 0 0 var(--border); }
+td.files-cell { font-family: var(--mono); font-size: 11px; color: var(--text-2); max-width: 220px; }
+td.area-cell { color: var(--text-2); white-space: nowrap; }
+td.ccf-cell { max-width: 260px; }
+
+/* ---- Card view (default on narrow screens — every field stays visible, no horizontal scroll) ---- */
+.cards { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+.card {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 4px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--lyra-radius-lg);
+  padding: 12px;
+}
+.card .icon-box { grid-row: 1 / 3; }
+.card .card-name { grid-column: 2; align-self: center; }
+.card-fields { grid-column: 1 / -1; display: grid; gap: 6px; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border); }
+.card-field { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: start; }
+.card-field .k { color: var(--text-2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 1px; }
+.card-field .v { color: var(--text); font-size: 13px; line-height: 1.5; word-break: break-word; }
+.card-field .v.mono { font-family: var(--mono); font-size: 11.5px; color: var(--text-2); }
+
+.empty-state { padding: 40px 14px; text-align: center; color: var(--text-2); font-size: 13px; }
+footer { margin-top: 16px; color: var(--text-2); font-size: 12px; font-family: var(--mono); }
+
+.table-scroll { display: none; }
+</style>
+
+<div class="wrap">
+  <div class="page-head">
+    <div class="eyebrow">agent-next-gen-v3</div>
+    <h1 class="lyra-heading-lg" style="font-size:26px;line-height:1.2;">Icon Inventory</h1>
+    <div class="sub lyra-body-md">Every <code>lucide-react</code> icon imported in the app, the button/badge/element it's attached to, and — where the <a href="https://davest-max.github.io/lucide-icon-matches/worksheet/" target="_blank" rel="noopener">CXone icon-matching worksheet</a> found one — the legacy CCF icon it replaces. Styled with real <code>lyra-ui</code> tokens (lyra-tokens.css).</div>
+  </div>
+
+  <div class="toolbar">
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="q" type="text" placeholder="Filter by icon, element, screen, file, or ccf name…" autocomplete="off">
+    </div>
+    <label class="view-toggle" style="display:flex;align-items:center;gap:6px;padding:8px 12px;cursor:pointer;">
+      <input id="noMatchOnly" type="checkbox" style="accent-color:var(--lyra-color-border-active);">
+      <span class="lyra-body-sm">No legacy match only</span>
+    </label>
+    <div class="count" id="count"></div>
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th>Icon</th>
+          <th>Associated button / element</th>
+          <th>Screen / component area</th>
+          <th>Files</th>
+          <th>CCF icon match</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <footer id="footer"></footer>
+</div>
+
+<script>
+const ROWS = [{"icon": "ArrowDown", "assoc": "\"Scroll To Latest\" button", "area": "Transcript / Customers table / Interactions table", "files": "agent-next-gen-customers-table.tsx, agent-next-gen-interactions-table.tsx, agent-next-gen-transcript.tsx", "ccf": "ccf-scroll-to-bottom-icon; ArrowDownward"}, {"icon": "ArrowLeft", "assoc": "\"Back\" / \"Back to search\" navigation button", "area": "AI Summary panel / Customer Info panel", "files": "agent-next-gen-ai-summary-panel.tsx, agent-next-gen-customer-info-panel.tsx", "ccf": "KeyboardBackspace; ccf-agent-chat-icons (leave_arrow); configBackButtonIcon"}, {"icon": "ArrowUp", "assoc": "Send/submit arrow button", "area": "Customers table / Interactions table", "files": "agent-next-gen-customers-table.tsx, agent-next-gen-interactions-table.tsx", "ccf": "ArrowUpward"}, {"icon": "ArrowUpDown", "assoc": "\"Sort by\" button", "area": "Interaction Dashboard", "files": "agent-next-gen-interaction-dashboard.tsx", "ccf": "ccf-email-sort-order-icon; ccf-swap-icon"}, {"icon": "ArrowUpRight", "assoc": "Small \"outbound\" badge overlaid on the User avatar (outgoing message indicator)", "area": "Transcript", "files": "agent-next-gen-transcript.tsx", "ccf": ""}, {"icon": "AudioLines", "assoc": "Voice-masking toggle icon (unmasked state)", "area": "Voice call controls", "files": "agent-next-gen-voice-call-controls.tsx", "ccf": "ccf-call-unmask-icon; ccf-missing-id-voice-icon"}, {"icon": "AudioLinesOff", "assoc": "Voice-masking toggle icon (masked state)", "area": "Voice call controls", "files": "agent-next-gen-voice-call-controls.tsx", "ccf": ""}, {"icon": "Bell", "assoc": "Notifications button (header)", "area": "App Header", "files": "Header.tsx", "ccf": "ccf-header-bell-icon; NotificationsNone"}, {"icon": "Bold", "assoc": "\"Bold\" text-formatting button", "area": "Transcript composer", "files": "agent-next-gen-transcript.tsx", "ccf": "ccf-format-bold-icon; FormatBold"}, {"icon": "Bookmark", "assoc": "\"Journey Summary\" header card icon", "area": "Customer Info panel", "files": "agent-next-gen-customer-info-panel.tsx", "ccf": ""}, {"icon": "BookOpen", "assoc": "Self-Service Summary / Password Reset Policy header card icon", "area": "Customer Info panel / Knowledge Article", "files": "AgentWorkspace2WithDeskPage.tsx, agent-next-gen-knowledge-article-card.tsx", "ccf": "ccf-menubook-icon; MenuBook"}, {"icon": "Bot", "assoc": "\"AI agent is typing\" indicator", "area": "Next-Best-Action / AI chat card", "files": "agent-next-gen-marcus-webb-next-best-action-card.tsx", "ccf": ""}, {"icon": "Building2", "assoc": "\"Directory\" contact-category icon", "area": "Outbound directory", "files": "agent-next-gen-outbound-data.tsx", "ccf": ""}, {"icon": "Check", "assoc": "\"Online\" presence badge on avatar (paired with X for \"Offline\"); also \"copied\" confirmation state", "area": "Presence badge / Copy buttons", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-knowledge-article-card.tsx", "ccf": "ccf-approved-icon; ccf-check-icon; ccf-copilot-checklist-tick-icon; ccf-copilot-decision-tree-action-check-icon; ccf-copilot-sent-icon; Check; Done"}, {"icon": "Check", "assoc": "\"Copied\" confirmation icon on a Copy button", "area": "Knowledge Article card", "files": "agent-next-gen-knowledge-article-card.tsx", "ccf": "ccf-approved-icon; ccf-check-icon; ccf-copilot-checklist-tick-icon; ccf-copilot-decision-tree-action-check-icon; ccf-copilot-sent-icon; Check; Done"}, {"icon": "CheckCircle2", "assoc": "Completed-step checkmark on Marcus Webb action list; \"Process Steps\" accordion icon; \"Refund approved\" outcome icon", "area": "Customer Info panel / Next-Best-Action card", "files": "AgentWorkspace2WithDeskPage.tsx, agent-next-gen-marcus-webb-next-best-action-card.tsx", "ccf": "ccf-available-icon; ccf-interaction-complete-icon"}, {"icon": "ChevronDown", "assoc": "\"More send options\" dropdown caret / expand toggle", "area": "Transcript composer / Contact history / Interaction Dashboard", "files": "agent-next-gen-contact-history.tsx, agent-next-gen-interaction-dashboard.tsx, agent-next-gen-transcript.tsx", "ccf": "ccf-copilot-down-arrow-icon; ccf-copilot-view-details-icon; ccf-popover-icon; ccf-single-arrow-icon; ExpandMore; KeyboardArrowDown; ArrowDropDown; ccf-agent-chat-icons (down_arrow); ccf-agent-chat-icons (chevron_down); libs/react/ui-components/src/assets/AdaptiveCardDownArrowIcon.svg"}, {"icon": "ChevronLeft", "assoc": "\"Previous customer\" / \"Previous session\" navigation button", "area": "Customer Info panel", "files": "agent-next-gen-customer-info-panel.tsx", "ccf": "ccf-assignment-collapse-icon; ccf-back-icon; ccf-copilot-toolbar-expand-icon; ccf-copilot-transfer-summary-icon; ccf-left-arrow-icon; ccf-agent-chat-icons (left_arrow)"}, {"icon": "ChevronRight", "assoc": "\"Toggle Assignment Panel\" button; also next/forward chevrons (Next customer, Next session, knowledge article rows)", "area": "Assignment queue header / Customer Info / Knowledge Article", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-knowledge-article-card.tsx, agent-next-gen-search-panel.tsx, agent-next-gen-transcript.tsx", "ccf": "ccf-copilot-toolbar-collapse-icon; ccf-navigation-icon; ccf-right-arrow-icon; ArrowForwardIos; ChevronRight"}, {"icon": "ChevronRight", "assoc": "Knowledge-article row disclosure chevron", "area": "Search panel", "files": "agent-next-gen-search-panel.tsx", "ccf": "ccf-copilot-toolbar-collapse-icon; ccf-navigation-icon; ccf-right-arrow-icon; ArrowForwardIos; ChevronRight"}, {"icon": "ChevronsDownUp", "assoc": "\"Collapse all\" toggle", "area": "Transcript / Interaction Dashboard", "files": "agent-next-gen-interaction-dashboard.tsx, agent-next-gen-transcript.tsx", "ccf": ""}, {"icon": "ChevronsUpDown", "assoc": "\"Expand all\" toggle", "area": "Transcript / Interaction Dashboard", "files": "agent-next-gen-interaction-dashboard.tsx, agent-next-gen-transcript.tsx", "ccf": ""}, {"icon": "CircleAlert", "assoc": "SLA-breach warning badge on the \"My Assignment Queue\" counter; also the CollapsedChannelBadge alert dot", "area": "Assignment queue header / Collapsed channel badge", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, CollapsedChannelBadge.tsx", "ccf": "ErrorOutline"}, {"icon": "CircleCheck", "assoc": "\"Published\" status indicator (table cell)", "area": "Desktop Designs table", "files": "DesktopDesignsPage.tsx", "ccf": "ccf-copilot-success-icon; ccf-copilot-success-outline-icon; CheckCircleOutline; ccf-agent-chat-icons (online); checkHoverIcon; checkUnhoverIcon"}, {"icon": "CircleHelp", "assoc": "Help button (header)", "area": "App Header", "files": "Header.tsx", "ccf": "ccf-copilot-help-icon; ccf-help-icon"}, {"icon": "Clock", "assoc": "\"Longest Wait Time\" label icon; also call-duration display", "area": "Assignment queue / Customer info / Voice controls", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-voice-call-controls.tsx", "ccf": "ccf-copilot-date-time-icon; ccf-copilot-timer-icon; AccessTimeOutlined; AccessTime"}, {"icon": "Copy", "assoc": "\"Copy\" button (copy link/text)", "area": "Knowledge Article card / Customer Info panel / Desktop Designs", "files": "AgentWorkspace2WithDeskPage.tsx, DesktopDesignsPage.tsx, agent-next-gen-knowledge-article-card.tsx", "ccf": "ccf-copy-icon; libs/react/ui-components/src/assets/copy.svg"}, {"icon": "CornerDownLeft", "assoc": "\"Confirm\" button", "area": "Next-Best-Action card", "files": "agent-next-gen-marcus-webb-next-best-action-card.tsx", "ccf": ""}, {"icon": "Eye", "assoc": "\"View\" row-action button", "area": "Customers table", "files": "agent-next-gen-customers-table.tsx", "ccf": "ccf-attachment-preview-icon; ccf-show-icon; ccf-tweet-eye-icon; Visibility"}, {"icon": "FileDown", "assoc": "\"Download Transcript\" menu item icon", "area": "Transcript overflow menu", "files": "agent-next-gen-transcript.tsx", "ccf": "ccf-download-transcript-icon"}, {"icon": "FileText", "assoc": "Sidebar nav item icon; also \"Keypad\"/\"Templates\" quick actions", "area": "Sidebar / Transcript / Voice Controls / Customer Info", "files": "Sidebar.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-transcript.tsx, agent-next-gen-voice-call-controls.tsx", "ccf": "ATTACHMENT_ICON_NAME.DOCUMENT"}, {"icon": "Grid3x3", "assoc": "\"Keypad\" button", "area": "Voice call controls", "files": "agent-next-gen-voice-call-controls.tsx", "ccf": "ccf-header-grid-icon"}, {"icon": "GripVertical", "assoc": "Drag handle for a floating/undocked panel header", "area": "Panel header controls", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-video-window.tsx", "ccf": "ccf-draggable-icon"}, {"icon": "Headphones", "assoc": "\"Agent\" contact-category icon", "area": "Outbound directory", "files": "agent-next-gen-outbound-data.tsx", "ccf": ""}, {"icon": "History", "assoc": "Conversation-history tab toggle", "area": "Panel tabs (History)", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx", "ccf": "ccf-copilot-history-icon; ccf-work-history-icon; historyUnhoverIcon; historyHoverIcon"}, {"icon": "Home", "assoc": "\"Home\" breadcrumb/nav item", "area": "Interaction Dashboard", "files": "agent-next-gen-interaction-dashboard.tsx", "ccf": "ccf-copilot-home-icon; ccf-home-icon"}, {"icon": "Inbox", "assoc": "Empty-state illustration icon (\"Your assignment queue is empty\")", "area": "Assignment queue / Search panel / Contact history / Customer info", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-contact-history.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-search-panel.tsx", "ccf": "ccf-assignement-box-icon; ccf-no-assignment-icon"}, {"icon": "Info", "assoc": "Informational bullet icon in step lists; \"Unavailable breakdown\" tooltip icon", "area": "Customer Info panel / Interaction Dashboard", "files": "AgentWorkspace2WithDeskPage.tsx, agent-next-gen-interaction-dashboard.tsx", "ccf": "ccf-copilot-info-icon; ccf-copilot-information-icon; ccf-info-icon; InfoOutlined; Info"}, {"icon": "Italic", "assoc": "\"Italic\" text-formatting button", "area": "Transcript composer", "files": "agent-next-gen-transcript.tsx", "ccf": "FormatItalic"}, {"icon": "Languages", "assoc": "\"Translate Messages\" menu item icon", "area": "Transcript overflow menu", "files": "agent-next-gen-transcript.tsx", "ccf": "Translate"}, {"icon": "LayoutGrid", "assoc": "\"View All Apps\" kebab menu button / app-switcher grid; also used as the Dialpad tab icon in Outbound search", "area": "App Header / Sidebar / Outbound Dialer", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, Sidebar.tsx, agent-next-gen-outbound-data.tsx", "ccf": ""}, {"icon": "Link2", "assoc": "\"Web Links\" accordion section icon", "area": "Customer Info panel", "files": "AgentWorkspace2WithDeskPage.tsx", "ccf": "ccf-linkedin-icon; Link"}, {"icon": "Mail", "assoc": "\"Email\" channel option icon", "area": "Outbound directory / Customers table", "files": "agent-next-gen-customers-table.tsx, agent-next-gen-outbound-data.tsx", "ccf": "ccf-copilot-email-icon; ccf-email-icon; ccf-mail-outline-icon; ccf-digital-channel-icon; emailSearchIcon"}, {"icon": "Maximize2", "assoc": "\"Full Screen\" button on a docked panel header", "area": "Panel header controls", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-video-window.tsx", "ccf": ""}, {"icon": "Meh", "assoc": "\"Customer Sentiment is Neutral\" header icon", "area": "Customer Info panel", "files": "AgentWorkspace2WithDeskPage.tsx", "ccf": "ccf-copilot-clueless-icon; ccf-sentiment-icon"}, {"icon": "MessageCircle", "assoc": "\"Chat\" channel option icon", "area": "Outbound directory / Customers table", "files": "agent-next-gen-customers-table.tsx, agent-next-gen-outbound-data.tsx", "ccf": ""}, {"icon": "MessageSquare", "assoc": "\"SMS\" channel option icon", "area": "Outbound directory", "files": "agent-next-gen-outbound-data.tsx", "ccf": "ccf-message-outline-icon; CHANNEL_ICON_NAME.LIVECHAT"}, {"icon": "MessageSquareText", "assoc": "Instruction/decision detail icon (e.g. \"Instruction sent\")", "area": "Next-Best-Action card", "files": "agent-next-gen-marcus-webb-next-best-action-card.tsx", "ccf": "ccf-agent-chat-icon; ccf-agent-chat-icons (no_message)"}, {"icon": "Mic", "assoc": "\"Mute\"/\"Unmute\" toggle button", "area": "Voice call controls", "files": "agent-next-gen-voice-call-controls.tsx", "ccf": "ccf-call-mute-icon; KeyboardVoiceOutlined; ATTACHMENT_ICON_NAME.RECORDING_STARTED; ATTACHMENT_ICON_NAME.RECORDING_STOPPED; ATTACHMENT_ICON_NAME.REOCORDING_DISABLED"}, {"icon": "MicOff", "assoc": "\"Mute\"/\"Unmute\" toggle button (muted state)", "area": "Voice call controls", "files": "agent-next-gen-voice-call-controls.tsx", "ccf": ""}, {"icon": "Minimize2", "assoc": "\"Exit Full Screen\" button on a panel in full-screen mode", "area": "Panel header controls", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-video-window.tsx", "ccf": ""}, {"icon": "Minus", "assoc": "\"Not published\" status indicator (table cell)", "area": "Desktop Designs table", "files": "DesktopDesignsPage.tsx", "ccf": "ccf-minus-icon"}, {"icon": "Monitor", "assoc": "\"Settings\" nav item icon", "area": "Sidebar", "files": "Sidebar.tsx", "ccf": "ccf-customWorkspace-icon; DesktopWindowsOutlined"}, {"icon": "MoreVertical", "assoc": "Overflow \"kebab\" menu trigger", "area": "Customer Info panel / Contact history / Interaction Dashboard", "files": "agent-next-gen-contact-history.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-interaction-dashboard.tsx", "ccf": ""}, {"icon": "Move", "assoc": "\"Undock\" button (returns a full-screen panel to a floating/draggable window)", "area": "Panel header controls", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx", "ccf": ""}, {"icon": "PanelRight", "assoc": "\"Open Details Panel\" button", "area": "Panel header controls / Transcript", "files": "AgentWorkspaceAdvancedPage.tsx, agent-next-gen-transcript.tsx", "ccf": ""}, {"icon": "PanelRightClose", "assoc": "Close icon for a docked right-side panel (Customer Info, Details, AI Summary, In-Contact)", "area": "Panel header controls", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-in-contact-panel.tsx", "ccf": ""}, {"icon": "Paperclip", "assoc": "\"Attach file\" button", "area": "Transcript composer", "files": "agent-next-gen-transcript.tsx", "ccf": "ccf-paperclip-icon"}, {"icon": "Pause", "assoc": "\"Hold\"/\"Resume\" toggle button; also the on-hold status badge", "area": "Voice call controls / On Hold badge", "files": "OnHoldBadge.tsx, agent-next-gen-voice-call-controls.tsx", "ccf": "ccf-call-hold-icon; ccf-resume-icon; ccf-voicemail-hold-icon"}, {"icon": "Pencil", "assoc": "\"Edit\" button (record/table row)", "area": "Customer Info panel / Desktop Designs table", "files": "DesktopDesignsPage.tsx, agent-next-gen-customer-info-panel.tsx", "ccf": "ccf-copilot-edit-note-icon; ccf-edit-book-icon; Edit; ccf-agent-chat-icons (edit); ccf-agent-chat-icons (edit_pencil)"}, {"icon": "PencilRuler", "assoc": "\"Designer\" nav item icon", "area": "Sidebar", "files": "Sidebar.tsx", "ccf": "ccf-screen-pop-icon"}, {"icon": "Phone", "assoc": "\"Call\" button/badge; call-type channel icon", "area": "Voice controls / Customers table / Outbound directory", "files": "AgentWorkspaceAdvancedPage.tsx, agent-next-gen-customers-table.tsx, agent-next-gen-outbound-data.tsx", "ccf": "ccf-call-resumed-icon; ccf-callback-icon; ccf-phone-icon; ccf-phone-outbound-icon; ccf-phone-outline-icon; Call; phoneSearchIcon; phoneSearchTileIcon; apps/cxone-agent-browser-ext/src/assets-cxone/images/ctdCallIcon.svg; apps/cxone-agent-browser-ext/src/assets-ringcentral/images/ctdCallIcon.svg; apps/cxone-agent-ctd-ext/src/assets/images/ctdCallIcon.svg"}, {"icon": "PhoneOff", "assoc": "\"End Call\" button", "area": "Voice call controls", "files": "agent-next-gen-voice-call-controls.tsx", "ccf": "ccf-call-hung-up-icon"}, {"icon": "PhoneOutgoing", "assoc": "\"Redial\" button", "area": "Customer Info panel / Customers table / Interactions table", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-customers-table.tsx, agent-next-gen-interactions-table.tsx", "ccf": "ccf-conference-outbound-icon"}, {"icon": "Pin", "assoc": "Pin/favorite toggle on a panel (filled+rotated when pinned)", "area": "Panel header controls (PanelPinButton)", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx", "ccf": "ccf-menu-pin-icon; ccf-pin-control-icon"}, {"icon": "Play", "assoc": "\"Hold\"/\"Resume\" toggle button (held state)", "area": "Voice call controls", "files": "agent-next-gen-voice-call-controls.tsx", "ccf": "ccf-audio-play-icon; ccf-voicemail-resume-icon; PlayArrow"}, {"icon": "Plus", "assoc": "\"Add Channel\" button; \"New Campaign\"/\"New Desktop\" button; \"Filter\" button; add-step-to-reply icon button", "area": "Outbound engagement / Desktop Designs / Add Channel button / Customers & Interactions tables / Voice controls", "files": "AgentWorkspace2WithDeskPage.tsx, DesktopDesignsPage.tsx, OutboundEngagementPage.tsx, agent-next-gen-add-channel-button.tsx, agent-next-gen-customers-table.tsx, agent-next-gen-interactions-table.tsx, agent-next-gen-voice-call-controls.tsx", "ccf": "ccf-plus-icon; Add; ccf-agent-chat-icons (plus); ccf-agent-chat-icons (plus_black); createNewEntityIcon"}, {"icon": "RefreshCw", "assoc": "\"Refresh record\" button", "area": "Customer Info panel / Customers table / Interactions table / Desktop Designs", "files": "DesktopDesignsPage.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-customers-table.tsx, agent-next-gen-interactions-table.tsx", "ccf": "ccf-replay-icon; Refresh"}, {"icon": "RotateCcw", "assoc": "\"Regenerate\" password button; \"Takeover Assignment\" button; \"Reopen\" menu item icon", "area": "Customer Info panel / All-contacts drawer / Contact history", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-customers-table.tsx, agent-next-gen-interactions-table.tsx", "ccf": ""}, {"icon": "Search", "assoc": "Search field icon / app-selector search", "area": "Various search inputs; Assignment panel toggle row (AgentWorkspaceAdvancedPage)", "files": "AgentWorkspaceAdvancedPage.tsx", "ccf": "ccf-agent-chat-search-icon; ccf-copilot-search-icon; ccf-header-search-icon; ccf-search-icon; Search; ccf-agent-chat-icons (search); activitySearchIcon"}, {"icon": "Send", "assoc": "\"Send Message\" button", "area": "Transcript composer / Interactions table", "files": "agent-next-gen-interactions-table.tsx, agent-next-gen-transcript.tsx", "ccf": "ccf-copilot-disabled-send-icon; ccf-copilot-send-icon; ccf-send-icon; ccf-agent-chat-icons (send_white); ccf-agent-chat-icons (send_grey); libs/react/ui-components/src/assets/AdaptiveCardSendIcon.svg"}, {"icon": "Settings", "assoc": "\"Configure\" / \"Settings\" menu item icon", "area": "Sidebar / Interaction Dashboard", "files": "Sidebar.tsx, agent-next-gen-interaction-dashboard.tsx", "ccf": "ccf-copilot-setting-icon; ccf-settings-icon"}, {"icon": "Share2", "assoc": "\"Skills\" contact-category icon", "area": "Outbound directory", "files": "agent-next-gen-outbound-data.tsx", "ccf": ""}, {"icon": "ShieldAlert", "assoc": "\"Internal Use Only\" accordion icon; \"How would you like to help Marcus?\" decision-card icon", "area": "Customer Info panel (Marcus Webb scenario)", "files": "AgentWorkspace2WithDeskPage.tsx", "ccf": ""}, {"icon": "Smile", "assoc": "\"Customer Sentiment is Positive\" header icon; emoji-picker button in message composer", "area": "Customer Info panel / Transcript composer", "files": "AgentWorkspace2WithDeskPage.tsx, agent-next-gen-transcript.tsx", "ccf": "ccf-emoji-icon"}, {"icon": "Sparkles", "assoc": "\"Suggested Next Best Action\" section label icon", "area": "AI Summary panel", "files": "agent-next-gen-ai-summary-panel.tsx", "ccf": "ccf-copilot-pixie-dust-icon; ccf-copilot-secondary-sparkle-icon; ccf-copilot-sparkle-icon; ccf-copilot-summary-sparkle-icon; ccf-sparkles-icon"}, {"icon": "SquareArrowOutUpRight", "assoc": "\"Open Tab\" button (open record in a new desk tab)", "area": "Customer Info panel", "files": "agent-next-gen-customer-info-panel.tsx", "ccf": "ccf-copilot-open-link-icon; ccf-open-new-tab-icon; ccf-pop-out-arrow-icon"}, {"icon": "Star", "assoc": "\"Favorites\" tab icon", "area": "Outbound directory / Dialpad", "files": "agent-next-gen-outbound-data.tsx", "ccf": "ccf-copilot-star-icon; ccf-favourite-icon; ccf-not-favorite-icon; ccf-unfavored-icon; ccf-agent-chat-icons (white_star); ccf-agent-chat-icons (white_star_outline); ccf-agent-chat-icons (yellow_star)"}, {"icon": "Tag", "assoc": "\"Change Status\" button", "area": "Interactions table", "files": "agent-next-gen-interactions-table.tsx", "ccf": "ccf-digital-tag-icon"}, {"icon": "Trash2", "assoc": "\"Delete Draft\" / \"Delete record\" button", "area": "Customer Info panel / Customers table / Desktop Designs / Transcript", "files": "DesktopDesignsPage.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-customers-table.tsx, agent-next-gen-transcript.tsx", "ccf": "ccf-trash-bin-icon; Delete; DeleteOutlined; deleteUnhoverIcon; deleteHoverIcon"}, {"icon": "TriangleAlert", "assoc": "Alert state icon on CollapsedChannelBadge", "area": "Collapsed Channel Badge", "files": "CollapsedChannelBadge.tsx", "ccf": "ccf-audio-warning-icon; ccf-copilot-alert-icon; ccf-copilot-decision-tree-warning-icon; ccf-copilot-warning-icon; ccf-copilot-warning-outline-icon; Warning; WarningAmberRounded"}, {"icon": "User", "assoc": "Customer tab icon (open customer tabs); \"Customer is typing\" indicator; also the \"Customer\" category icon in Outbound directory", "area": "Desk tabs / Transcript / Outbound directory", "files": "AgentWorkspace2WithDeskPage.tsx, agent-next-gen-outbound-data.tsx, agent-next-gen-transcript.tsx", "ccf": ""}, {"icon": "UserCheck", "assoc": "\"Assign to Me\" button", "area": "Interactions table", "files": "agent-next-gen-interactions-table.tsx", "ccf": ""}, {"icon": "UserPlus", "assoc": "\"Add Participant\" button", "area": "Transcript / Customers table / Interactions table", "files": "agent-next-gen-customers-table.tsx, agent-next-gen-interactions-table.tsx, agent-next-gen-transcript.tsx", "ccf": "ccf-dual-assignment-icon; ccf-new-interaction-icon; ccf-outbound-assignment-icon; ccf-user-plus-icon"}, {"icon": "UserRound", "assoc": "\"Customer Information\" tab icon", "area": "Customers table detail drawer", "files": "agent-next-gen-customers-table.tsx", "ccf": ""}, {"icon": "Users", "assoc": "\"My Team\" / team contact-category icon", "area": "Outbound directory / Interactions table", "files": "agent-next-gen-interactions-table.tsx, agent-next-gen-outbound-data.tsx", "ccf": "ccf-call-conference-icon; ccf-conference-icon; ccf-team-icon; ccf-agent-chat-icons (channel_group); ccf-agent-chat-icons (channel_group_white); ccf-agent-chat-icons (channel_group_grey)"}, {"icon": "UserX", "assoc": "\"Unassign & Dismiss\" button", "area": "Transcript", "files": "agent-next-gen-transcript.tsx", "ccf": "CHANNEL_ICON_NAME.VOICE_OLD_4"}, {"icon": "Video", "assoc": "\"Add video\" toggle / video-window \"Close\"/\"Live\" indicator", "area": "Voice call controls / Video window", "files": "agent-next-gen-video-window.tsx, agent-next-gen-voice-call-controls.tsx", "ccf": "ccf-video-outline-icon"}, {"icon": "VideoOff", "assoc": "\"Remove video\" toggle (video-added state)", "area": "Voice call controls", "files": "agent-next-gen-voice-call-controls.tsx", "ccf": ""}, {"icon": "Volume2", "assoc": "Speaker-volume icon (unmuted)", "area": "Voice call controls", "files": "agent-next-gen-voice-call-controls.tsx", "ccf": "VolumeUp; VolumeUpOutlined"}, {"icon": "VolumeX", "assoc": "Speaker-volume icon (muted / volume at 0)", "area": "Voice call controls", "files": "agent-next-gen-voice-call-controls.tsx", "ccf": ""}, {"icon": "X", "assoc": "Generic close button (tabs, panels, dismiss); also \"Remove from Queue\"", "area": "Various (tabs, panel headers, video window)", "files": "AgentWorkspace2WithDeskPage.tsx, AgentWorkspaceAdvancedPage.tsx, agent-next-gen-customer-info-panel.tsx, agent-next-gen-transcript.tsx, agent-next-gen-video-window.tsx", "ccf": "ccf-close-icon; ccf-copilot-clear-textblock-icon; ccf-copilot-close-icon; Close; Clear; ccf-agent-chat-icons (cross_icon); ATTACHMENT_ICON_NAME.CLOSE"}, {"icon": "XCircle", "assoc": "\"Refund rejected\" outcome icon", "area": "Next-Best-Action card", "files": "agent-next-gen-marcus-webb-next-best-action-card.tsx", "ccf": ""}, {"icon": "Zap", "assoc": "\"Quick replies\" button", "area": "Transcript composer", "files": "agent-next-gen-transcript.tsx", "ccf": "ccf-flash-icon; ccf-quick-replies-icon"}];
+const SVGS = {"Video": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-video\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5\" />\n  <rect x=\"2\" y=\"6\" width=\"14\" height=\"12\" rx=\"2\" />\n</svg>\n", "Mail": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-mail\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7\" />\n  <rect x=\"2\" y=\"4\" width=\"20\" height=\"16\" rx=\"2\" />\n</svg>\n", "PanelRight": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-panel-right\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" />\n  <path d=\"M15 3v18\" />\n</svg>\n", "Headphones": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-headphones\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3\" />\n</svg>\n", "ArrowUp": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-arrow-up\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m5 12 7-7 7 7\" />\n  <path d=\"M12 19V5\" />\n</svg>\n", "Sparkles": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-sparkles\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z\" />\n  <path d=\"M20 2v4\" />\n  <path d=\"M22 4h-4\" />\n  <circle cx=\"4\" cy=\"20\" r=\"2\" />\n</svg>\n", "MicOff": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-mic-off\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M12 19v3\" />\n  <path d=\"M15 9.34V5a3 3 0 0 0-5.68-1.33\" />\n  <path d=\"M16.95 16.95A7 7 0 0 1 5 12v-2\" />\n  <path d=\"M18.89 13.23A7 7 0 0 0 19 12v-2\" />\n  <path d=\"m2 2 20 20\" />\n  <path d=\"M9 9v3a3 3 0 0 0 5.12 2.12\" />\n</svg>\n", "Move": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-move\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M12 2v20\" />\n  <path d=\"m15 19-3 3-3-3\" />\n  <path d=\"m19 9 3 3-3 3\" />\n  <path d=\"M2 12h20\" />\n  <path d=\"m5 9-3 3 3 3\" />\n  <path d=\"m9 5 3-3 3 3\" />\n</svg>\n", "VolumeX": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-volume-x\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M11 4.702a.7.7 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.7.7 0 0 0 11 19.298z\" />\n  <path d=\"m16.5 14.5 5-5\" />\n  <path d=\"m16.5 9.5 5 5\" />\n</svg>\n", "MessageCircle": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-message-circle\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719\" />\n</svg>\n", "Plus": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-plus\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M5 12h14\" />\n  <path d=\"M12 5v14\" />\n</svg>\n", "ChevronDown": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-chevron-down\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m6 9 6 6 6-6\" />\n</svg>\n", "Pin": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-pin\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M12 17v5\" />\n  <path d=\"M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z\" />\n</svg>\n", "PhoneOff": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-phone-off\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M10.1 13.9a14 14 0 0 0 3.732 2.668 1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2 18 18 0 0 1-12.728-5.272\" />\n  <path d=\"M22 2 2 22\" />\n  <path d=\"M4.76 13.582A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 .244.473\" />\n</svg>\n", "Italic": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-italic\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <line x1=\"19\" x2=\"10\" y1=\"4\" y2=\"4\" />\n  <line x1=\"14\" x2=\"5\" y1=\"20\" y2=\"20\" />\n  <line x1=\"15\" x2=\"9\" y1=\"4\" y2=\"20\" />\n</svg>\n", "ArrowUpRight": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-arrow-up-right\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M7 7h10v10\" />\n  <path d=\"M7 17 17 7\" />\n</svg>\n", "CircleHelp": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-circle-help\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"12\" cy=\"12\" r=\"10\" />\n  <path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\" />\n  <path d=\"M12 17h.01\" />\n</svg>\n", "ChevronsDownUp": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-chevrons-down-up\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m7 20 5-5 5 5\" />\n  <path d=\"m7 4 5 5 5-5\" />\n</svg>\n", "ShieldAlert": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-shield-alert\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" />\n  <path d=\"M12 8v4\" />\n  <path d=\"M12 16h.01\" />\n</svg>\n", "Star": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-star\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z\" />\n</svg>\n", "CircleCheck": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-circle-check\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"12\" cy=\"12\" r=\"10\" />\n  <path d=\"m16 9-5.5 5.5L8 12\" />\n</svg>\n", "ArrowDown": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-arrow-down\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M12 5v14\" />\n  <path d=\"m19 12-7 7-7-7\" />\n</svg>\n", "Tag": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-tag\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z\" />\n  <circle cx=\"7.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\" />\n</svg>\n", "UserCheck": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-user-check\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m16 11 2 2 4-4\" />\n  <path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\" />\n  <circle cx=\"9\" cy=\"7\" r=\"4\" />\n</svg>\n", "ChevronsUpDown": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-chevrons-up-down\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m7 15 5 5 5-5\" />\n  <path d=\"m7 9 5-5 5 5\" />\n</svg>\n", "Check": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-check\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M20 6 9 17l-5-5\" />\n</svg>\n", "Users": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-users\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\" />\n  <path d=\"M16 3.128a4 4 0 0 1 0 7.744\" />\n  <path d=\"M22 21v-2a4 4 0 0 0-3-3.87\" />\n  <circle cx=\"9\" cy=\"7\" r=\"4\" />\n</svg>\n", "Bell": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-bell\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M10.268 21a2 2 0 0 0 3.464 0\" />\n  <path d=\"M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326\" />\n</svg>\n", "ArrowUpDown": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-arrow-up-down\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m21 16-4 4-4-4\" />\n  <path d=\"M17 20V4\" />\n  <path d=\"m3 8 4-4 4 4\" />\n  <path d=\"M7 4v16\" />\n</svg>\n", "AudioLinesOff": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-audio-lines-off\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M10 10v11\" />\n  <path d=\"M10 3v1.35\" />\n  <path d=\"M14 14v1\" />\n  <path d=\"M14 8v.35\" />\n  <path d=\"M18 5v7.35\" />\n  <path d=\"M2 10v3\" />\n  <path d=\"m2 2 20 20\" />\n  <path d=\"M22 10v3\" />\n  <path d=\"M6 6v11\" />\n</svg>\n", "GripVertical": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-grip-vertical\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"9\" cy=\"12\" r=\"1\" />\n  <circle cx=\"9\" cy=\"5\" r=\"1\" />\n  <circle cx=\"9\" cy=\"19\" r=\"1\" />\n  <circle cx=\"15\" cy=\"12\" r=\"1\" />\n  <circle cx=\"15\" cy=\"5\" r=\"1\" />\n  <circle cx=\"15\" cy=\"19\" r=\"1\" />\n</svg>\n", "Eye": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-eye\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0\" />\n  <circle cx=\"12\" cy=\"12\" r=\"3\" />\n</svg>\n", "Info": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-info\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"12\" cy=\"12\" r=\"10\" />\n  <path d=\"M12 16v-4\" />\n  <path d=\"M12 8h.01\" />\n</svg>\n", "Mic": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-mic\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M12 19v3\" />\n  <path d=\"M19 10v2a7 7 0 0 1-14 0v-2\" />\n  <rect x=\"9\" y=\"2\" width=\"6\" height=\"13\" rx=\"3\" />\n</svg>\n", "Link2": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-link-2\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M9 17H7A5 5 0 0 1 7 7h2\" />\n  <path d=\"M15 7h2a5 5 0 1 1 0 10h-2\" />\n  <line x1=\"8\" x2=\"16\" y1=\"12\" y2=\"12\" />\n</svg>\n", "Pencil": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-pencil\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\" />\n  <path d=\"m15 5 4 4\" />\n</svg>\n", "ChevronRight": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-chevron-right\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m9 18 6-6-6-6\" />\n</svg>\n", "Building2": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-building-2\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M10 12h4\" />\n  <path d=\"M10 8h4\" />\n  <path d=\"M14 21v-3a2 2 0 0 0-4 0v3\" />\n  <path d=\"M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2\" />\n  <path d=\"M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16\" />\n</svg>\n", "FileDown": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-file-down\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" />\n  <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" />\n  <path d=\"M12 18v-6\" />\n  <path d=\"m9 15 3 3 3-3\" />\n</svg>\n", "MessageSquare": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-message-square\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\" />\n</svg>\n", "UserX": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-user-x\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\" />\n  <circle cx=\"9\" cy=\"7\" r=\"4\" />\n  <line x1=\"17\" x2=\"22\" y1=\"8\" y2=\"13\" />\n  <line x1=\"22\" x2=\"17\" y1=\"8\" y2=\"13\" />\n</svg>\n", "Paperclip": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-paperclip\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551\" />\n</svg>\n", "UserPlus": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-user-plus\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\" />\n  <circle cx=\"9\" cy=\"7\" r=\"4\" />\n  <line x1=\"19\" x2=\"19\" y1=\"8\" y2=\"14\" />\n  <line x1=\"22\" x2=\"16\" y1=\"11\" y2=\"11\" />\n</svg>\n", "CheckCircle2": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-check-circle-2\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"12\" cy=\"12\" r=\"10\" />\n  <path d=\"m16 9-5.5 5.5L8 12\" />\n</svg>\n", "CornerDownLeft": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-corner-down-left\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M20 4v7a4 4 0 0 1-4 4H4\" />\n  <path d=\"m9 10-5 5 5 5\" />\n</svg>\n", "SquareArrowOutUpRight": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-square-arrow-out-up-right\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6\" />\n  <path d=\"m21 3-9 9\" />\n  <path d=\"M15 3h6v6\" />\n</svg>\n", "Copy": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-copy\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\" ry=\"2\" />\n  <path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\" />\n</svg>\n", "Home": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-home\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\" />\n  <path d=\"M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\" />\n</svg>\n", "PhoneOutgoing": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-phone-outgoing\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m16 8 6-6\" />\n  <path d=\"M22 8V2h-6\" />\n  <path d=\"M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384\" />\n</svg>\n", "User": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-user\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2\" />\n  <circle cx=\"12\" cy=\"7\" r=\"4\" />\n</svg>\n", "BookOpen": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-book-open\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M12 5v16\" />\n  <path d=\"M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z\" />\n</svg>\n", "PanelRightClose": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-panel-right-close\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" />\n  <path d=\"M15 3v18\" />\n  <path d=\"m8 9 3 3-3 3\" />\n</svg>\n", "AudioLines": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-audio-lines\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M2 10v3\" />\n  <path d=\"M6 6v11\" />\n  <path d=\"M10 3v18\" />\n  <path d=\"M14 8v7\" />\n  <path d=\"M18 5v13\" />\n  <path d=\"M22 10v3\" />\n</svg>\n", "History": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-history\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" />\n  <path d=\"M3 3v5h5\" />\n  <path d=\"M12 7v5l4 2\" />\n</svg>\n", "Bold": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-bold\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8\" />\n</svg>\n", "FileText": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-file-text\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\" />\n  <path d=\"M14 2v5a1 1 0 0 0 1 1h5\" />\n  <path d=\"M10 9H8\" />\n  <path d=\"M16 13H8\" />\n  <path d=\"M16 17H8\" />\n</svg>\n", "RefreshCw": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-refresh-cw\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\" />\n  <path d=\"M21 3v5h-5\" />\n  <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\" />\n  <path d=\"M8 16H3v5\" />\n</svg>\n", "Minus": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-minus\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M5 12h14\" />\n</svg>\n", "Smile": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-smile\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M15 10V9\" />\n  <path d=\"M16.472 15a6 6 0 01-8.943 0\" />\n  <path d=\"M9 10V9\" />\n  <circle cx=\"12\" cy=\"12\" r=\"10\" />\n</svg>\n", "ArrowLeft": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-arrow-left\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m12 19-7-7 7-7\" />\n  <path d=\"M19 12H5\" />\n</svg>\n", "CircleAlert": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-circle-alert\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"12\" cy=\"12\" r=\"10\" />\n  <line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\" />\n  <line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\" />\n</svg>\n", "Languages": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-languages\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m5 8 6 6\" />\n  <path d=\"m4 14 6-6 2-3\" />\n  <path d=\"M2 5h12\" />\n  <path d=\"M7 2h1\" />\n  <path d=\"m22 22-5-10-5 10\" />\n  <path d=\"M14 18h6\" />\n</svg>\n", "Settings": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-settings\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915\" />\n  <circle cx=\"12\" cy=\"12\" r=\"3\" />\n</svg>\n", "RotateCcw": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-rotate-ccw\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\" />\n  <path d=\"M3 3v5h5\" />\n</svg>\n", "Send": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-send\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z\" />\n  <path d=\"m21.854 2.147-10.94 10.939\" />\n</svg>\n", "Bot": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-bot\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M12 8V4H8\" />\n  <rect width=\"16\" height=\"12\" x=\"4\" y=\"8\" rx=\"2\" />\n  <path d=\"M2 14h2\" />\n  <path d=\"M20 14h2\" />\n  <path d=\"M15 13v2\" />\n  <path d=\"M9 13v2\" />\n</svg>\n", "Trash2": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-trash-2\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M10 11v6\" />\n  <path d=\"M14 11v6\" />\n  <path d=\"M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6\" />\n  <path d=\"M3 6h18\" />\n  <path d=\"M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\" />\n</svg>\n", "Zap": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-zap\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z\" />\n</svg>\n", "MessageSquareText": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-message-square-text\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z\" />\n  <path d=\"M7 11h10\" />\n  <path d=\"M7 15h6\" />\n  <path d=\"M7 7h8\" />\n</svg>\n", "Clock": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-clock\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"12\" cy=\"12\" r=\"10\" />\n  <path d=\"M12 6v6l4 2\" />\n</svg>\n", "Meh": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-meh\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M15 10V9\" />\n  <path d=\"M8 16h8\" />\n  <path d=\"M9 10V9\" />\n  <circle cx=\"12\" cy=\"12\" r=\"10\" />\n</svg>\n", "Pause": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-pause\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <rect x=\"14\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\" />\n  <rect x=\"5\" y=\"3\" width=\"5\" height=\"18\" rx=\"1\" />\n</svg>\n", "Minimize2": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-minimize-2\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m14 10 7-7\" />\n  <path d=\"M20 10h-6V4\" />\n  <path d=\"m3 21 7-7\" />\n  <path d=\"M4 14h6v6\" />\n</svg>\n", "MoreVertical": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-more-vertical\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"12\" cy=\"12\" r=\"1\" />\n  <circle cx=\"12\" cy=\"5\" r=\"1\" />\n  <circle cx=\"12\" cy=\"19\" r=\"1\" />\n</svg>\n", "TriangleAlert": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-triangle-alert\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3\" />\n  <path d=\"M12 9v4\" />\n  <path d=\"M12 17h.01\" />\n</svg>\n", "Maximize2": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-maximize-2\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M15 3h6v6\" />\n  <path d=\"m21 3-7 7\" />\n  <path d=\"m3 21 7-7\" />\n  <path d=\"M9 21H3v-6\" />\n</svg>\n", "Phone": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-phone\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384\" />\n</svg>\n", "Search": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-search\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m21 21-4.34-4.34\" />\n  <circle cx=\"11\" cy=\"11\" r=\"8\" />\n</svg>\n", "VideoOff": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-video-off\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M10.66 6H14a2 2 0 0 1 2 2v2.5l5.248-3.062A.5.5 0 0 1 22 7.87v8.196\" />\n  <path d=\"M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2\" />\n  <path d=\"m2 2 20 20\" />\n</svg>\n", "Play": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-play\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z\" />\n</svg>\n", "Bookmark": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-bookmark\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z\" />\n</svg>\n", "ChevronLeft": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-chevron-left\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"m15 18-6-6 6-6\" />\n</svg>\n", "Inbox": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-inbox\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <polyline points=\"22 12 16 12 14 15 10 15 8 12 2 12\" />\n  <path d=\"M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z\" />\n</svg>\n", "UserRound": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-user-round\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"12\" cy=\"8\" r=\"5\" />\n  <path d=\"M20 21a8 8 0 0 0-16 0\" />\n</svg>\n", "Monitor": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-monitor\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <rect width=\"20\" height=\"14\" x=\"2\" y=\"3\" rx=\"2\" />\n  <line x1=\"8\" x2=\"16\" y1=\"21\" y2=\"21\" />\n  <line x1=\"12\" x2=\"12\" y1=\"17\" y2=\"21\" />\n</svg>\n", "Volume2": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-volume-2\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z\" />\n  <path d=\"M16 9a5 5 0 0 1 0 6\" />\n  <path d=\"M19.364 18.364a9 9 0 0 0 0-12.728\" />\n</svg>\n", "LayoutGrid": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-layout-grid\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <rect width=\"7\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\" />\n  <rect width=\"7\" height=\"7\" x=\"14\" y=\"3\" rx=\"1\" />\n  <rect width=\"7\" height=\"7\" x=\"14\" y=\"14\" rx=\"1\" />\n  <rect width=\"7\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\" />\n</svg>\n", "X": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-x\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M18 6 6 18\" />\n  <path d=\"m6 6 12 12\" />\n</svg>\n", "PencilRuler": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-pencil-ruler\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <path d=\"M13 7 8.7 2.7a2.41 2.41 0 0 0-3.4 0L2.7 5.3a2.41 2.41 0 0 0 0 3.4L7 13\" />\n  <path d=\"m8 6 2-2\" />\n  <path d=\"m18 16 2-2\" />\n  <path d=\"m17 11 4.3 4.3c.94.94.94 2.46 0 3.4l-2.6 2.6c-.94.94-2.46.94-3.4 0L11 17\" />\n  <path d=\"M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z\" />\n  <path d=\"m15 5 4 4\" />\n</svg>\n", "Share2": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-share-2\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"18\" cy=\"5\" r=\"3\" />\n  <circle cx=\"6\" cy=\"12\" r=\"3\" />\n  <circle cx=\"18\" cy=\"19\" r=\"3\" />\n  <line x1=\"8.59\" x2=\"15.42\" y1=\"13.51\" y2=\"17.49\" />\n  <line x1=\"15.41\" x2=\"8.59\" y1=\"6.51\" y2=\"10.49\" />\n</svg>\n", "Grid3x3": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-grid-3x3\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" />\n  <path d=\"M3 9h18\" />\n  <path d=\"M3 15h18\" />\n  <path d=\"M9 3v18\" />\n  <path d=\"M15 3v18\" />\n</svg>\n", "XCircle": "<!-- @license lucide-static v1.48.0 - ISC -->\n<svg\n  class=\"lucide lucide-x-circle\"\n  xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"24\"\n  height=\"24\"\n  viewBox=\"0 0 24 24\"\n  fill=\"none\"\n  stroke=\"currentColor\"\n  stroke-width=\"2\"\n  stroke-linecap=\"round\"\n  stroke-linejoin=\"round\"\n>\n  <circle cx=\"12\" cy=\"12\" r=\"10\" />\n  <path d=\"m15 9-6 6\" />\n  <path d=\"m9 9 6 6\" />\n</svg>\n"};
+
+const tbody = document.getElementById('tbody');
+const cardsEl = document.getElementById('cards');
+const q = document.getElementById('q');
+const noMatchCheckbox = document.getElementById('noMatchOnly');
+const countEl = document.getElementById('count');
+const footerEl = document.getElementById('footer');
+
+function esc(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+function highlight(text, term) {
+  const e = esc(text);
+  if (!term) return e;
+  const idx = e.toLowerCase().indexOf(term.toLowerCase());
+  if (idx === -1) return e;
+  return e.slice(0, idx) + '<mark>' + e.slice(idx, idx + term.length) + '</mark>' + e.slice(idx + term.length);
+}
+
+function renderCcf(ccf, term) {
+  if (!ccf) return '<span class="ccf-none">no legacy match</span>';
+  return ccf.split(';').map(s => s.trim()).filter(Boolean)
+    .map(s => `<span class="ccf-pill">${highlight(s, term)}</span>`).join('');
+}
+
+function render(filter) {
+  const term = (filter || '').trim().toLowerCase();
+  const noMatchOnly = noMatchCheckbox.checked;
+  const filtered = ROWS.filter(r => {
+    if (noMatchOnly && r.ccf) return false;
+    if (!term) return true;
+    return (r.icon + ' ' + r.assoc + ' ' + r.area + ' ' + r.files + ' ' + r.ccf).toLowerCase().includes(term);
+  });
+
+  const emptyMsg = noMatchOnly && term
+    ? `No unmatched icons match "${esc(filter)}"`
+    : noMatchOnly
+      ? 'Every icon has a legacy CCF match'
+      : `No icons match "${esc(filter)}"`;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">${emptyMsg}</div></td></tr>`;
+    cardsEl.innerHTML = `<div class="empty-state">${emptyMsg}</div>`;
+  } else {
+    tbody.innerHTML = filtered.map(r => {
+      const svg = SVGS[r.icon] || '';
+      return `<tr>
+        <td><div class="icon-box">${svg}</div></td>
+        <td><span class="name-tag">${highlight(r.icon, term)}</span></td>
+        <td>${highlight(r.assoc, term)}</td>
+        <td class="area-cell">${highlight(r.area, term)}</td>
+        <td class="files-cell">${highlight(r.files, term)}</td>
+        <td class="ccf-cell">${renderCcf(r.ccf, term)}</td>
+      </tr>`;
+    }).join('');
+
+    cardsEl.innerHTML = filtered.map(r => {
+      const svg = SVGS[r.icon] || '';
+      return `<div class="card">
+        <div class="icon-box">${svg}</div>
+        <div class="card-name"><span class="name-tag">${highlight(r.icon, term)}</span></div>
+        <div class="card-fields">
+          <div class="card-field"><span class="k lyra-body-xs">Element</span><span class="v">${highlight(r.assoc, term)}</span></div>
+          <div class="card-field"><span class="k lyra-body-xs">Area</span><span class="v">${highlight(r.area, term)}</span></div>
+          <div class="card-field"><span class="k lyra-body-xs">Files</span><span class="v mono">${highlight(r.files, term)}</span></div>
+          <div class="card-field"><span class="k lyra-body-xs">CCF match</span><span class="v">${renderCcf(r.ccf, term)}</span></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  countEl.textContent = filtered.length + ' / ' + ROWS.length + ' icons';
+}
+
+q.addEventListener('input', () => render(q.value));
+noMatchCheckbox.addEventListener('change', () => render(q.value));
+render('');
+
+const uniqueIcons = new Set(ROWS.map(r => r.icon)).size;
+const withCcf = ROWS.filter(r => r.ccf).length;
+footerEl.textContent = uniqueIcons + ' distinct icons across ' + ROWS.length + ' usages — lucide-react · ' + withCcf + ' / ' + ROWS.length + ' rows matched to a legacy CCF icon';
+</script>
+
+</body></html>
