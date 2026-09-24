@@ -254,7 +254,7 @@ type DetailPanelContent =
   | { kind: "article-link"; article: KnowledgeArticleCardData; link: KnowledgeArticleWebLink }
   | { kind: "order"; order: MarcusWebbOrderInfo }
   | { kind: "customer" }
-  | { kind: "transactions"; id: string; note: string; timestamp: string };
+  | { kind: "transactions"; id: string; note: string; timestamp: string; date: string; showFullTransactions: boolean };
 import appIcon from "@/assets/app-icon.svg";
 import damagedHeadphonesImg from "@/assets/headphones.jpg";
 import {
@@ -3175,43 +3175,42 @@ export function AgentWorkspaceAdvancedPage({
   // governs what a NEW/reopened interaction starts at, not any of those
   // user-initiated actions.
   const [sidePanelOpen,     setSidePanelOpen]     = useState(false);
-  // Restores the hover-preview `Popover` the record header's own Customer
-  // Information toggle used to show before it moved to the session row —
-  // per explicit bug report ("when you moved the session detail panel
-  // toggle to the session row line you lost the overlay of the session
-  // details panel itself — now it just shows a tooltip"). Removed
-  // wholesale (state, handlers, and this doc comment's own predecessor —
-  // see `handleSidePanelIconToggle`'s doc comment below) when that move
-  // happened; this is the exact same shape restored, just wired to the new
-  // button location instead of the old one. Same "parent owns the hover
-  // timer, `TranscriptSessionSeparator` just reports hover in/out"
-  // split `AgentNextGenPage.tsx`'s still-live `CustomerInfoHoverPreview`
-  // call site uses.
+  // Drives the "Open Details Panel" toggle's own hover-preview `Popover` —
+  // this button (and this state) has moved around this file's history a
+  // few times: record header `actions` → session row
+  // (`TranscriptSessionSeparator`'s own `onToggleDetailsPanel`) → back to
+  // the record header `actions` again (per the latest explicit request,
+  // "move the details side panel toggle to above the session row..." —
+  // see that `actions` block's own doc comment). The state/handlers
+  // themselves were never tied to any one of those locations — only the
+  // JSX rendering the button+`Popover` moved. Same "parent owns the hover
+  // timer, the trigger just reports hover in/out" split `AgentNextGenPage
+  // .tsx`'s still-live `CustomerInfoHoverPreview` call site uses.
   const [customerInfoPreviewOpen, setCustomerInfoPreviewOpen] = useState(false);
   const customerInfoPreviewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Backstop for `customerInfoPreviewOpen` — per explicit bug report ("when
   // the session details panel is closed the hover panel is displayed even
   // if I don't hover on the panel icon... doesn't go away until I hover
-  // back over the panel icon"). `TranscriptSessionSeparator`'s own trigger
-  // button (and the `Popover` around it) only exist in the DOM while
-  // `!sidePanelOpen` — see that button's own `onToggleDetailsPanel &&
-  // !detailsPanelOpen` gate. Opening the real panel unmounts them without
-  // ever running a `mouseleave`/`blur` on the trigger, so `customerInfo
-  // PreviewOpen` was left stuck at whatever it was the instant before
-  // (often `true`, mid-hover) — invisible while `sidePanelOpen` is true
-  // (the `detailsPanelPreviewOpen={customerInfoPreviewOpen && !sidePanelOpen}`
-  // multiply at the render site zeroes it out), but the raw state itself
-  // never actually got reset, so the moment the panel closes again the
-  // preview pops back open with no fresh hover to have caused it — and
-  // since it never really "opened" via a hover this time, there's no
-  // matching hover-out to schedule its close either, until the agent
-  // happens to hover the icon and leave again. Mirrors `AgentNextGenPage
-  // .tsx`'s own identical backstop (`[activeInteraction?.id, sidePanelOpen]`
-  // effect) exactly, just against this page's own `activeInteractionId`.
-  // (Has to live here, after `sidePanelOpen` is declared above — a copy of
-  // this effect placed earlier in the file, before that declaration, is a
-  // TDZ error: `sidePanelOpen` used in a dependency array before its own
-  // `useState` line runs.)
+  // back over the panel icon"). The toggle button (and the `Popover` around
+  // it, currently rendered in the record header's own `actions` block) only
+  // exists in the DOM while `!sidePanelOpen` — see that render site's own
+  // gate. Opening the real panel unmounts it without ever running a
+  // `mouseleave`/`blur` on the trigger, so `customerInfoPreviewOpen` was
+  // left stuck at whatever it was the instant before (often `true`,
+  // mid-hover) — invisible while `sidePanelOpen` is true (the `open=
+  // {customerInfoPreviewOpen && !sidePanelOpen}` multiply at the render
+  // site zeroes it out), but the raw state itself never actually got
+  // reset, so the moment the panel closes again the preview pops back
+  // open with no fresh hover to have caused it — and since it never really
+  // "opened" via a hover this time, there's no matching hover-out to
+  // schedule its close either, until the agent happens to hover the icon
+  // and leave again. Mirrors `AgentNextGenPage.tsx`'s own identical
+  // backstop (`[activeInteraction?.id, sidePanelOpen]` effect) exactly,
+  // just against this page's own `activeInteractionId`. (Has to live here,
+  // after `sidePanelOpen` is declared above — a copy of this effect placed
+  // earlier in the file, before that declaration, is a TDZ error:
+  // `sidePanelOpen` used in a dependency array before its own `useState`
+  // line runs.)
   useEffect(() => {
     setCustomerInfoPreviewOpen(false);
   }, [activeInteractionId, sidePanelOpen]);
@@ -3492,24 +3491,14 @@ export function AgentWorkspaceAdvancedPage({
     }
   };
 
-  // Toggles the Customer Information/"Session Details" panel — per an
-  // earlier explicit follow-up request ("float the channel toggles to the
-  // right where the current toggle icon is and move the toggle icon to the
-  // session row to the right of the outcome icon button"), this used to be
-  // called from a dedicated toggle icon in the record header; that icon
-  // moved to `TranscriptSessionSeparator`'s own pre-existing
-  // `onToggleDetailsPanel` "Open Details Panel" icon button in the session
-  // row instead (see the main `<InteractionTranscript>` call site's own
-  // `onToggleDetailsPanel` prop). The record header's OWN icon (and the
-  // hover-preview `Popover`/`CustomerInfoHoverPreview` mechanism that lived
-  // alongside it) is still gone — this function's click half is unchanged.
-  // Per a later explicit bug report ("when you moved the session detail
-  // panel toggle to the session row line you lost the overlay of the
-  // session details panel itself — now it just shows a tooltip"), the
-  // hover-preview convenience itself (peek the panel's content without
-  // actually opening it) IS restored below, on the session row's own
-  // button — just re-pointed at its new location rather than left behind
-  // at the old one.
+  // Toggles the Customer Information/"Session Details" panel — this
+  // button's location has moved a few times across this file's history
+  // (record header `actions` → `TranscriptSessionSeparator`'s own session
+  // row → back to the record header `actions` again, per the latest
+  // explicit request "move the details side panel toggle to above the
+  // session row to the right of the voice + button group" — see that
+  // `actions` block's own doc comment for the full history/reasoning).
+  // This function's click half has stayed the same throughout every move.
   const handleSidePanelIconToggle = () => {
     setSidePanelOpen((v) => !v);
     // Clicking this button always OPENS the real panel from here (it only
@@ -6022,6 +6011,9 @@ export function AgentWorkspaceAdvancedPage({
       onDrop: (e) => panelDragHandlers.onDrop(e, key),
       onDragEnd: panelDragHandlers.onDragEnd,
       onDragLeave: panelDragHandlers.onDragLeave,
+      // Keyboard alternative to the drag reorder above (lyra-ui MenuRadix:
+      // Alt+Shift+ArrowUp/Down on a focused row) — same shared order state.
+      onKeyboardMove: (direction: -1 | 1) => panelDragHandlers.onKeyboardMove?.(key, direction),
       rightElement: (
         <span className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           {/* Same unread count `NotificationsBell`'s own header icon shows
@@ -8112,41 +8104,49 @@ export function AgentWorkspaceAdvancedPage({
                       // row to the right of the outcome icon button"): this
                       // slot used to hold the Customer Information panel's
                       // own hover-preview `Popover` + toggle `ActionIconButton`
-                      // (git history has the full prior version, including
-                      // the `CustomerInfoHoverPreview` hover-preview
-                      // mechanism and its `customerInfoPreviewOpen`/
-                      // `openCustomerInfoPreview`/
-                      // `scheduleCloseCustomerInfoPreview` state/handlers,
-                      // all removed along with this) — that button's job
-                      // moved down to the session row instead, via
+                      // — moved down to the session row instead, via
                       // `TranscriptSessionSeparator`'s own pre-existing
-                      // `onToggleDetailsPanel` "Open Details Panel" icon
-                      // (immediately right of Outcome/Unassign & Dismiss —
-                      // see `InteractionTranscript`'s own call site further
-                      // down), which already existed for exactly this
-                      // purpose but wasn't wired up in this file yet. The
-                      // hover-preview convenience (peek the panel's content
-                      // without actually opening it) doesn't have an
-                      // equivalent in the session row's plain icon button,
-                      // so that behavior is gone now, not relocated — the
-                      // session-row button is a plain click-to-toggle, same
-                      // as `handleSidePanelIconToggle` always did for its
-                      // click half.
+                      // `onToggleDetailsPanel` "Open Details Panel" icon,
+                      // which dropped the hover-preview convenience (that
+                      // button had no equivalent for it) down to a plain
+                      // click-to-toggle.
+                      //
+                      // Per a LATER explicit follow-up request ("move the
+                      // details side panel toggle to above the session row
+                      // to the right of the voice + button group"), it's
+                      // back here again — same spot it originally occupied,
+                      // one full circle. Per explicit follow-up when THAT
+                      // move was scoped ("keep the hover-preview, hand-roll
+                      // the new button instead" of lyra-ui's `PageHeader`
+                      // own built-in `panelToggle="right"` slot, which can't
+                      // wrap its internal button in custom Popover content),
+                      // this is a real `Button`/`Popover` pair rendered
+                      // directly in this `actions` block — not
+                      // `panelToggle`/`onInnerPanelToggle` — specifically so
+                      // the hover-preview mechanism (`customerInfoPreviewOpen`/
+                      // `openCustomerInfoPreview`/
+                      // `scheduleCloseCustomerInfoPreview`, still declared
+                      // above) can keep wrapping it, moved verbatim from
+                      // `TranscriptSessionSeparator`'s own former render of
+                      // it (`detailsPanelPreviewContent` and friends,
+                      // formerly passed to the OTHER `<InteractionTranscript>`
+                      // call site below — no longer passed there at all now
+                      // that this is the button rendering it). Gated on
+                      // `!sidePanelOpen` — same "hide once the real panel is
+                      // already open" reasoning `detailsPanelOpen` used to
+                      // give `TranscriptSessionSeparator`.
                       //
                       // `ChannelToggleGroup`/`ChannelToggle` — was this
                       // header's own `titleSuffix` (right after the customer
                       // name; see that (now-removed) slot's own doc comment
                       // above) — now renders here instead, so it floats at
-                      // the row's far right, the same spot the old panel-
-                      // toggle button used to occupy. The wrapping
-                      // `<div className="flex items-center gap-3">` +
-                      // leading vertical divider `titleSuffix` used to need
-                      // (to visually separate itself from the title text
-                      // right before it) are dropped — nothing precedes this
-                      // cluster in `actions` for it to need separating from
-                      // anymore.
+                      // the row's far right. The wrapping `<div className=
+                      // "flex items-center gap-1">` below is what lets the
+                      // panel-toggle button sit beside it as a sibling,
+                      // rather than needing its own separate `actions` slot.
                       actions={
-                        activeInteraction.threads.length > 0 && (
+                        <div className="flex items-center gap-1">
+                        {activeInteraction.threads.length > 0 && (
                           <ChannelToggleGroup
                             // The "+" Add Channel trigger — same
                             // `getHeaderAction` (stock picker) ?? `Add
@@ -8265,7 +8265,124 @@ export function AgentWorkspaceAdvancedPage({
                               </PlainToggleTab>
                             )}
                           </ChannelToggleGroup>
-                        )
+                        )}
+                        {/* "Open Details Panel" — see this `actions` block's
+                            own top doc comment for the full history of where
+                            this button has lived. Hidden entirely once the
+                            real panel is already open (`!sidePanelOpen`),
+                            same reasoning `detailsPanelOpen` used to give
+                            `TranscriptSessionSeparator`'s own copy of it —
+                            nothing to toggle open that isn't already fully
+                            visible. The wrapping div's hover handlers (not
+                            the `Popover`'s own trigger) are what open/close
+                            the preview — same split
+                            `TranscriptSessionSeparator`'s former render of
+                            this used, so the pointer can cross from this
+                            button into the popover's own (portaled) content
+                            without it flickering shut. */}
+                        {!sidePanelOpen && (
+                          <div onMouseEnter={openCustomerInfoPreview} onMouseLeave={scheduleCloseCustomerInfoPreview}>
+                            <Popover
+                              open={customerInfoPreviewOpen && !sidePanelOpen}
+                              placement="bottom"
+                              align="end"
+                              showArrow={false}
+                              bodyPadding={false}
+                              className="border-0 bg-transparent p-0 shadow-none"
+                              onOpenAutoFocus={(e: Event) => e.preventDefault()}
+                              onCloseAutoFocus={(e: Event) => e.preventDefault()}
+                              onInteractOutside={(e: Event) => {
+                                if ((e.target as Element)?.closest?.("[data-radix-popper-content-wrapper]")) {
+                                  e.preventDefault();
+                                }
+                              }}
+                              content={
+                                <div
+                                  onMouseEnter={openCustomerInfoPreview}
+                                  onMouseLeave={scheduleCloseCustomerInfoPreview}
+                                  className="flex max-h-[70vh] w-[340px] flex-col overflow-hidden rounded-lyra-lg border border-lyra-border-soft bg-lyra-bg-surface-container-subtle shadow-lg"
+                                >
+                                  <PanelHeader
+                                    title="Contact Details"
+                                    subhead={activeInteraction.customerName}
+                                    tabs={
+                                      <TabList className="px-4">
+                                        {(activeChannelType === "voice"
+                                          ? (["Details", "Transcript", "Session Details"] as const)
+                                          : (["Details", "Session Details"] as const)
+                                        ).map((label) => (
+                                          <Tab
+                                            key={label}
+                                            active={customerPanelActiveTab === label}
+                                            onClick={() => setCustomerPanelActiveTab(label)}
+                                          >
+                                            {/* Displayed as "Overview"/"Session"
+                                                — same underlying identifiers as
+                                                the docked panel's own identical
+                                                tab row (that render site's own
+                                                comment); "Details" stays the
+                                                real state value everywhere else
+                                                in the file references/compares
+                                                it against. */}
+                                            {label === "Session Details" ? "Session" : label === "Details" ? "Overview" : label}
+                                          </Tab>
+                                        ))}
+                                      </TabList>
+                                    }
+                                  />
+                                  <div className="flex-1 overflow-y-auto">
+                                    {customerPanelActiveTab === "Transcript" && activeChannelType === "voice" ? (
+                                      <InteractionTranscript
+                                        channelType={activeChannelType}
+                                        direction={activeChannel?.direction}
+                                        customerName={activeInteraction.customerName}
+                                        contactId={activeChannel?.contactId ?? activeInteraction.customerId}
+                                        skillLabel={activeChannel?.preview}
+                                        isFreshLaunch={!!activeChannel?.startedFresh}
+                                        liveMessages={activeInteraction.liveMessages?.[activeChannelKey] ?? []}
+                                        dimmed={!!activeInteraction.closed || activeChannelStatus === "Closed"}
+                                        currentStatus={activeChannelStatus}
+                                        onCurrentStatusChange={(status) =>
+                                          activeChannel &&
+                                          handleInteractionStatusChange(activeInteraction.id, activeChannel.id, status)
+                                        }
+                                        showSessionActionCluster={false}
+                                        onViewSessionDetails={(session) => {
+                                          setSelectedVoiceDetailsSession(session);
+                                          setCustomerPanelActiveTab("Session Details");
+                                        }}
+                                        showViewDetails={false}
+                                      />
+                                    ) : customerPanelActiveTab === "Session Details" ? (
+                                      sessionDetailsTabContent.body
+                                    ) : (
+                                      <DetailsPanelAccordions
+                                        customerName={activeInteraction.customerName}
+                                        customerContextOverview={customerContextOverviewInfo}
+                                        onViewCustomerInfo={
+                                          activeInteractionIsRealCustomer
+                                            ? () => focusCustomerPanelTab("Overview")
+                                            : undefined
+                                        }
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                              }
+                            >
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                title="Open Details Panel"
+                                className="shrink-0 text-lyra-fg-secondary"
+                                onClick={handleSidePanelIconToggle}
+                              >
+                                <PanelRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+                              </Button>
+                            </Popover>
+                          </div>
+                        )}
+                        </div>
                       }
                     />
                     {/* Per the latest explicit follow-up request ("float the
@@ -8482,6 +8599,25 @@ export function AgentWorkspaceAdvancedPage({
                                             "Understood — to help us evaluate this further, could you send a photo of the damaged ear cup?"
                                           )
                                         }
+                                        // Per explicit request ("add customer
+                                        // responses to the transcript
+                                        // indicating they are annoyed they
+                                        // have to provide visual proof and
+                                        // that the refund was denied") —
+                                        // both reuse `handleMarcusWebbCustomerReply`,
+                                        // the same "Marcus himself replying"
+                                        // handler `onCustomerRespondedToTakeover`
+                                        // already uses below.
+                                        onCustomerReactedToRejection={() =>
+                                          handleMarcusWebbCustomerReply(
+                                            "Wait, seriously? I've been more than patient about this — I really don't understand why it's being denied."
+                                          )
+                                        }
+                                        onCustomerReactedToPhotoRequest={() =>
+                                          handleMarcusWebbCustomerReply(
+                                            "Are you kidding me? I already explained what happened. Fine, I'll send a photo, but this is getting frustrating."
+                                          )
+                                        }
                                         onPhotoExpand={() => setMarcusWebbPhotoExpanded(true)}
                                         onStatusEscalated={handleMarcusWebbEscalated}
                                         takenOver={!marcusWebbReviewing}
@@ -8493,13 +8629,13 @@ export function AgentWorkspaceAdvancedPage({
                                         onCustomerRespondedToTakeover={() =>
                                           handleMarcusWebbCustomerReply("I'll take store credit.")
                                         }
-                                        onRemedyIssued={(remedy, note) => {
+                                        onRemedyIssued={(remedy, detail) => {
                                           handleMarcusWebbHumanAgentMessage(
                                             remedy === "store-credit"
-                                              ? "Perfect — I've issued the full $200 as store credit to your account; you'll see it available for your next purchase."
+                                              ? `Perfect — I've issued $${detail.storeCreditAmount} as store credit to your account; you'll see it available for your next purchase.`
                                               : remedy === "discount-code"
-                                                ? "Great — I've sent a discount code for your next order to the email on file."
-                                                : `Understood — I'll go ahead and take care of that: ${note?.trim()}`
+                                                ? `Great — I've sent a ${detail.discountPercent}% discount code for your next order to the email on file.`
+                                                : `Understood — I'll go ahead and take care of that: ${detail.note?.trim()}`
                                           );
                                           // The reject-then-remedy path's own
                                           // "issue answered" moment — mirrors
@@ -8812,133 +8948,20 @@ export function AgentWorkspaceAdvancedPage({
                               setSidePanelOpen(true);
                             }
                           }}
-                          // Per later explicit follow-up request ("float the
-                          // channel toggles to the right where the current
-                          // toggle icon is; move the toggle icon to the
-                          // session row to the right of the outcome icon
-                          // button"): wires `TranscriptSessionSeparator`'s
-                          // own pre-existing "Open Details Panel" icon button
-                          // (agent-next-gen-transcript.tsx — already
-                          // rendered "immediately right of Outcome/Unassign
-                          // & Dismiss" whenever `showSessionActionCluster`
-                          // is on, as it always is here) to this page's own
-                          // Customer Information/"Session Details" panel
-                          // toggle — same handler the record header's own
-                          // (now-removed) toggle icon used, see
-                          // `handleSidePanelIconToggle`'s own doc comment
-                          // above. Not wired at the OTHER
-                          // `<InteractionTranscript>` call site below (the
-                          // docked panel's own nested "Transcript" tab
-                          // instance, `showSessionActionCluster={false}`) —
-                          // that instance already lives INSIDE the panel
-                          // this button would toggle, so a copy of the
-                          // button there would have nothing sensible to do.
-                          onToggleDetailsPanel={handleSidePanelIconToggle}
-                          // Per explicit follow-up request ("hide the
-                          // toggle icon button when the session details are
-                          // open"): this button's own toggle target IS
-                          // `sidePanelOpen` (see `handleSidePanelIconToggle`
-                          // just above) — passing that straight through as
-                          // `detailsPanelOpen` is what lets
-                          // `TranscriptSessionSeparator` hide the button the
-                          // instant it's already open, see that prop's own
-                          // doc comment (agent-next-gen-transcript.tsx).
-                          detailsPanelOpen={sidePanelOpen}
-                          // Restores the hover-preview `Popover` — per
-                          // explicit bug report ("...you lost the overlay of
-                          // the session details panel itself — now it just
-                          // shows a tooltip"). Peeks the exact same
-                          // Details/Transcript/Session tab bar AND body
-                          // content the docked panel itself shows (see that
-                          // render site, below, `headerTitleOverride`/
-                          // `headerTabsOverride`/`bodyOverride`) — sharing
-                          // the SAME `customerPanelActiveTab` state, not a
-                          // second independent tab state, so switching tabs
-                          // in the preview and later opening the real docked
-                          // panel land on the same tab. Per explicit
-                          // follow-up bug report ("you lost the tabs when
-                          // you made the popover") — an earlier version of
-                          // this fix skipped straight to the flat
-                          // `DetailsPanelAccordions` "Details" content with
-                          // no tab row at all; a hover peek showing less
-                          // than a click would open is worse than the plain
-                          // tooltip this replaces, same reasoning as before.
-                          detailsPanelPreviewContent={
-                            <div
-                              onMouseEnter={openCustomerInfoPreview}
-                              onMouseLeave={scheduleCloseCustomerInfoPreview}
-                              className="flex max-h-[70vh] w-[340px] flex-col overflow-hidden rounded-lyra-lg border border-lyra-border-soft bg-lyra-bg-surface-container-subtle shadow-lg"
-                            >
-                              <PanelHeader
-                                title="Contact Details"
-                                subhead={activeInteraction.customerName}
-                                tabs={
-                                  <TabList className="px-4">
-                                    {(activeChannelType === "voice"
-                                      ? (["Details", "Transcript", "Session Details"] as const)
-                                      : (["Details", "Session Details"] as const)
-                                    ).map((label) => (
-                                      <Tab
-                                        key={label}
-                                        active={customerPanelActiveTab === label}
-                                        onClick={() => setCustomerPanelActiveTab(label)}
-                                      >
-                                        {/* Displayed as "Overview"/"Session"
-                                            — same underlying identifiers as
-                                            the docked panel's own identical
-                                            tab row (that render site's own
-                                            comment); "Details" stays the
-                                            real state value everywhere else
-                                            in the file references/compares
-                                            it against. */}
-                                        {label === "Session Details" ? "Session" : label === "Details" ? "Overview" : label}
-                                      </Tab>
-                                    ))}
-                                  </TabList>
-                                }
-                              />
-                              <div className="flex-1 overflow-y-auto">
-                                {customerPanelActiveTab === "Transcript" && activeChannelType === "voice" ? (
-                                  <InteractionTranscript
-                                    channelType={activeChannelType}
-                                    direction={activeChannel?.direction}
-                                    customerName={activeInteraction.customerName}
-                                    contactId={activeChannel?.contactId ?? activeInteraction.customerId}
-                                    skillLabel={activeChannel?.preview}
-                                    isFreshLaunch={!!activeChannel?.startedFresh}
-                                    liveMessages={activeInteraction.liveMessages?.[activeChannelKey] ?? []}
-                                    dimmed={!!activeInteraction.closed || activeChannelStatus === "Closed"}
-                                    currentStatus={activeChannelStatus}
-                                    onCurrentStatusChange={(status) =>
-                                      activeChannel &&
-                                      handleInteractionStatusChange(activeInteraction.id, activeChannel.id, status)
-                                    }
-                                    showSessionActionCluster={false}
-                                    onViewSessionDetails={(session) => {
-                                      setSelectedVoiceDetailsSession(session);
-                                      setCustomerPanelActiveTab("Session Details");
-                                    }}
-                                    showViewDetails={false}
-                                  />
-                                ) : customerPanelActiveTab === "Session Details" ? (
-                                  sessionDetailsTabContent.body
-                                ) : (
-                                  <DetailsPanelAccordions
-                                    customerName={activeInteraction.customerName}
-                                    customerContextOverview={customerContextOverviewInfo}
-                                    onViewCustomerInfo={
-                                      activeInteractionIsRealCustomer
-                                        ? () => focusCustomerPanelTab("Overview")
-                                        : undefined
-                                    }
-                                  />
-                                )}
-                              </div>
-                            </div>
-                          }
-                          detailsPanelPreviewOpen={customerInfoPreviewOpen && !sidePanelOpen}
-                          onDetailsPanelPreviewHoverStart={openCustomerInfoPreview}
-                          onDetailsPanelPreviewHoverEnd={scheduleCloseCustomerInfoPreview}
+                          // Per explicit follow-up request ("move the
+                          // details side panel toggle to above the session
+                          // row to the right of the voice + button group"),
+                          // the "Open Details Panel" toggle (button +
+                          // hover-preview `Popover`) moved from this session
+                          // row up to the record header's own `actions`
+                          // block (`PageHeader`'s call site, above) —
+                          // `onToggleDetailsPanel`/`detailsPanelOpen`/
+                          // `detailsPanelPreviewContent`/
+                          // `detailsPanelPreviewOpen`/
+                          // `onDetailsPanelPreviewHoverStart`/
+                          // `onDetailsPanelPreviewHoverEnd` are no longer
+                          // passed here at all; see that `actions` block's
+                          // own doc comment for the full history/reasoning.
                         />
                         {/* Full-screen video — see AgentNextGenPage.tsx's
                             identical render site for the full rationale. */}
@@ -10246,7 +10269,12 @@ export function AgentWorkspaceAdvancedPage({
                 )}
                 {lastDetailPanelContent?.kind === "customer" && customerInfoOverlayContent.body}
                 {lastDetailPanelContent?.kind === "transactions" && (
-                  <MarcusWebbTransactionsDetailPanelBody note={lastDetailPanelContent.note} />
+                  <MarcusWebbTransactionsDetailPanelBody
+                    note={lastDetailPanelContent.note}
+                    timestamp={lastDetailPanelContent.timestamp}
+                    date={lastDetailPanelContent.date}
+                    showFullTransactions={lastDetailPanelContent.showFullTransactions}
+                  />
                 )}
               </InContactInteriorPanel>
             )}

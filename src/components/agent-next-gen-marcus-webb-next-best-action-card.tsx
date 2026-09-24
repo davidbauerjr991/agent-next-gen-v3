@@ -9,6 +9,7 @@ import {
   AttachmentThumbnail,
   Button,
   Container,
+  Input,
   Label,
   RadioGroup,
   RadioGroupItem,
@@ -114,8 +115,13 @@ const PLACEHOLDER_KNOWLEDGE_ARTICLE: KnowledgeArticleCardData = {
    mechanism `handleSendMessage` already uses for the composer, so the
    transcript actually shows the call being wrapped up instead of staying
    frozen on "please hold." The message text itself is still just static,
-   hand-written copy per option (or the agent's own typed note for
-   "something else") — no real generation involved.
+   hand-written copy per option — no real generation involved. Per a
+   LATER explicit bug report, "something else" no longer posts anything
+   to the transcript via `onComplete` at all: a "something else" note is
+   an internal workflow instruction for the AI agent, not something it
+   would ever say to the customer on the call, so `somethingElseRounds`'s
+   own step effect (below) doesn't call `onComplete` — the note only ever
+   shows in-card (the instruction row + its own follow-up bubble).
 
    Per a later explicit request, "Approve" specifically (not Reject/
    Something else — scoped to just this one option) drops the generic
@@ -350,6 +356,27 @@ const AGENT_REPLY: Record<Exclude<MarcusWebbNextBestActionSelection, "something-
 // than between the step list and nothing).
 const SHOW_APPROVE_PROCESSING_STEPS = false;
 
+// Per explicit request ("since we are not in Guide Mode we should limit
+// the amount of feedback from a reject selection ... just display the
+// attached response from the ai ... show the agent working and agent
+// typing states and animate as you do in the accept condition"), Reject
+// round 0's own `AIProcess` "Requesting additional information" step
+// list, its attached photo, and the "how would you like to proceed"
+// photo-decision question that used to follow it are all hidden now —
+// same "hide, don't destroy" flag pattern as `SHOW_APPROVE_PROCESSING_
+// STEPS` just above (and, while off, the exact same replacement look:
+// working spinner → `MarcusWebbAiTypingIndicator` →  ONE completion
+// `MarcusWebbAiChatBubble`, no further round-trip — see `rejectBlock`/
+// `rejectCompletionTyping`/`rejectCompletionTimestamp`, their own doc
+// comments). The underlying simulated steps (`onPhotoRequested`, the
+// "Refund rejected. Requested customer provide visual proof" milestone)
+// still run in the background unchanged, same "simulate, don't actually call anything,
+// only the VISUAL is toggled" convention `SHOW_APPROVE_PROCESSING_STEPS`
+// already established — flipping this back to `true` restores the full
+// original flow (photo, photo-decision question, "reject again" round-
+// trip) with no other changes needed.
+const SHOW_REJECT_PROCESSING_STEPS = false;
+
 // Per explicit request, hides the "Do something" `AIInput` for now ("I may
 // bring it back so don't delete it") — "hide, don't destroy," same pattern
 // as `SHOW_APPROVE_PROCESSING_STEPS` just above. `commandSlotContent`'s own
@@ -386,6 +413,14 @@ const REJECT_STEP_LABELS = ["AI Agent requesting photo of damaged item", "Waitin
 // own doc comment, above its state declaration, for the full step
 // breakdown (0 = performing, 1 = instruction card + analyzing, 2 = done).
 const SOMETHING_ELSE_STEPS = 2;
+
+// How long `MarcusWebbAiTypingIndicator` stays up after the approval
+// finishes, before the completion bubble itself appears — see
+// `completionTyping`'s own doc comment, below. Same 1500ms cadence the
+// approve step list/spinner already advances on (`approveStepIndex`'s own
+// effect), so the whole sequence reads as one consistent pace rather than
+// switching speeds partway through.
+const COMPLETION_TYPING_DELAY_MS = 1500;
 
 // Second "how would you like to proceed?" question, asked once the
 // customer's photo comes back (see this file's own top doc comment) —
@@ -578,8 +613,39 @@ export function MarcusWebbOrderDetailPanelBody({ order }: { order: MarcusWebbOrd
  *  same as every other note-row detail. Quotes the instruction itself
  *  above the table since the row's own title is now that same text,
  *  truncated — this is where the full, untruncated text is guaranteed
- *  visible. */
-export function MarcusWebbTransactionsDetailPanelBody({ note }: { note: string }) {
+ *  visible.
+ *
+ *  Per explicit follow-up ("only display the last 10 transactions for
+ *  the something else on the first selection for Marcus Webb. For
+ *  subsequent something elses ... just open the panel with the 'Agent
+ *  Smith requested {something else} {time}{date}'"), the real table
+ *  (`MarcusWebbTransactionsTable`) is now gated on `showFullTransactions`
+ *  — see `SomethingElseRound`/`PostCompletionRound`'s identical field for
+ *  how that's computed (true only for the very first "something else"
+ *  round ever submitted this session, across both mechanisms). Every
+ *  later round instead gets a plain placeholder line — deliberately
+ *  minimal for now ("we may expand on this content in the future"), not
+ *  worth its own dedicated panel component yet. */
+export function MarcusWebbTransactionsDetailPanelBody({
+  note,
+  timestamp,
+  date,
+  showFullTransactions,
+}: {
+  note: string;
+  timestamp: string;
+  date: string;
+  showFullTransactions: boolean;
+}) {
+  if (!showFullTransactions) {
+    return (
+      <div className="flex flex-col gap-3 p-4">
+        <p className="lyra-body-md text-lyra-fg-default">
+          Agent Smith requested "{note}" at {timestamp} on {date}.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-3 p-4">
       <p className="lyra-body-md text-lyra-fg-default">"{note}"</p>
@@ -721,7 +787,19 @@ function ActionLogNoteEntry({
  *  "why"/safety reasoning (same explicit request, same stable-`key`-per-
  *  bubble guarantee: `askedQuestions`/the completion bubble/etc. all key
  *  each `MarcusWebbAiChatBubble` by a stable id, so this only plays once
- *  per bubble, the moment it first appears). */
+ *  per bubble, the moment it first appears).
+ *
+ *  Per explicit follow-up (with a reference screenshot comparing this
+ *  against a real customer `ChatMessage` bubble), the "{timestamp} ·
+ *  Cognigy AI Agent" header used to sit on its OWN line above the whole
+ *  avatar+bubble row — `ChatMessage` instead keeps the avatar and header
+ *  in the SAME row (header inside the content column beside the avatar,
+ *  directly above the bubble), which is what actually aligns the header
+ *  text next to the avatar instead of floating disconnected above it.
+ *  Restructured to match exactly: the avatar row now wraps a content
+ *  column (`flex min-w-0 flex-1 flex-col gap-1`) holding the header THEN
+ *  the bubble, mirroring `chat-message.tsx`'s own
+ *  `flex items-start gap-2` → `flex min-w-0 flex-col gap-1` shape. */
 function MarcusWebbAiChatBubble({
   title,
   timestamp,
@@ -732,18 +810,63 @@ function MarcusWebbAiChatBubble({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-start gap-1 animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
-      <span className="lyra-body-sm text-lyra-fg-secondary px-1">{timestamp} · Cognigy AI Agent</span>
-      <div className="flex w-full items-start gap-2">
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lyra-bg-primary text-lyra-fg-on-primary"
-          aria-hidden="true"
-        >
-          <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
-        </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-3 rounded-lyra-lg rounded-tl-none bg-lyra-state-hover px-4 py-3">
+    <div className="flex items-start gap-2 animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+      <span
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lyra-bg-primary text-lyra-fg-on-primary"
+        aria-hidden="true"
+      >
+        <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="lyra-body-sm text-lyra-fg-secondary px-1">{timestamp} · Cognigy AI Agent</span>
+        <div className="flex min-w-0 flex-col gap-3 rounded-lyra-lg rounded-tl-none bg-lyra-state-hover px-4 py-3">
           {title}
           {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** "AI agent is typing" indicator — shown for `COMPLETION_TYPING_DELAY_MS`
+ *  right after the approval finishes, before the completion
+ *  `MarcusWebbAiChatBubble` itself appears (see `completionTyping`'s own
+ *  doc comment). Per explicit request ("use the same typing animation as
+ *  the customer typing animation"), same three-dot `animate-bounce`
+ *  bubble as the transcript's own customer-side `TypingIndicator`
+ *  (agent-next-gen-transcript.tsx) — staggered 0/150/300ms delays,
+ *  identical bubble shape/colors. Deliberately NOT that component reused
+ *  directly: this needs the AI agent's own avatar (matching
+ *  `MarcusWebbAiChatBubble`'s just above — blue circle, `Bot` icon), not
+ *  `TypingIndicator`'s customer-colored initials/person avatar, and this
+ *  card has no `Contact`/`narrow`/`bubbleFullWidth` measurements to plumb
+ *  through for it. No header line above it (unlike `MarcusWebbAiChatBubble`'s
+ *  own "{timestamp} · Cognigy AI Agent") — there's no timestamp yet to
+ *  show until the real message lands, same reasoning `TypingIndicator`
+ *  itself skips a header entirely. */
+function MarcusWebbAiTypingIndicator() {
+  return (
+    <div
+      className="flex items-start gap-2 animate-in slide-in-from-bottom-4 fade-in-0 duration-200"
+      aria-live="polite"
+      aria-label="AI agent is typing"
+    >
+      <span
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lyra-bg-primary text-lyra-fg-on-primary"
+        aria-hidden="true"
+      >
+        <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
+      </span>
+      <div className="rounded-lyra-lg rounded-tl-none bg-lyra-state-hover px-4 py-3.5">
+        <div className="flex items-center gap-1">
+          {[0, 150, 300].map((delayMs) => (
+            <span
+              key={delayMs}
+              className="block h-1.5 w-1.5 animate-bounce rounded-full bg-lyra-fg-secondary"
+              style={{ animationDelay: `${delayMs}ms` }}
+              aria-hidden="true"
+            />
+          ))}
         </div>
       </div>
     </div>
@@ -763,6 +886,77 @@ function InlineSubmitButton({ onClick, disabled }: { onClick: () => void; disabl
     <Button variant="default" size="icon-sm" title="Confirm" aria-label="Confirm" disabled={disabled} onClick={onClick}>
       <CornerDownLeft className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
     </Button>
+  );
+}
+
+/** The "Dismiss And Unassign" / "Something Else" action row on EVERY
+ *  completion-style `MarcusWebbAiChatBubble` — the original Approve/Reject
+ *  completion bubbles, and every subsequent `PostCompletionRound`'s own
+ *  response bubble after it (see that state's own doc comment,
+ *  `postCompletionRounds`). Extracted once the same row needed to appear
+ *  in more than one place with identical behavior: per explicit request
+ *  ("any time something else is clicked from an ai chat bubble open the
+ *  input field and if something is submitted, add a note inline and
+ *  perform the agent working and then have the agent respond"),
+ *  "Something Else" no longer a no-op — it swaps this same row for a
+ *  `Textarea` + `Button`, submitting which is what appends a new round.
+ *  `inputOpen`/`note`/`onNoteChange` are lifted to the caller (one shared
+ *  `postCompletionInputOpen`/`postCompletionNote` pair covers whichever
+ *  bubble currently renders this — only ever one at a time, since only
+ *  the LAST relevant bubble ever renders it live).
+ *
+ *  Per explicit follow-up ("match the something else input design to the
+ *  other something else inputs — perform task button below instead of
+ *  inline"), the input no longer pairs the `Textarea` with an
+ *  `InlineSubmitButton` beside it — it now matches `MarcusWebbTaskCard`'s
+ *  own "something else" note exactly: the `Textarea` alone, then a
+ *  separate full "Perform Task" `Button` below it (`variant="default"
+ *  size="md" className="self-start"`), same classes verbatim. */
+function MarcusWebbCompletionActions({
+  onDismissAndUnassign,
+  inputOpen,
+  note,
+  onNoteChange,
+  onOpenInput,
+  onSubmit,
+}: {
+  onDismissAndUnassign?: () => void;
+  inputOpen: boolean;
+  note: string;
+  onNoteChange: (value: string) => void;
+  onOpenInput: () => void;
+  onSubmit: () => void;
+}) {
+  if (inputOpen) {
+    return (
+      <div className="flex flex-col gap-3 animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+        <Textarea
+          rows={2}
+          placeholder="Describe what you'd like the AI agent to do instead..."
+          value={note}
+          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onNoteChange(e.target.value)}
+        />
+        <Button
+          variant="default"
+          size="md"
+          className="self-start"
+          disabled={note.trim().length === 0}
+          onClick={onSubmit}
+        >
+          Perform Task
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button variant="outline" size="md" onClick={onDismissAndUnassign}>
+        Dismiss And Unassign
+      </Button>
+      <Button variant="outline" size="md" onClick={onOpenInput}>
+        Something Else
+      </Button>
+    </div>
   );
 }
 
@@ -908,9 +1102,29 @@ function NextBestActionOptionPicker<T extends string>({
  *  below the row (not every option's, unlike the old picker), a note
  *  field appears there too when the option has one, and a single
  *  "Perform Task" button replaces the old per-row/per-note
- *  `InlineSubmitButton`. Used ONLY for the top-level question — remedies
- *  and photo-decision keep `NextBestActionOptionPicker` exactly as
- *  shipped, unaffected.
+ *  `InlineSubmitButton`. Originally used ONLY for the top-level question;
+ *  per explicit follow-up request ("display the remedies like the
+ *  buttons in the first bubble (inline 3 up)"), the post-takeover
+ *  remedies question was migrated onto this SAME component too (see its
+ *  own `activeQuestionItem` branch) — `heading`/`extra` (below) exist
+ *  specifically to make that reuse possible without touching the
+ *  top-level question's own behavior. Photo-decision still keeps
+ *  `NextBestActionOptionPicker` exactly as shipped, unaffected.
+ *
+ *  `heading` — the bold line above the pill row ("How would you like to
+ *  proceed?" for the top-level question, "Suggested remedies" for
+ *  remedies) — used to be hardcoded to the former; lifted to a prop so a
+ *  second caller can supply its own. Omit for no heading at all.
+ *
+ *  `extra` — arbitrary content rendered for whichever option is
+ *  currently selected, right after that option's own `description`/
+ *  `note` (if any) and before "Perform Task". Built for remedies' own
+ *  per-option follow-ups (`store-credit`'s editable amount `Input`,
+ *  `discount-code`'s 3-way percentage picker — see `MarcusWebbNextBestAction
+ *  Card`'s own `remedyExtra`) that don't fit the existing plain-`Textarea`
+ *  `notes` shape; the top-level question doesn't use it (always
+ *  `undefined` there). Deliberately independent of `notes` — an option
+ *  can have `extra`, a `note`, both, or neither.
  *
  *  `phase` drives what actually renders once a task is performed:
  *  `"picking"` is this row-of-buttons state (covers "nothing chosen
@@ -931,14 +1145,17 @@ function NextBestActionOptionPicker<T extends string>({
  *  ends once a task is confirmed — everything after that is someone
  *  else's render. */
 function MarcusWebbTaskCard<T extends string>({
+  heading,
   options,
   selected,
   onSelectedChange,
   onConfirm,
   confirmDisabled,
   notes,
+  extra,
   phase,
 }: {
+  heading?: React.ReactNode;
   options: NextBestActionOption<T>[];
   selected: T | undefined;
   onSelectedChange: (value: T) => void;
@@ -947,6 +1164,7 @@ function MarcusWebbTaskCard<T extends string>({
   notes?: Partial<
     Record<T, { value: string; onChange: (value: string) => void; placeholder?: string; label?: string }>
   >;
+  extra?: React.ReactNode;
   phase: "picking" | "processing" | "completed";
 }) {
   // Per explicit follow-up, neither Approve sub-phase renders anything
@@ -969,7 +1187,7 @@ function MarcusWebbTaskCard<T extends string>({
           state needed. "Something else" rounds stay on `"picking"`
           (per `topLevelPhase`'s own doc comment), so the question
           correctly reappears for another round instead of vanishing. */}
-      <p className="lyra-body-md-emphasis text-lyra-fg-default">How would you like to proceed?</p>
+      {heading && <p className="lyra-body-md-emphasis text-lyra-fg-default">{heading}</p>}
       {/* `selected ?? ""` — same Radix uncontrolled-when-`undefined`
           gotcha `NextBestActionOptionPicker` already documents. */}
       <RadioGroup value={selected ?? ""} onValueChange={(value) => onSelectedChange(value as T)}>
@@ -1004,7 +1222,16 @@ function MarcusWebbTaskCard<T extends string>({
           })}
         </div>
       </RadioGroup>
-      {selectedOption?.description && !note && (
+      {/* Per explicit request/reference screenshot ("include the rejected
+          reasoning text above the enter a reason box when the agent
+          selects 'Reject'"), this no longer hides once the option also has
+          a `note` (the "Enter a reason" `Textarea` just below) — it used
+          to (`&& !note`), which suppressed Reject's own description the
+          instant its reason box appeared. Safe for every other option:
+          Approve has no `note` (nothing to conflict with), and "Something
+          else" has no `description` at all (see `OPTIONS`), so this only
+          actually changes Reject's behavior. */}
+      {selectedOption?.description && (
         <p className="lyra-body-sm text-lyra-fg-secondary">{selectedOption.description}</p>
       )}
       {note && (
@@ -1019,6 +1246,7 @@ function MarcusWebbTaskCard<T extends string>({
           />
         </div>
       )}
+      {extra}
       {selected && (
         <Button
           variant="default"
@@ -1041,6 +1269,8 @@ export function MarcusWebbNextBestActionCard({
   onDispositionUpdated,
   onAssignmentClosed,
   onPhotoRequested,
+  onCustomerReactedToRejection,
+  onCustomerReactedToPhotoRequest,
   onPhotoExpand,
   onAccountFlagged,
   onStatusEscalated,
@@ -1059,11 +1289,16 @@ export function MarcusWebbNextBestActionCard({
   onDismissAndUnassign,
   questionSlotElement,
 }: {
-  /** For Something else, fired once (after its 4s spinner) with the
-   *  agent's typed note. For Reject, fired immediately (no delay) the
-   *  moment it's confirmed, with the fixed `AGENT_REPLY.reject` text — see
-   *  this file's own top doc comment. Not used by Approve, which instead
-   *  fires the four step callbacks below. */
+  /** For Reject, fired immediately (no delay) the moment it's confirmed,
+   *  with the fixed `AGENT_REPLY.reject` text — see this file's own top
+   *  doc comment. Not used by Approve, which instead fires the four step
+   *  callbacks below. Also NOT used by "Something else" — per explicit
+   *  bug report, a "something else" note is an internal workflow
+   *  instruction for the AI agent, not something it would ever say to
+   *  the customer on the call, so `somethingElseRounds`'s own step effect
+   *  no longer posts it to the transcript via this callback (it used to;
+   *  removed outright, not gated, since there's no reading of "the AI
+   *  relays this to the customer" that's ever correct). */
   onComplete?: (message: string) => void;
   /** Fired when the Approve flow's step 1 ("AI Agent contacting customer")
    *  completes. */
@@ -1079,6 +1314,21 @@ export function MarcusWebbNextBestActionCard({
   /** Fired when the Reject flow's own step 1 ("AI Agent requesting photo of
    *  damaged item") completes, once a reason has been submitted. */
   onPhotoRequested?: () => void;
+  /** Per explicit request ("add customer responses to the transcript
+   *  indicating they are annoyed they have to provide visual proof and
+   *  that the refund was denied"), fired once the SAME moment `onComplete`
+   *  fires with `AGENT_REPLY.reject` (round 0's reason submission) — the
+   *  caller is expected to post Marcus's own annoyed reaction to the
+   *  refund being denied onto the transcript, same "AI line, then a
+   *  simulated customer reply" pairing `onCustomerApprovedResolution`
+   *  already establishes for Approve. */
+  onCustomerReactedToRejection?: () => void;
+  /** Fired at the SAME point the "Refund rejected. Requested customer
+   *  provide visual proof" milestone logs (round 0 only, `stepIndex`
+   *  reaching `REJECT_STEP_LABELS.length`, ~1.5s after `onPhotoRequested`)
+   *  — the caller is expected to post Marcus's own annoyed reaction to
+   *  being asked for photo proof. */
+  onCustomerReactedToPhotoRequest?: () => void;
   /** Fired when the Reject flow's photo (rendered locally once both reject
    *  steps finish) is clicked — the caller is expected to take over the
    *  MAIN interaction column with it, not the transcript. */
@@ -1100,11 +1350,19 @@ export function MarcusWebbNextBestActionCard({
    *  is expected to append the customer's reply. */
   onCustomerRespondedToTakeover?: () => void;
   /** Fired when the reviewing agent confirms a remedy — the caller is
-   *  expected to append the human agent's own confirmation line. `note` is
-   *  only ever set for `"something-else"`, the agent's own typed
-   *  instruction. Does NOT change status or dismiss the assignment (per
-   *  explicit decision). */
-  onRemedyIssued?: (remedy: RemedySelection, note?: string) => void;
+   *  expected to append the human agent's own confirmation line. Exactly
+   *  one of the three `detail` fields is ever set, matching `remedy`:
+   *  `note` for `"something-else"` (the agent's own typed instruction),
+   *  `storeCreditAmount` for `"store-credit"` (the agent-edited dollar
+   *  amount — defaults to "200", but is a real editable field now, not a
+   *  fixed sum — see `storeCreditAmount`'s own doc comment), or
+   *  `discountPercent` for `"discount-code"` (one of the 3 offered
+   *  percentages — see `DISCOUNT_PERCENT_OPTIONS`). Does NOT change
+   *  status or dismiss the assignment (per explicit decision). */
+  onRemedyIssued?: (
+    remedy: RemedySelection,
+    detail: { note?: string; storeCreditAmount?: string; discountPercent?: string }
+  ) => void;
   /** Fired when a `"note"` action-log entry is clicked — the caller is
    *  expected to show `entry.detail` in a side panel (via
    *  `MarcusWebbActionDetailPanelBody`, exported above). See this file's
@@ -1136,8 +1394,18 @@ export function MarcusWebbNextBestActionCard({
    *  mechanism `onActionLogEntryOpen`/`onViewArticle`/`onOpenOrderInfo`
    *  already use. `id` lets the caller round-trip it back via
    *  `selectedTransactionsId` (below), and `note`/`timestamp` are
-   *  exactly what that round's row itself already shows. */
-  onOpenTransactions?: (round: { id: string; note: string; timestamp: string }) => void;
+   *  exactly what that round's row itself already shows. `date` and
+   *  `showFullTransactions` are `SomethingElseRound`/`PostCompletionRound`'s
+   *  own identical fields (see either one's doc comment) — the caller is
+   *  expected to only show the real transactions table when
+   *  `showFullTransactions` is true, and a plain placeholder otherwise. */
+  onOpenTransactions?: (round: {
+    id: string;
+    note: string;
+    timestamp: string;
+    date: string;
+    showFullTransactions: boolean;
+  }) => void;
   /** The `id` (see `onOpenTransactions`'s own `round.id`) of whichever
    *  "Something else" instruction row's side panel is currently open —
    *  same "caller reflects it back for the selected-state highlight"
@@ -1186,6 +1454,12 @@ export function MarcusWebbNextBestActionCard({
   const [actionLog, setActionLog] = useState<MarcusWebbActionLogEntry[]>([]);
   const nextLogId = useRef(0);
   const nowTimestamp = () => new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  // Same "capture once, at creation" reasoning as `nowTimestamp` — used
+  // alongside it wherever a "something else" round's transactions-panel
+  // fallback (`showFullTransactions`, see `SomethingElseRound`/
+  // `PostCompletionRound`'s own doc comments) needs a date, not just a
+  // time, to quote back.
+  const nowDate = () => new Date().toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
   // Every distinct `activeQuestionItem.id` this card has ever shown,
   // recorded once (with a timestamp frozen at first appearance) the
   // moment it first becomes active — see the effect right after
@@ -1232,6 +1506,19 @@ export function MarcusWebbNextBestActionCard({
   interface SomethingElseRound {
     note: string;
     timestamp: string;
+    date: string;
+    // Per explicit request ("only display the last 10 transactions for
+    // the something else on the first selection for Marcus Webb. For
+    // subsequent something elses ... just open the panel with the
+    // 'Agent Smith requested {something else} {time}{date}'"), only the
+    // very FIRST "something else" round ever submitted — across BOTH this
+    // array and `postCompletionRounds` combined, whichever comes first —
+    // opens the real transactions table; every later one (from either
+    // mechanism) opens the plain placeholder instead. Computed once, at
+    // creation time, from both arrays' lengths — see this field's own
+    // write site (`handleTopLevelConfirm`'s "something-else" branch) and
+    // `PostCompletionRound`'s identical field for the other mechanism.
+    showFullTransactions: boolean;
     stepIndex: number;
   }
   const [somethingElseRounds, setSomethingElseRounds] = useState<SomethingElseRound[]>([]);
@@ -1240,16 +1527,6 @@ export function MarcusWebbNextBestActionCard({
     if (!lastSomethingElseRound || lastSomethingElseRound.stepIndex >= SOMETHING_ELSE_STEPS) return;
     const idx = somethingElseRounds.length - 1;
     const timeout = window.setTimeout(() => {
-      // Fires on the 1→2 transition — roughly the same "a few seconds
-      // after submitting" timing the old fixed 4000ms timer had, just
-      // driven by this round's own real progress now instead of a
-      // decoupled clock, per explicit request to keep this transcript
-      // message alongside the new in-card bubble.
-      if (lastSomethingElseRound.stepIndex === 1) {
-        onComplete?.(
-          `Thanks for holding — before we finish up, I wanted to follow up on this: ${lastSomethingElseRound.note}`
-        );
-      }
       setSomethingElseRounds((rounds) => rounds.map((r, i) => (i === idx ? { ...r, stepIndex: r.stepIndex + 1 } : r)));
     }, 1500);
     return () => window.clearTimeout(timeout);
@@ -1286,9 +1563,23 @@ export function MarcusWebbNextBestActionCard({
   // round 0: Marcus already knows the refund was declined by the time a
   // second/third round starts, so later rounds don't repeat this line.
   const rejectionNoteFiredRef = useRef(false);
+  // Flips once, alongside `rejectionNoteFiredRef`, and stays `true` —
+  // exists purely so the delayed customer-reaction effect just below can
+  // depend on something that DOESN'T keep changing (unlike `rejectRounds`
+  // itself, which mutates twice more right after this as `stepIndex`
+  // advances). Depending on `rejectRounds` directly for that timeout was
+  // the first attempt, and it silently never fired: React tears down an
+  // effect's previous cleanup on every dependency change before re-running
+  // it, so the `stepIndex` bump 1500ms later (the exact moment this
+  // timeout was also about to fire) cancelled it via `clearTimeout` a beat
+  // before it could — the same "hung" bug class `onPhotoRequested`'s own
+  // effect (below) already documents guarding against, just triggered by
+  // a changing dependency instead of an excluded callback.
+  const [rejectionNoted, setRejectionNoted] = useState(false);
   useEffect(() => {
     if (confirmed !== "reject" || !rejectRounds[0]?.reasonSubmitted || rejectionNoteFiredRef.current) return;
     rejectionNoteFiredRef.current = true;
+    setRejectionNoted(true);
     onComplete?.(AGENT_REPLY.reject);
     logDecision({
       title: "Refund rejected",
@@ -1300,6 +1591,31 @@ export function MarcusWebbNextBestActionCard({
       },
     });
   }, [confirmed, rejectRounds, onComplete]);
+  // Delayed (not fired in the same tick as `onComplete` above) so Marcus's
+  // own annoyed reply reads as a real response to the AI's rejection line
+  // rather than appearing simultaneously with it. Deliberately SHORTER
+  // than the reject step effect's own 1500ms cadence (below) — that effect
+  // fires `onPhotoRequested` at the same 1500ms mark independently, and
+  // two unrelated timers racing at the identical delay landed this
+  // customer reply AFTER the photo request in testing (confirmed via
+  // screenshot), reading as if Marcus were reacting to being asked for a
+  // photo rather than to the rejection itself. 800ms guarantees this
+  // fires first: AI rejects (t0) → Marcus reacts to the rejection (t800)
+  // → AI asks for a photo (t1500) → Marcus reacts to THAT (t3000, via
+  // `onCustomerReactedToPhotoRequest`). Isolated to its own effect, gated
+  // on `rejectionNoted` alone (see that state's own doc comment above)
+  // specifically so nothing else can tear this timeout down before it
+  // fires.
+  useEffect(() => {
+    if (!rejectionNoted) return;
+    const timeout = window.setTimeout(() => onCustomerReactedToRejection?.(), 800);
+    return () => window.clearTimeout(timeout);
+    // `onCustomerReactedToRejection` deliberately excluded — same reasoning
+    // `onPhotoRequested`'s own effect documents: a fresh inline function
+    // every render would tear down and restart this timeout before it
+    // ever fires.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rejectionNoted]);
 
   // Every round AFTER round 0 gets its own follow-up note, logged once
   // each the moment that round's own reason is submitted — round 0's own
@@ -1350,16 +1666,20 @@ export function MarcusWebbNextBestActionCard({
     if (lastRejectRound.stepIndex >= REJECT_STEP_LABELS.length) return;
     const timeout = window.setTimeout(() => {
       if (lastRejectRound.stepIndex === 0) onPhotoRequested?.();
-      if (lastRejectRound.stepIndex === 1) logMilestone("Customer provided photo of damaged item.");
+      if (lastRejectRound.stepIndex === 1) {
+        logMilestone("Refund rejected. Requested customer provide visual proof");
+        onCustomerReactedToPhotoRequest?.();
+      }
       updateLastRejectRound({ stepIndex: lastRejectRound.stepIndex + 1 });
     }, 1500);
     return () => window.clearTimeout(timeout);
-    // `onPhotoRequested` deliberately excluded — same reasoning as
-    // `approveStepIndex`'s own effect below: it's a fresh inline function
-    // every render of the caller, and including it here would tear down
-    // and restart this timeout on every unrelated page re-render (e.g. the
-    // shared clock tick) before it ever gets a chance to fire — exactly
-    // the "hung on step 1" bug this fixes.
+    // `onPhotoRequested`/`onCustomerReactedToPhotoRequest` deliberately
+    // excluded — same reasoning as `approveStepIndex`'s own effect below:
+    // fresh inline functions every render of the caller, and including
+    // them here would tear down and restart this timeout on every
+    // unrelated page re-render (e.g. the shared clock tick) before it
+    // ever gets a chance to fire — exactly the "hung on step 1" bug this
+    // fixes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confirmed, rejectRounds]);
 
@@ -1395,6 +1715,27 @@ export function MarcusWebbNextBestActionCard({
       label,
       status: i < stepIndex ? "done" : i === stepIndex ? "active" : "pending",
     }));
+
+  // Round 0's own in-progress visual — see `SHOW_REJECT_PROCESSING_STEPS`'s
+  // own doc comment. `SHOW_REJECT_PROCESSING_STEPS` true keeps the
+  // original `AIProcess` step list + attached photo (rendered inline at
+  // this round's own render site, further down — unchanged, still keyed
+  // per round for the (currently unreachable while the flag is off, but
+  // still fully wired) multi-round "reject again" case); `false` swaps in
+  // the exact same plain `Spinner` + status-line treatment `approveBlock`
+  // already uses for the same reason, visible for as long as
+  // `lastRejectRound.stepIndex < REJECT_STEP_LABELS.length` — once that
+  // real (unchanged) background timer finishes, this simply disappears
+  // and `rejectCompletionTyping`/`rejectCompletionTimestamp` (their own
+  // doc comments, above `takeoverIntroducedRef`) take over.
+  const rejectBlock = SHOW_REJECT_PROCESSING_STEPS
+    ? null
+    : lastRejectRound.stepIndex < REJECT_STEP_LABELS.length ? (
+        <div className="flex items-center gap-2 px-1">
+          <Spinner size="sm" />
+          <span className="lyra-body-sm text-lyra-fg-secondary">AI agent is working…</span>
+        </div>
+      ) : null;
 
   // Locked once the post-photo question resolves to Approve (see
   // `handlePhotoDecisionConfirm` below) — the approve summary/`AIProcess`
@@ -1624,12 +1965,124 @@ export function MarcusWebbNextBestActionCard({
   // at the very end of this card (after the action log/history), same
   // pattern `askedQuestions` already uses to freeze a timestamp at the
   // moment something first happens.
+  //
+  // Per a later explicit request ("add another animation before
+  // animating in the next Agent comment that shows the Agent thinking
+  // (typing)"), `completionTimestamp` (and so the real completion bubble)
+  // no longer gets set the SAME instant `topLevelPhase` reaches
+  // "completed" — `completionTyping` flips true first, holding
+  // `MarcusWebbAiTypingIndicator` (own doc comment above) on screen for
+  // `COMPLETION_TYPING_DELAY_MS`, same beat as a real chat: dots first,
+  // then the message. `completionTimestamp` (captured only once
+  // `completionTyping` itself flips back off) is otherwise unchanged —
+  // still frozen once, still drives the same bubble below.
+  const [completionTyping, setCompletionTyping] = useState(false);
   const [completionTimestamp, setCompletionTimestamp] = useState<string | null>(null);
   useEffect(() => {
-    if (topLevelPhase !== "completed") return;
-    setCompletionTimestamp((prev) => prev ?? nowTimestamp());
+    if (topLevelPhase !== "completed" || completionTimestamp) return;
+    setCompletionTyping(true);
+    const timeout = window.setTimeout(() => {
+      setCompletionTyping(false);
+      setCompletionTimestamp(nowTimestamp());
+    }, COMPLETION_TYPING_DELAY_MS);
+    return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topLevelPhase]);
+
+  // Reject's own mirror of `completionTyping`/`completionTimestamp` just
+  // above — see `SHOW_REJECT_PROCESSING_STEPS`'s own doc comment (top of
+  // file) for the "why": per explicit request ("since we are not in
+  // Guide Mode we should limit the amount of feedback from a reject
+  // selection ... just display the attached response from the ai ...
+  // show the agent working and agent typing states and animate as you do
+  // in the accept condition"), Reject's round 0 now ends the exact same
+  // way Approve does — a working spinner (`rejectBlock`, below) while
+  // `lastRejectRound.stepIndex < REJECT_STEP_LABELS.length`, then this
+  // typing indicator, then ONE completion bubble — instead of the fuller
+  // `AIProcess`/photo/photo-decision-question flow `SHOW_REJECT_
+  // PROCESSING_STEPS` still gates further down. Scoped to round 0 only
+  // (`rejectRounds.length > 1` bails) — same scope
+  // `lastRejectRound.stepIndex`'s own advancing effect already limits
+  // itself to (see that effect's own doc comment) — since there's no
+  // "reject again" round-trip left to reach a second round from while
+  // this flag is off anyway.
+  const [rejectCompletionTyping, setRejectCompletionTyping] = useState(false);
+  const [rejectCompletionTimestamp, setRejectCompletionTimestamp] = useState<string | null>(null);
+  useEffect(() => {
+    if (
+      SHOW_REJECT_PROCESSING_STEPS ||
+      confirmed !== "reject" ||
+      rejectRounds.length > 1 ||
+      lastRejectRound.stepIndex < REJECT_STEP_LABELS.length ||
+      rejectCompletionTimestamp
+    ) {
+      return;
+    }
+    setRejectCompletionTyping(true);
+    const timeout = window.setTimeout(() => {
+      setRejectCompletionTyping(false);
+      setRejectCompletionTimestamp(nowTimestamp());
+    }, COMPLETION_TYPING_DELAY_MS);
+    return () => window.clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmed, rejectRounds]);
+
+  // Per explicit request ("any time something else is clicked from an ai
+  // chat bubble open the input field and if something is submitted, add
+  // a note inline and perform the agent working and then have the agent
+  // respond (it can loop forever)"), the "Something Else" button on
+  // EITHER completion bubble (Approve's or Reject's — see
+  // `MarcusWebbCompletionActions`, below, used by both, and by every
+  // round's own follow-up bubble here) opens an inline note field in
+  // place of the button row; submitting appends a new
+  // `PostCompletionRound`, an append-only list, same shape/convention as
+  // `somethingElseRounds`/`rejectRounds`. Each round's own `stepIndex`
+  // advances 0 (note just added, working spinner) → 1 (typing indicator)
+  // → 2 (done, its own response bubble shown) every
+  // `COMPLETION_TYPING_DELAY_MS`, the same two-phase "working then
+  // typing" beat Approve/Reject's own completions already use — see
+  // their own doc comments. Only the LAST round's response bubble (or,
+  // before any round exists, the original completion bubble itself) ever
+  // shows live actions — every earlier one freezes once superseded, same
+  // "stays visible once answered, only the latest is interactive"
+  // pattern this file already establishes for `askedQuestions`/
+  // `somethingElseRounds`. Genuinely "loops forever": nothing here ever
+  // sets a terminal flag, so the last round's own response bubble always
+  // re-offers `MarcusWebbCompletionActions`, ready for another round.
+  interface PostCompletionRound {
+    note: string;
+    timestamp: string;
+    date: string;
+    // See `SomethingElseRound.showFullTransactions`'s own doc comment —
+    // identical field/reasoning, shared across both mechanisms.
+    showFullTransactions: boolean;
+    stepIndex: number;
+  }
+  const [postCompletionRounds, setPostCompletionRounds] = useState<PostCompletionRound[]>([]);
+  const [postCompletionInputOpen, setPostCompletionInputOpen] = useState(false);
+  const [postCompletionNote, setPostCompletionNote] = useState("");
+  useEffect(() => {
+    const round = postCompletionRounds[postCompletionRounds.length - 1];
+    if (!round || round.stepIndex >= 2) return;
+    const timeout = window.setTimeout(() => {
+      setPostCompletionRounds((rounds) =>
+        rounds.map((r, i) => (i === rounds.length - 1 ? { ...r, stepIndex: r.stepIndex + 1 } : r))
+      );
+    }, COMPLETION_TYPING_DELAY_MS);
+    return () => window.clearTimeout(timeout);
+  }, [postCompletionRounds]);
+  const handlePostCompletionSubmit = () => {
+    const trimmed = postCompletionNote.trim();
+    if (!trimmed) return;
+    // See `PostCompletionRound.showFullTransactions`'s own doc comment.
+    const showFullTransactions = somethingElseRounds.length === 0 && postCompletionRounds.length === 0;
+    setPostCompletionRounds((rounds) => [
+      ...rounds,
+      { note: trimmed, timestamp: nowTimestamp(), date: nowDate(), showFullTransactions, stepIndex: 0 },
+    ]);
+    setPostCompletionNote("");
+    setPostCompletionInputOpen(false);
+  };
 
   // Takeover only — see this file's own top doc comment. Fires the human
   // agent's greeting then the customer's reply once, on a short delay,
@@ -1638,27 +2091,72 @@ export function MarcusWebbNextBestActionCard({
   const [remedySelected, setRemedySelected] = useState<RemedySelection | undefined>(undefined);
   const [remedyNote, setRemedyNote] = useState("");
   const [remedyConfirmed, setRemedyConfirmed] = useState<RemedySelection | undefined>(undefined);
+  // "store-credit"'s own editable amount — defaults to the same $200 the
+  // fixed refund amount already is everywhere else in this scenario, but
+  // stays a free-typed string (not re-derived from anything) so the agent
+  // can genuinely change it. "discount-code"'s own 3-way percentage pick
+  // has no sensible default (nothing to default TO among three equally
+  // valid options), so it starts unset — see `remedyConfirmDisabled`'s own
+  // doc comment for why that keeps "Perform Task" disabled until chosen.
+  const [storeCreditAmount, setStoreCreditAmount] = useState("200");
+  const [discountAmount, setDiscountAmount] = useState<string | undefined>(undefined);
   const takeoverIntroducedRef = useRef(false);
+  // Per explicit request ("show them typing" before the remedies bubble),
+  // same two-phase "working then typing" beat Approve/Reject's own
+  // completions already use (`completionTyping`/`rejectCompletionTyping`,
+  // their own doc comments) — except there's no real "working" step here
+  // (nothing is processing), so this skips straight to the typing
+  // indicator the instant Takeover fires, then reveals the bubble after
+  // `COMPLETION_TYPING_DELAY_MS`. `remedyBubbleReady` (not `takenOver`
+  // alone) is what the `activeQuestionItem` "remedies" branch (below)
+  // actually gates on, so the bubble itself doesn't appear a beat early.
+  const [remedyBubbleTyping, setRemedyBubbleTyping] = useState(false);
+  const [remedyBubbleReady, setRemedyBubbleReady] = useState(false);
   useEffect(() => {
     if (!takenOver || takeoverIntroducedRef.current) return;
     takeoverIntroducedRef.current = true;
     logMilestone("Agent Smith has taken over the conversation.");
     const t1 = window.setTimeout(() => onTakeoverGreeting?.(), 1000);
     const t2 = window.setTimeout(() => onCustomerRespondedToTakeover?.(), 3000);
+    setRemedyBubbleTyping(true);
+    const t3 = window.setTimeout(() => {
+      setRemedyBubbleTyping(false);
+      setRemedyBubbleReady(true);
+    }, COMPLETION_TYPING_DELAY_MS);
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
+      window.clearTimeout(t3);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [takenOver]);
 
+  // Only ever true for `store-credit`/`discount-code` — `something-else`
+  // keeps its own pre-existing empty-note check. `Number(...)` on an empty
+  // string is `0` (falls into the `<= 0` half already), and on a
+  // non-numeric string is `NaN` (fails `> 0` too), so both invalid cases
+  // are covered without a separate parse-failure branch.
+  const remedyConfirmDisabled =
+    (remedySelected === "something-else" && remedyNote.trim().length === 0) ||
+    (remedySelected === "store-credit" && !(Number(storeCreditAmount) > 0)) ||
+    (remedySelected === "discount-code" && !discountAmount);
+
   const handleRemedyConfirm = (value: RemedySelection) => {
     setRemedyConfirmed(value);
-    onRemedyIssued?.(value, value === "something-else" ? remedyNote : undefined);
+    onRemedyIssued?.(value, {
+      note: value === "something-else" ? remedyNote : undefined,
+      storeCreditAmount: value === "store-credit" ? storeCreditAmount.trim() : undefined,
+      discountPercent: value === "discount-code" ? discountAmount : undefined,
+    });
     logDecision({
       title:
         value === "store-credit" ? "Store credit issued" : value === "discount-code" ? "Discount code sent" : "Instruction sent",
-      description: value === "something-else" ? remedyNote.trim() : undefined,
+      description:
+        value === "something-else"
+          ? remedyNote.trim()
+          : value === "store-credit"
+            ? `$${storeCreditAmount.trim()} store credit`
+            : `${discountAmount}% off discount code`,
       icon:
         value === "something-else" ? (
           <MessageSquareText className="h-4 w-4 text-lyra-fg-secondary" strokeWidth={1.5} aria-hidden="true" />
@@ -1671,6 +2169,63 @@ export function MarcusWebbNextBestActionCard({
       },
     });
   };
+
+  // "discount-code"'s own 3-way percentage pick — see `remedyExtra`'s own
+  // render site for the shared pill-button styling this reuses (matching
+  // `MarcusWebbTaskCard`'s own row exactly, just a nested/secondary
+  // choice rather than the top-level one).
+  const DISCOUNT_PERCENT_OPTIONS = ["10", "20", "30"];
+
+  // `MarcusWebbTaskCard`'s own `extra` slot (its doc comment) for whichever
+  // remedy is currently selected — `undefined` for "something-else" (that
+  // one already gets the plain `Textarea` via `notes` below, same as
+  // before).
+  const remedyExtra =
+    remedySelected === "store-credit" ? (
+      <Input
+        label="Credit amount"
+        startIcon={<span className="lyra-body-md text-lyra-fg-secondary">$</span>}
+        inputMode="decimal"
+        value={storeCreditAmount}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStoreCreditAmount(e.target.value)}
+      />
+    ) : remedySelected === "discount-code" ? (
+      <div className="flex flex-col gap-1.5">
+        <Label label="Discount amount" />
+        <RadioGroup value={discountAmount ?? ""} onValueChange={setDiscountAmount}>
+          <div className="flex flex-wrap gap-2">
+            {DISCOUNT_PERCENT_OPTIONS.map((percent) => {
+              const isSelected = discountAmount === percent;
+              return (
+                <RadioGroupItem
+                  key={percent}
+                  value={percent}
+                  className={cn(
+                    "rounded-lyra-md border px-3 py-2 [&_[role=radio]]:sr-only",
+                    "has-[[role=radio]:focus-visible]:ring-2 has-[[role=radio]:focus-visible]:ring-lyra-border-focus",
+                    isSelected
+                      ? "border-lyra-border-active bg-lyra-bg-active-subtle"
+                      : "border-lyra-border-subtle bg-lyra-bg-surface-base hover:border-lyra-state-border-hover-neutral"
+                  )}
+                  label={
+                    <span className="flex items-center gap-1.5 lyra-body-md-emphasis text-lyra-fg-default">
+                      {isSelected && (
+                        <CheckCircle2
+                          className="h-4 w-4 text-lyra-status-success-strong"
+                          strokeWidth={1.5}
+                          aria-hidden="true"
+                        />
+                      )}
+                      {percent}% Off
+                    </span>
+                  }
+                />
+              );
+            })}
+          </div>
+        </RadioGroup>
+      </div>
+    ) : undefined;
 
   // ── "Do something" command field ──
   // No local LLM wired up yet (the earlier local-Ollama integration was
@@ -1716,7 +2271,15 @@ export function MarcusWebbNextBestActionCard({
     // part of the new animated sequence.
     if (value === "something-else") {
       const note = customNote.trim();
-      setSomethingElseRounds((rounds) => [...rounds, { note, timestamp: nowTimestamp(), stepIndex: 0 }]);
+      // See `SomethingElseRound.showFullTransactions`'s own doc comment —
+      // true only if NEITHER this array NOR `postCompletionRounds` has any
+      // round yet, i.e. this is the very first "something else" ever
+      // submitted this session.
+      const showFullTransactions = somethingElseRounds.length === 0 && postCompletionRounds.length === 0;
+      setSomethingElseRounds((rounds) => [
+        ...rounds,
+        { note, timestamp: nowTimestamp(), date: nowDate(), showFullTransactions, stepIndex: 0 },
+      ]);
       setCustomNote("");
       setSelected(undefined);
       return;
@@ -1770,17 +2333,33 @@ export function MarcusWebbNextBestActionCard({
   // is always already true by the time a round exists to check.
   let activeQuestionItem: { id: string; title: React.ReactNode; content: React.ReactNode } | null = null;
   if (takenOver) {
-    if (!remedyConfirmed) {
+    // Gated on `remedyBubbleReady`, not `takenOver` alone — see that
+    // state's own doc comment (near `takeoverIntroducedRef`): the typing
+    // indicator shows first, and this bubble (with its live picker) only
+    // actually appears once that finishes.
+    if (remedyBubbleReady && !remedyConfirmed) {
       activeQuestionItem = {
         id: "remedies",
-        title: <p className="lyra-body-md text-lyra-fg-default">Suggested remedies</p>,
+        // Per explicit request ("update the bubble content to say 'I
+        // have transferred the call...'"), replaces the old plain
+        // "Suggested remedies" heading — that label moved to
+        // `MarcusWebbTaskCard`'s own `heading` prop instead (below),
+        // matching the top-level bubble's own "intro paragraph + heading
+        // inside the card" shape.
+        title: (
+          <p className="lyra-body-md text-lyra-fg-default">
+            I have transferred the call. You are live with the customer. He is getting irate. Below are some
+            suggested remedies for the situation.
+          </p>
+        ),
         content: (
-          <NextBestActionOptionPicker
+          <MarcusWebbTaskCard
+            heading="Suggested remedies"
             options={REMEDY_OPTIONS}
             selected={remedySelected}
             onSelectedChange={setRemedySelected}
             onConfirm={handleRemedyConfirm}
-            confirmDisabled={remedySelected === "something-else" && remedyNote.trim().length === 0}
+            confirmDisabled={remedyConfirmDisabled}
             notes={{
               "something-else": {
                 value: remedyNote,
@@ -1788,6 +2367,8 @@ export function MarcusWebbNextBestActionCard({
                 placeholder: "Describe what you'd like to do instead...",
               },
             }}
+            extra={remedyExtra}
+            phase="picking"
           />
         ),
       };
@@ -1862,6 +2443,7 @@ export function MarcusWebbNextBestActionCard({
       content:
         somethingElseRounds.length === 0 ? (
           <MarcusWebbTaskCard
+            heading="How would you like to proceed?"
             options={OPTIONS}
             selected={selected}
             onSelectedChange={setSelected}
@@ -1873,6 +2455,7 @@ export function MarcusWebbNextBestActionCard({
         ) : null,
     };
   } else if (
+    SHOW_REJECT_PROCESSING_STEPS &&
     confirmed === "reject" &&
     lastRejectRound.stepIndex >= REJECT_STEP_LABELS.length &&
     !flagConfirmed &&
@@ -2033,7 +2616,13 @@ export function MarcusWebbNextBestActionCard({
                 }}
                 selected={selectedTransactionsId === `something-else-${i}`}
                 onClick={() =>
-                  onOpenTransactions?.({ id: `something-else-${i}`, note: round.note, timestamp: round.timestamp })
+                  onOpenTransactions?.({
+                    id: `something-else-${i}`,
+                    note: round.note,
+                    timestamp: round.timestamp,
+                    date: round.date,
+                    showFullTransactions: round.showFullTransactions,
+                  })
                 }
               />
             </div>
@@ -2058,6 +2647,7 @@ export function MarcusWebbNextBestActionCard({
             >
               {i === somethingElseRounds.length - 1 && confirmed !== "reject" && (
                 <MarcusWebbTaskCard
+                  heading="How would you like to proceed?"
                   options={OPTIONS}
                   selected={selected}
                   onSelectedChange={setSelected}
@@ -2141,34 +2731,39 @@ export function MarcusWebbNextBestActionCard({
                   explicit follow-up, rejecting again after the photo
                   (round ≥ 1) doesn't simulate another photo request; it's
                   terminal, with only its own follow-up log entry (above,
-                  in `actionLog`) to show for it. */}
-              {rejectRounds.map(
-                (round, i) =>
-                  round.reasonSubmitted &&
-                  i === 0 && (
-                    <div key={i} className="flex flex-col gap-3">
-                      <AIProcess
-                        expanded={!collapsedRejectRounds.has(i)}
-                        onExpandedChange={(next: boolean) => setRejectRoundExpanded(i, next)}
-                        label="Requesting additional information"
-                        steps={buildRejectSteps(round.stepIndex)}
-                      />
-                      {round.stepIndex >= REJECT_STEP_LABELS.length && (
-                        <div className="flex flex-col gap-2">
-                          <p className="lyra-body-sm text-lyra-fg-secondary">
-                            The customer provided the attached photo.
-                          </p>
-                          <AttachmentThumbnail
-                            filename="damaged-earcup.jpg"
-                            alt="Photo of the damaged headphone ear cup"
-                            src={damagedHeadphonesImg}
-                            onClick={onPhotoExpand}
+                  in `actionLog`) to show for it. Gated on
+                  `SHOW_REJECT_PROCESSING_STEPS` — own doc comment, top of
+                  file — `rejectBlock` (computed above) is round 0's
+                  replacement while it's off. */}
+              {SHOW_REJECT_PROCESSING_STEPS
+                ? rejectRounds.map(
+                    (round, i) =>
+                      round.reasonSubmitted &&
+                      i === 0 && (
+                        <div key={i} className="flex flex-col gap-3">
+                          <AIProcess
+                            expanded={!collapsedRejectRounds.has(i)}
+                            onExpandedChange={(next: boolean) => setRejectRoundExpanded(i, next)}
+                            label="Requesting additional information"
+                            steps={buildRejectSteps(round.stepIndex)}
                           />
+                          {round.stepIndex >= REJECT_STEP_LABELS.length && (
+                            <div className="flex flex-col gap-2">
+                              <p className="lyra-body-sm text-lyra-fg-secondary">
+                                The customer provided the attached photo.
+                              </p>
+                              <AttachmentThumbnail
+                                filename="damaged-earcup.jpg"
+                                alt="Photo of the damaged headphone ear cup"
+                                src={damagedHeadphonesImg}
+                                onClick={onPhotoExpand}
+                              />
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      )
                   )
-              )}
+                : lastRejectRound.reasonSubmitted && rejectBlock}
               {flagConfirmed && (
                 <AIProcess
                   expanded={flagExpanded}
@@ -2189,6 +2784,13 @@ export function MarcusWebbNextBestActionCard({
           )}
         </div>
       )}
+      {/* Per explicit request ("show them typing" when the agent takes
+          over), shown for the same `COMPLETION_TYPING_DELAY_MS` window
+          `remedyBubbleTyping`'s own doc comment (near
+          `takeoverIntroducedRef`) describes, right after the "Agent Smith
+          has taken over the conversation." milestone and before the
+          remedies bubble itself appears below. */}
+      {takenOver && remedyBubbleTyping && <MarcusWebbAiTypingIndicator />}
       {/* The post-takeover "Suggested remedies" and post-photo-decision
           chat bubbles both render here — after the pure-history block
           above — because that's the position each of them first appears
@@ -2221,7 +2823,11 @@ export function MarcusWebbNextBestActionCard({
           (`MarcusWebbTaskCard`'s `"completed"` phase renders nothing, by
           design; see its own doc comment). `completionTimestamp` is
           `null` until `topLevelPhase` first reaches `"completed"`, so
-          this simply doesn't render until then. */}
+          this simply doesn't render until then. `completionTyping`
+          (own doc comment above) covers the gap between that moment and
+          this bubble actually appearing — `MarcusWebbAiTypingIndicator`
+          instead, for the same brief window. */}
+      {completionTyping && <MarcusWebbAiTypingIndicator />}
       {completionTimestamp && (
         <MarcusWebbAiChatBubble
           title={
@@ -2232,16 +2838,114 @@ export function MarcusWebbNextBestActionCard({
           }
           timestamp={completionTimestamp}
         >
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="md" onClick={onDismissAndUnassign}>
-              Dismiss And Unassign
-            </Button>
-            <Button variant="outline" size="md" onClick={() => {}}>
-              Something Else
-            </Button>
-          </div>
+          {postCompletionRounds.length === 0 && (
+            <MarcusWebbCompletionActions
+              onDismissAndUnassign={onDismissAndUnassign}
+              inputOpen={postCompletionInputOpen}
+              note={postCompletionNote}
+              onNoteChange={setPostCompletionNote}
+              onOpenInput={() => setPostCompletionInputOpen(true)}
+              onSubmit={handlePostCompletionSubmit}
+            />
+          )}
         </MarcusWebbAiChatBubble>
       )}
+      {/* Reject's own mirror of the completion bubble just above — see
+          `rejectCompletionTyping`/`rejectCompletionTimestamp`'s own doc
+          comment (near `takeoverIntroducedRef`) and `SHOW_REJECT_
+          PROCESSING_STEPS`'s (top of file) for the "why": while that flag
+          is off, this is the ONLY thing Reject ends on — no photo, no
+          "how would you like to proceed" follow-up question, no further
+          round-trip. Same `Dismiss And Unassign`/`Something Else` buttons
+          as Approve's own completion bubble, same no-op placeholder on
+          the latter (see that button's own call site just above). */}
+      {rejectCompletionTyping && <MarcusWebbAiTypingIndicator />}
+      {rejectCompletionTimestamp && (
+        <MarcusWebbAiChatBubble
+          title={
+            <p className="lyra-body-md text-lyra-fg-default">
+              I have requested the customer provide a photo of the damaged item. This seems to have upset them.
+              Their sentiment is detected at slightly negative.
+            </p>
+          }
+          timestamp={rejectCompletionTimestamp}
+        >
+          {postCompletionRounds.length === 0 && (
+            <MarcusWebbCompletionActions
+              onDismissAndUnassign={onDismissAndUnassign}
+              inputOpen={postCompletionInputOpen}
+              note={postCompletionNote}
+              onNoteChange={setPostCompletionNote}
+              onOpenInput={() => setPostCompletionInputOpen(true)}
+              onSubmit={handlePostCompletionSubmit}
+            />
+          )}
+        </MarcusWebbAiChatBubble>
+      )}
+      {/* Every "Something Else" round submitted from a completion bubble's
+          own `MarcusWebbCompletionActions` — see `postCompletionRounds`'
+          own doc comment (near `takeoverIntroducedRef`) for the full
+          "why"/shape. Genuinely unbounded: nothing here ever stops the
+          last round's own response bubble from offering
+          `MarcusWebbCompletionActions` again, so this can keep growing
+          for as long as the agent keeps submitting. The instruction note
+          reuses the exact same `ActionLogNoteEntry` shape/behavior the
+          top-level "Something else" rounds already established
+          (`somethingElseRounds`, above) — title = the note itself,
+          clicking it opens the same transactions side panel. */}
+      {postCompletionRounds.map((round, i) => (
+        <React.Fragment key={i}>
+          <ActionLogNoteEntry
+            entry={{
+              id: `post-completion-${i}`,
+              kind: "note",
+              title: round.note,
+              timestamp: round.timestamp,
+              actorName: "John Smith",
+              icon: <MessageSquareText className="h-4 w-4 text-lyra-fg-secondary" strokeWidth={1.5} aria-hidden="true" />,
+            }}
+            selected={selectedTransactionsId === `post-completion-${i}`}
+            onClick={() =>
+              onOpenTransactions?.({
+                id: `post-completion-${i}`,
+                note: round.note,
+                timestamp: round.timestamp,
+                date: round.date,
+                showFullTransactions: round.showFullTransactions,
+              })
+            }
+          />
+          {round.stepIndex === 0 && (
+            <div className="flex items-center gap-2 px-1 animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+              <Spinner size="sm" />
+              <span className="lyra-body-sm text-lyra-fg-secondary">AI agent is working…</span>
+            </div>
+          )}
+          {round.stepIndex === 1 && <MarcusWebbAiTypingIndicator />}
+          {round.stepIndex >= 2 && (
+            <MarcusWebbAiChatBubble
+              title={
+                <p className="lyra-body-md text-lyra-fg-default">
+                  I've noted your instruction and taken the appropriate action. Let me know if there's anything
+                  else I can help with regarding this contact.
+                </p>
+              }
+              timestamp={round.timestamp}
+            >
+              {i === postCompletionRounds.length - 1 && (
+                <MarcusWebbCompletionActions
+                  onDismissAndUnassign={onDismissAndUnassign}
+                  inputOpen={postCompletionInputOpen}
+                  note={postCompletionNote}
+                  onNoteChange={setPostCompletionNote}
+                  onOpenInput={() => setPostCompletionInputOpen(true)}
+                  onSubmit={handlePostCompletionSubmit}
+                />
+              )}
+            </MarcusWebbAiChatBubble>
+          )}
+        </React.Fragment>
+      ))}
     </div>
   );
 }

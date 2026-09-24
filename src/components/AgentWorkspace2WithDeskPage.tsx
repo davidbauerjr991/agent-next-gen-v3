@@ -6360,6 +6360,9 @@ export function AgentWorkspace2WithDeskPage({
       onDrop: (e) => panelDragHandlers.onDrop(e, key),
       onDragEnd: panelDragHandlers.onDragEnd,
       onDragLeave: panelDragHandlers.onDragLeave,
+      // Keyboard alternative to the drag reorder above (lyra-ui MenuRadix:
+      // Alt+Shift+ArrowUp/Down on a focused row) — same shared order state.
+      onKeyboardMove: (direction: -1 | 1) => panelDragHandlers.onKeyboardMove?.(key, direction),
       rightElement: (
         <span className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           {/* Same unread count `NotificationsBell`'s own header icon shows
