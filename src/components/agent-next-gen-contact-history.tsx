@@ -570,6 +570,28 @@ export function contactHistoryChannelIcon(entry: ContactHistoryEntry, className 
   return <ChannelIcon className={className} strokeWidth={1.5} />;
 }
 
+/** Per explicit request ("when hovering on the channel chips - add a
+ *  tooltip that is {channel name} ie. inbound voice / outbound voice /
+ *  sms / chat / whatsapp / etc.", then follow-up: "make sure this is
+ *  added to all channel chips - I noticed contact history chips do not
+ *  have the tooltip") — same direction-aware-for-voice-only text
+ *  `ChannelRow`'s own chip tooltip uses (`ChannelRowProps.tooltipLabel`,
+ *  channel-row.tsx), computed here for this file's own separate Contact
+ *  History `Tag` pill (`CONTACT_HISTORY_CHANNEL_LABEL`/
+ *  `CONTACT_HISTORY_CHANNEL_TAG_VARIANT`, not `channel-row.tsx`'s own
+ *  `CHANNEL_TYPE_META` — this file keeps its own parallel set, see
+ *  `CONTACT_HISTORY_CHANNEL_TAG_VARIANT`'s own doc comment). */
+export function contactHistoryChannelTooltipLabel(entry: ContactHistoryEntry): string {
+  if (entry.channelType === "voice") {
+    return entry.direction === "inbound"
+      ? "Inbound Voice"
+      : entry.direction === "outbound"
+      ? "Outbound Voice"
+      : "Voice";
+  }
+  return entry.channelLabel;
+}
+
 // Per explicit follow-up request ("author the real per-entry message[s]"):
 // each of these 5 rows' own `messages`/`emailBody` below is hand-authored to
 // actually match that row's own `description`/`statusLabel` — previously
@@ -1059,15 +1081,28 @@ export function buildContactHistoryByRange(
    small component rather than genericizing `DateFilterChip` itself, since
    the two have different value sets and this one is intentionally simpler
    (no custom-range case to handle). */
-export function ContactHistoryDateFilterChip({ onValueChange }: { onValueChange?: (value: ContactHistoryDateFilterValue) => void }) {
+export function ContactHistoryDateFilterChip({
+  onValueChange,
+  defaultValue = "last48h",
+}: {
+  onValueChange?: (value: ContactHistoryDateFilterValue) => void;
+  /** Per explicit request, Phase 1 (Advanced) only — ("default the phase 1
+   *  contact history filter to last 72 hours"): `ContactHistoryCard`
+   *  passes `"last72h"` here so this chip's own trigger label starts in
+   *  sync with that card's now-also-`"last72h"` initial `dateFilter`.
+   *  Defaults to `"last48h"`, unchanged for every other consumer/tier. See
+   *  `ContactHistoryCard`'s own identically-named prop below for the fuller
+   *  "why must these two stay matched" reasoning. */
+  defaultValue?: ContactHistoryDateFilterValue;
+}) {
   const [open, setOpen] = useState(false);
-  // Default "Last 48 Hours" per explicit request — must match
+  // Seeded from `defaultValue` (default "Last 48 Hours") — must match
   // `ContactHistoryCard`'s own `dateFilter` initial state below, since
   // that's a second, independent piece of state this chip doesn't own
   // (kept in sync only via `onValueChange`); a mismatched default here
-  // would show "Today" in the trigger while the card was actually
-  // filtered to the 48-hour window underneath it.
-  const [value, setValue] = useState<ContactHistoryDateFilterValue>("last48h");
+  // would show the wrong label in the trigger while the card was actually
+  // filtered to a different window underneath it.
+  const [value, setValue] = useState<ContactHistoryDateFilterValue>(defaultValue);
 
   const selectedLabel = CONTACT_HISTORY_DATE_FILTER_OPTIONS.find((o) => o.value === value)?.label ?? "";
 
@@ -1123,6 +1158,7 @@ export function ContactHistoryCard({
   historyByRange,
   hideCustomerNames,
   onOpenAllContacts,
+  defaultDateFilter,
 }: {
   /** Fired by clicking anywhere on a row — opens this entry's summary in
    *  `AgentNextGenPage`'s shared right-docked `InteriorPanel` slot (main
@@ -1167,11 +1203,20 @@ export function ContactHistoryCard({
    *  Omit to render the card with no such button at all (no consumer
    *  currently does this — all 3 tiers pass it). */
   onOpenAllContacts?: () => void;
+  /** Per explicit request, Phase 1 (Advanced) only ("default the phase 1
+   *  contact history filter to last 72 hours") — `AgentWorkspaceAdvancedPage
+   *  .tsx`'s own call site passes `"last72h"`; every other consumer (Agent
+   *  Workspace 2.0, Premium) omits this and keeps the original "Last 48
+   *  Hours" default. Threaded straight into this card's own `dateFilter`
+   *  state below AND into `ContactHistoryDateFilterChip`'s matching
+   *  `defaultValue` a few lines down, so the trigger label and the actual
+   *  filtered rows never start out of sync. */
+  defaultDateFilter?: ContactHistoryDateFilterValue;
 }) {
-  // Default "Last 48 Hours" per explicit request (was "Today") — see
-  // `ContactHistoryDateFilterChip`'s own `value` state above for why this
-  // default must stay matched to that one.
-  const [dateFilter, setDateFilter] = useState<ContactHistoryDateFilterValue>("last48h");
+  // Seeded from `defaultDateFilter` (default "Last 48 Hours", was "Today"
+  // before that) — see `ContactHistoryDateFilterChip`'s own `value` state
+  // above for why this default must stay matched to that one.
+  const [dateFilter, setDateFilter] = useState<ContactHistoryDateFilterValue>(defaultDateFilter ?? "last48h");
   const [searchQuery, setSearchQuery] = useState("");
   // Footer pagination (replaces the old reliance on `DashboardCard`'s own
   // `max-h-[600px] overflow-y-auto` body scroll — see `CONTACT_HISTORY_STRESS_BATCH`'s
@@ -1285,7 +1330,7 @@ export function ContactHistoryCard({
             size="sm"
             className="lyra-container-header-search-inline flex-1 min-w-[240px]"
           />
-          <ContactHistoryDateFilterChip onValueChange={setDateFilter} />
+          <ContactHistoryDateFilterChip onValueChange={setDateFilter} defaultValue={defaultDateFilter ?? "last48h"} />
         </>
       }
       headerTabs={
@@ -1406,12 +1451,14 @@ export function ContactHistoryCard({
                       Email), matching the same three `lyra-accent-*`
                       hues CONTRIBUTING.md's "Channel type colors"
                       convention documents, not a one-off tint. */}
-                  <Tag
-                    label={entry.channelLabel}
-                    variant={CONTACT_HISTORY_CHANNEL_TAG_VARIANT[entry.channelType]}
-                    shape="pill"
-                    icon={contactHistoryChannelIcon(entry)}
-                  />
+                  <Tooltip content={contactHistoryChannelTooltipLabel(entry)} placement="top">
+                    <Tag
+                      label={entry.channelLabel}
+                      variant={CONTACT_HISTORY_CHANNEL_TAG_VARIANT[entry.channelType]}
+                      shape="pill"
+                      icon={contactHistoryChannelIcon(entry)}
+                    />
+                  </Tooltip>
                   <span className="lyra-body-sm text-lyra-fg-secondary whitespace-nowrap">{entry.timeAgo}</span>
                 </div>
               </div>
@@ -1532,12 +1579,14 @@ export function ContactHistoryEntryDetail({
         <span className="lyra-body-sm text-lyra-fg-secondary">
           {[entry.statusLabel, displayIdentity, entry.timeAgo].filter(Boolean).join(" · ")}
         </span>
-        <Tag
-          label={entry.channelLabel}
-          variant={CONTACT_HISTORY_CHANNEL_TAG_VARIANT[entry.channelType]}
-          shape="pill"
-          icon={contactHistoryChannelIcon(entry)}
-        />
+        <Tooltip content={contactHistoryChannelTooltipLabel(entry)} placement="top">
+          <Tag
+            label={entry.channelLabel}
+            variant={CONTACT_HISTORY_CHANNEL_TAG_VARIANT[entry.channelType]}
+            shape="pill"
+            icon={contactHistoryChannelIcon(entry)}
+          />
+        </Tooltip>
       </div>
       <div className="rounded-lyra-md border border-lyra-border-subtle bg-lyra-bg-control-subtle overflow-hidden flex flex-col gap-3 p-4">
         <div className="flex flex-col gap-1 min-w-0">

@@ -1247,10 +1247,6 @@ export function CustomerHistorySessionDetailPanel({
       side="right"
       open={entry !== null}
       onClose={onClose}
-      // `PanelRightClose` — same "closing a docked right-side panel" glyph
-      // this file's other `InteriorPanel` instance already uses (below),
-      // instead of `ContainerHeader`'s generic default `X`.
-      closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
       // `z-[3]` — overrides `InteriorPanel`'s own default `z-[5]` (via
       // `cn()`'s `tailwind-merge` dedup, same "consumer className overrides
       // the internal default" mechanism `CustomerInformationSidePanel`'s own
@@ -3618,14 +3614,38 @@ export function DetailsPanelAccordions({
   customerName,
   customerContextOverview,
   showCustomerContextOverview = true,
+  showRealTimeSummary = false,
+  realTimeSummaryUpdatedLabel,
   onViewCustomerInfo,
   onViewInteractionHistory,
+  onLinkCustomer,
 }: {
   customerName?: string;
   /** Same object each page already builds via `buildCustomerContextOverviewInfo`
    *  for its own main-column Contact Overview — passed straight through
    *  rather than recomputed here, so the two never disagree. */
   customerContextOverview?: CustomerContextOverviewInfo;
+  /** Per explicit request ("replace the autosummary card in the contact
+   *  details with the content depicted in the screenshot of the real time
+   *  summary card"), then a follow-up clarification ("do not modify the
+   *  autosummary card that is inline with the conversation - create a new
+   *  card and call it 'Real-Time Summary'") — swaps this panel's own
+   *  "Contact Snapshot"/"Autosummary" container for `CustomerContextOverview`'s
+   *  own new "Real-Time Summary" one instead (see that prop's own doc
+   *  comment, lyra-ui/contact-overview.tsx, for the full "why"). The main
+   *  transcript column's OWN `customerContextOverview` render (each page's
+   *  own render site) never passes this — that's the "inline with the
+   *  conversation" card the follow-up said to leave untouched. Defaults to
+   *  `false`: every existing `DetailsPanelAccordions` call site keeps
+   *  showing the original "Autosummary" exactly as before. */
+  showRealTimeSummary?: boolean;
+  /** `"Updated 8 seconds ago"`-style caption — passed straight through to
+   *  `CustomerContextOverview`'s own identically-named prop (see that
+   *  prop's own doc comment for the full "why"); this component doesn't
+   *  compute the relative-time string itself, the caller does (it has the
+   *  page's own ticking clock). Only meaningful alongside
+   *  `showRealTimeSummary`. */
+  realTimeSummaryUpdatedLabel?: string;
   /** Per explicit request ("remove the customer details accordion from
    *  phase 1") — hides the whole Customer Profile/Snapshot section (Phase
    *  1's own call sites pass `false`). Default `true`: every other
@@ -3639,6 +3659,20 @@ export function DetailsPanelAccordions({
    *  (same as `CustomerContextOverview` itself already does). */
   onViewCustomerInfo?: () => void;
   onViewInteractionHistory?: () => void;
+  /** Per explicit request ("contact details panel for unmatched customers
+   *  should match the hover popover. add a button above auto summary that
+   *  says link to existing customer and then when that is clicked slide in
+   *  a panel with the search customer / create new customer panel
+   *  content") — renders a "Link to existing customer" button above the
+   *  Autosummary/Customer Snapshot accordion, omit to hide it (every
+   *  existing call site that doesn't pass this is unaffected). The caller
+   *  owns what "clicked" actually does (Advanced's own docked panel opens
+   *  its `matchState` search/create flow via `CustomerInformationSidePanel`'s
+   *  own `matchStateOnBack`-paired toggle — see that render site's own doc
+   *  comment), this component just surfaces the entry point next to the
+   *  same accordions the hover popover already always shows regardless of
+   *  match status. */
+  onLinkCustomer?: () => void;
 }) {
   // Plain `lyra-body-md` + `text-lyra-fg-link` — this accordion's own
   // "View All" link (only consumer of this local const) per two explicit
@@ -3672,6 +3706,11 @@ export function DetailsPanelAccordions({
 
   return (
     <div className="flex flex-col gap-3 p-4 overflow-y-auto">
+      {onLinkCustomer && (
+        <Button variant="outline" className="w-full" onClick={onLinkCustomer}>
+          Link to existing customer
+        </Button>
+      )}
       {showCustomerContextOverview && customerContextOverview && (
         <CustomerContextOverview
           customerName={customerName ?? ""}
@@ -3681,6 +3720,15 @@ export function DetailsPanelAccordions({
           // the customer profile accordion") — see `detailedSummary`'s own
           // doc comment (lyra-ui/contact-overview.tsx) for what this renders.
           detailedSummary={customerContextOverview.detailedSummary}
+          // See `showRealTimeSummary`'s own doc comment above —
+          // `customerContextOverview.realTimeSummary` is the SAME
+          // per-contact facts `snapshot` (just above) already carries,
+          // joined into one paragraph by `buildCustomerContextOverviewInfo`
+          // itself (agent-next-gen-shared-utils.ts), not separately
+          // authored here.
+          showRealTimeSummary={showRealTimeSummary}
+          realTimeSummary={customerContextOverview.realTimeSummary}
+          realTimeSummaryUpdatedLabel={realTimeSummaryUpdatedLabel}
           showNextBestAction={false}
           // Per explicit follow-up request ("if a new call is made or the
           // customer does not have any information, do not display the
@@ -3723,25 +3771,27 @@ export function DetailsPanelAccordions({
             title: "Artifacts",
             // Per explicit follow-up request ("make the artifacts accordion
             // background white and the header the same purple as the
-            // autosummary") — same `lyra-accent-purple-soft`/`-strong`
-            // pairing `CustomerContextOverview`'s own Autosummary header
-            // uses (lyra-ui/contact-overview.tsx), via `Accordion`'s new
-            // `headerClassName`/`contentClassName` props rather than a
-            // bespoke hand-rolled accordion item — this is still the
-            // shared, single-item `Accordion` every other consumer of this
-            // component gets, just with this one item's header/body tinted.
-            // `lyra-purple-soft-header-fix` (lyra-tokens.css), not the
-            // plain `bg-lyra-accent-purple-soft` class, per explicit bug
-            // report ("check if that's the correct dark mode version, it
-            // seems heavy") — see that class's own doc comment for the
-            // full reasoning (same scoped fix applied to Autosummary's
-            // header, lyra-ui/contact-overview.tsx) and its promote-to-
-            // global TODO once the corrected shade is approved.
-            headerClassName: "lyra-purple-soft-header-fix",
+            // autosummary") — originally the same `lyra-accent-purple-
+            // soft`/`-strong` pairing `CustomerContextOverview`'s own
+            // Autosummary header used (lyra-ui/contact-overview.tsx), via
+            // `Accordion`'s `headerClassName`/`contentClassName` props
+            // rather than a bespoke hand-rolled accordion item — this is
+            // still the shared, single-item `Accordion` every other
+            // consumer of this component gets, just with this one item's
+            // header/body tinted. Recolored per a LATER explicit request
+            // ("make all the card headers in the contact details subtle
+            // blue like the customer info card") to the exact same
+            // `bg-lyra-status-info-subtle`/`text-lyra-status-info-strong`
+            // pairing "Customer Info"'s own header now uses (`Customer
+            // ContextOverview`'s "customer-profile" item, lyra-ui/contact-
+            // overview.tsx) — plain `bg-lyra-status-info-subtle`, not a
+            // `-fix` class, since (unlike the purple token this replaces)
+            // its dark-mode value was never reported as an outlier.
+            headerClassName: "bg-lyra-status-info-subtle",
             contentClassName: "bg-lyra-bg-surface-base",
             icon: (
               <Paperclip
-                className="h-4 w-4 text-lyra-accent-purple-strong"
+                className="h-4 w-4 text-lyra-status-info-strong"
                 strokeWidth={1.5}
                 aria-hidden="true"
               />
@@ -4073,6 +4123,7 @@ export function CustomerInformationSidePanel({
   overviewEditing,
   onOverviewEditingChange,
   matchState,
+  matchStateOnBack,
   copilotExtra,
   onStartInteraction,
   focusTabOverride,
@@ -4276,6 +4327,21 @@ export function CustomerInformationSidePanel({
    * consumer, unaffected.
    */
   headerTabsOverride?: React.ReactNode;
+  /**
+   * Per explicit request ("add a button above auto summary that says link
+   * to existing customer and then when that is clicked slide in a panel
+   * with the search customer / create new customer panel content") — when
+   * set, the match flow's "search" step (this panel's own `matchState.step
+   * === "search"`) gets a back arrow in `headerIcon`, same slot/treatment
+   * the "create" step's own back-to-search arrow already uses, except this
+   * one calls the caller's own handler instead of `matchState.onBackToSearch`
+   * — Advanced's own docked panel call site uses it to close the on-demand
+   * search/create overlay it opens from a button, back to its normal
+   * `DetailsPanelAccordions` `bodyOverride` content. `undefined` for every
+   * other consumer (unaffected — matches the search step's long-standing
+   * no-back-arrow look exactly as before).
+   */
+  matchStateOnBack?: () => void;
 }) {
   const latestInteraction = useMemo(
     () => buildLatestInteraction(customerName, recordId),
@@ -4426,6 +4492,10 @@ export function CustomerInformationSidePanel({
       headerIcon={
         matchState?.step === "create" ? (
           <ActionIconButton aria-label="Back to search" title="Back" onClick={matchState.onBackToSearch}>
+            <ArrowLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+          </ActionIconButton>
+        ) : matchState?.step === "search" && matchStateOnBack ? (
+          <ActionIconButton aria-label="Back" title="Back" onClick={matchStateOnBack}>
             <ArrowLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
           </ActionIconButton>
         ) : undefined
@@ -4903,22 +4973,15 @@ export function CustomerRowInfoPanel({
       side="right"
       open={row !== null}
       onClose={onClose}
-      // Per explicit request ("for the customer table interior customer
-      // information panels use the close panel icon instead of close
-      // icons (keep them as close icons when they are open as tabs in
-      // premium)") — swaps this panel's close button from lucide-react's
-      // plain `X` (`InteriorPanel`'s/`ContainerHeader`'s own default) to
-      // `PanelRightClose`, matching the "closing a docked panel" glyph
-      // already used elsewhere in this file (the Customer Information
-      // side-panel's own pin/close button, ~line 3748) rather than the
-      // more generic "dismiss/cancel" reading of a plain X. Scoped to
-      // `CustomerRowInfoPanel` only — `CustomerFullScreenTabContent`
-      // (Premium's "open as a desk tab" variant) renders its own
-      // hand-rolled close button with a plain `X` unconditionally (not
-      // routed through `onClose`/`closeIcon` at all), so it's untouched
-      // and keeps reading as "close this tab," per the request's own
-      // explicit carve-out.
-      closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
+      // Per a LATER explicit follow-up request ("update the toggle close
+      // icon for interior panels to be an 'x' icon") — reverts the
+      // `PanelRightClose` swap an earlier request (quoted above this
+      // comment's own history) made here, back to `InteriorPanel`'s/
+      // `ContainerHeader`'s own plain `X` default (simply omitting
+      // `closeIcon` now gets that default). `CustomerFullScreenTabContent`
+      // (Premium's "open as a desk tab" variant) was never touched by
+      // either request either way — its own hand-rolled close button
+      // already reads as a plain `X`.
       // Per explicit request ("make the customer info panel z-index
       // higher than the z-index of the launch channel buttons in the
       // rows of the customer tables for both premium and advanced") —

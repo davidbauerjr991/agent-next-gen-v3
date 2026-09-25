@@ -7,6 +7,7 @@ import {
   AIProcess,
   type AIProcessStep,
   AttachmentThumbnail,
+  Avatar,
   Button,
   Container,
   Input,
@@ -494,8 +495,16 @@ export interface MarcusWebbActionLogEntry {
   timestamp: string;
   /** `"note"` only. */
   icon?: React.ReactNode;
-  /** `"note"` only — always `"John Smith"` today (see this file's own top
-   *  doc comment for why). */
+  /** For `"note"`, always `"John Smith"` today (see this file's own top
+   *  doc comment for why) — the human agent's own decisions/instructions.
+   *  For `"simple"`, `"Cognigy AI Agent"` on the handful of milestones the
+   *  AI itself performs (disposition updates, status changes, requesting
+   *  the photo — see `logMilestone`'s own call sites), `undefined` on the
+   *  one genuinely human-triggered "simple" milestone ("Agent Smith has
+   *  taken over the conversation.", which already names the human in its
+   *  own title) and on every "simple" milestone logged before this
+   *  distinction existed. Per explicit follow-up request ("for anything
+   *  the AI does, credit the AI"). */
   actorName?: string;
   /** `"note"` only — the quoted line below the header row, shown in its
    *  own side panel. */
@@ -666,10 +675,32 @@ export function MarcusWebbTransactionsDetailPanelBody({
  *  `key` (`entry.id`) once logged, so React never remounts an
  *  already-rendered entry — this only plays once, the moment a NEW entry
  *  is appended to `actionLog`. */
-function ActionLogSimpleEntry({ timestamp, title }: { timestamp: string; title: string }) {
+function ActionLogSimpleEntry({
+  timestamp,
+  title,
+  actorName,
+}: {
+  timestamp: string;
+  title: string;
+  /** Per explicit follow-up request ("for anything the AI does, credit
+   *  the AI (ie. 2:25PM Cognigy AI Agent Disposition updated to
+   *  'Exception Approved')") — an AI-performed milestone (see
+   *  `logMilestone`'s own call sites for which ones those are) now shows
+   *  "{timestamp} · Cognigy AI Agent" in this row's header, the exact
+   *  same "{timestamp} · Cognigy AI Agent" format `MarcusWebbAiChatBubble`
+   *  already uses for the AI's own chat messages, rather than a plain
+   *  bare timestamp that leaves the reader guessing who/what did this.
+   *  `undefined` (every milestone logged before this request, and the
+   *  one genuinely human-triggered milestone — "Agent Smith has taken
+   *  over the conversation.", which already names the human right in its
+   *  own title) keeps the original plain-timestamp header untouched. */
+  actorName?: string;
+}) {
   return (
     <div className="flex flex-col gap-0.5 animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
-      <span className="lyra-body-sm text-lyra-fg-secondary">{timestamp}</span>
+      <span className="lyra-body-sm text-lyra-fg-secondary">
+        {actorName ? `${timestamp} · ${actorName}` : timestamp}
+      </span>
       <span className="lyra-body-md-emphasis text-lyra-fg-default">{title}</span>
     </div>
   );
@@ -811,12 +842,26 @@ function MarcusWebbAiChatBubble({
 }) {
   return (
     <div className="flex items-start gap-2 animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
-      <span
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lyra-bg-primary text-lyra-fg-on-primary"
-        aria-hidden="true"
-      >
-        <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
-      </span>
+      {/* Per explicit request ("update the color of the ai avatar
+          background to be Purple strong #6149C1 to differentiate from the
+          other primary colors on the page"): a literal hex value rather
+          than the closest lyra-ui token (`bg-lyra-accent-purple-strong`,
+          #634DBD) — the ask was for this exact shade, not that shared
+          token (which would also repaint every OTHER purple-strong
+          consumer app-wide, not just this one AI avatar). `text-white`
+          replaces `text-lyra-fg-on-primary` for the same reason — that
+          token is defined relative to `bg-lyra-bg-primary`'s own blue, not
+          this one-off purple. Same arbitrary-hex-class pattern this file's
+          login screen already uses (`bg-[#f4f6f9]` etc.) for a one-off
+          color with no matching semantic token. */}
+      {/* Per explicit follow-up request ("extend avatar size/color to
+          cover those"): now built on lyra-ui's shared `Avatar`
+          (avatar.tsx) — same one-off hex purple/white (still not a
+          semantic color token, per this file's own doc comment just
+          above; `Avatar`'s `className` merges over its `color` variant
+          via `cn`/tailwind-merge, so this override still works cleanly)
+          and same `Bot` glyph/28px circle, just the shared component now. */}
+      <Avatar icon={Bot} size="xs" className="bg-[#6149C1] text-white" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="lyra-body-sm text-lyra-fg-secondary px-1">{timestamp} · Cognigy AI Agent</span>
         <div className="flex min-w-0 flex-col gap-3 rounded-lyra-lg rounded-tl-none bg-lyra-state-hover px-4 py-3">
@@ -851,12 +896,26 @@ function MarcusWebbAiTypingIndicator() {
       aria-live="polite"
       aria-label="AI agent is typing"
     >
-      <span
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lyra-bg-primary text-lyra-fg-on-primary"
-        aria-hidden="true"
-      >
-        <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
-      </span>
+      {/* Per explicit request ("update the color of the ai avatar
+          background to be Purple strong #6149C1 to differentiate from the
+          other primary colors on the page"): a literal hex value rather
+          than the closest lyra-ui token (`bg-lyra-accent-purple-strong`,
+          #634DBD) — the ask was for this exact shade, not that shared
+          token (which would also repaint every OTHER purple-strong
+          consumer app-wide, not just this one AI avatar). `text-white`
+          replaces `text-lyra-fg-on-primary` for the same reason — that
+          token is defined relative to `bg-lyra-bg-primary`'s own blue, not
+          this one-off purple. Same arbitrary-hex-class pattern this file's
+          login screen already uses (`bg-[#f4f6f9]` etc.) for a one-off
+          color with no matching semantic token. */}
+      {/* Per explicit follow-up request ("extend avatar size/color to
+          cover those"): now built on lyra-ui's shared `Avatar`
+          (avatar.tsx) — same one-off hex purple/white (still not a
+          semantic color token, per this file's own doc comment just
+          above; `Avatar`'s `className` merges over its `color` variant
+          via `cn`/tailwind-merge, so this override still works cleanly)
+          and same `Bot` glyph/28px circle, just the shared component now. */}
+      <Avatar icon={Bot} size="xs" className="bg-[#6149C1] text-white" />
       <div className="rounded-lyra-lg rounded-tl-none bg-lyra-state-hover px-4 py-3.5">
         <div className="flex items-center gap-1">
           {[0, 150, 300].map((delayMs) => (
@@ -1469,8 +1528,11 @@ export function MarcusWebbNextBestActionCard({
   // options), so it can't simply be read off the ephemeral
   // `activeQuestionItem` the way the old design was.
   const [askedQuestions, setAskedQuestions] = useState<{ id: string; title: React.ReactNode; timestamp: string }[]>([]);
-  const logMilestone = (title: string) => {
-    setActionLog((log) => [...log, { id: String(nextLogId.current++), kind: "simple", title, timestamp: nowTimestamp() }]);
+  const logMilestone = (title: string, actorName?: string) => {
+    setActionLog((log) => [
+      ...log,
+      { id: String(nextLogId.current++), kind: "simple", title, timestamp: nowTimestamp(), actorName },
+    ]);
   };
   // Returns the entry it just created — every existing call site ignores
   // the return value, but the command flow's own auto-open-the-panel step
@@ -1667,7 +1729,7 @@ export function MarcusWebbNextBestActionCard({
     const timeout = window.setTimeout(() => {
       if (lastRejectRound.stepIndex === 0) onPhotoRequested?.();
       if (lastRejectRound.stepIndex === 1) {
-        logMilestone("Refund rejected. Requested customer provide visual proof");
+        logMilestone("Refund rejected. Requested customer provide visual proof", "Cognigy AI Agent");
         onCustomerReactedToPhotoRequest?.();
       }
       updateLastRejectRound({ stepIndex: lastRejectRound.stepIndex + 1 });
@@ -1827,7 +1889,7 @@ export function MarcusWebbNextBestActionCard({
     const timeout = window.setTimeout(() => {
       const callbacks = [onAccountFlagged, onStatusEscalated, onAssignmentClosed];
       callbacks[flagStepIndex]?.();
-      if (flagStepIndex === 1) logMilestone('Status updated to "Escalated"');
+      if (flagStepIndex === 1) logMilestone('Status updated to "Escalated"', "Cognigy AI Agent");
       setFlagStepIndex((i) => i + 1);
     }, 1500);
     return () => window.clearTimeout(timeout);
@@ -1868,7 +1930,7 @@ export function MarcusWebbNextBestActionCard({
     const timeout = window.setTimeout(() => {
       const callbacks = [onAgentContactedCustomer, onCustomerApprovedResolution, onDispositionUpdated];
       callbacks[approveStepIndex]?.();
-      if (approveStepIndex === 2) logMilestone(APPROVE_STEP_LABELS[2]);
+      if (approveStepIndex === 2) logMilestone(APPROVE_STEP_LABELS[2], "Cognigy AI Agent");
       setApproveStepIndex((i) => i + 1);
     }, 1500);
     return () => window.clearTimeout(timeout);
@@ -2510,6 +2572,38 @@ export function MarcusWebbNextBestActionCard({
   // submitting DOES append a placeholder knowledge-article card (below,
   // rendered inline, never in this fixed slot — same "processing happens
   // inline" precedent as everything else on this card).
+  // Per explicit bug report (with a reference screenshot showing an
+  // oversized gap below "Disposition updated..."): the "pure history"
+  // block below (`!takenOver && confirmed`) used to render its wrapping
+  // `<div className="flex flex-col gap-3">` unconditionally, even once
+  // `approveBlock`/`rejectBlock` had both already finished (gone `null`
+  // — see each one's own doc comment for why) and the "something else"
+  // branch (which never has anything to show here at all — see its own
+  // comment at that render site) was active. An EMPTY flex item still
+  // counts as a sibling for gap purposes, so the surrounding `gap-6`
+  // (this file's own "24px between items" change) applied on BOTH sides
+  // of that empty div — stacking with the actionLog block's own trailing
+  // gap above it and the completion bubble's own leading gap below it
+  // into a visibly doubled ~48px gap, exactly as reported. Computed here,
+  // once, from the same three sources the render below already reads
+  // (`approveBlock`/`rejectBlock`/`flagConfirmed`/`approvedAfterReject`)
+  // so the wrapper can be skipped entirely — not just left empty — the
+  // moment none of them have anything left to show.
+  const pureHistoryHasContent =
+    confirmed === "approve"
+      ? !!approveBlock
+      : confirmed === "reject"
+        ? !!(
+            (SHOW_REJECT_PROCESSING_STEPS
+              ? rejectRounds.some((round, i) => round.reasonSubmitted && i === 0)
+              : lastRejectRound.reasonSubmitted && rejectBlock) ||
+            flagConfirmed ||
+            (approvedAfterReject && approveBlock)
+          )
+        : // "something-else" never has anything to show in this block —
+          // see that branch's own comment at the render site below.
+          false;
+
   const commandSlotContent: React.ReactNode = !activeQuestionItem && SHOW_DO_SOMETHING_INPUT ? (
     <AIInput
       singleLine
@@ -2545,7 +2639,18 @@ export function MarcusWebbNextBestActionCard({
   );
 
   return (
-    <div className="flex flex-col gap-3">
+    // Per explicit follow-up request ("update the gap between chat
+    // bubbles and other items to be 24px instead of 12px"): `gap-6`
+    // (1.5rem/24px), not the original `gap-3` (0.75rem/12px) — this is
+    // the single top-level flex column every item in the whole action
+    // log/conversation reads off (Contact Overview, each chat bubble,
+    // the action-log block below, the pure-history block, the
+    // completion bubbles), so widening it here widens the rhythm
+    // between ALL of them at once. `actionLog`'s own inner wrapper
+    // (right below) gets the identical change for the same reason, one
+    // level down (the gap BETWEEN "Refund approved"/"Disposition
+    // updated..." etc, not just around the whole block).
+    <div className="flex flex-col gap-6">
       {/* Contact Overview renders inline, in normal flow, permanently —
           per explicit follow-up request, it's no longer hidden after the
           agent's first selection. It's initial context, not something
@@ -2672,10 +2777,17 @@ export function MarcusWebbNextBestActionCard({
           empty/collapsed (`empty:hidden`) while any question is pending. */}
       {portalToQuestionSlot(commandSlotContent)}
       {actionLog.length > 0 && (
-        <div className="flex flex-col gap-3">
+        // See the outer container's own doc comment above — same
+        // gap-3 -> gap-6 change, one level down.
+        <div className="flex flex-col gap-6">
           {actionLog.map((entry) =>
             entry.kind === "simple" ? (
-              <ActionLogSimpleEntry key={entry.id} timestamp={entry.timestamp} title={entry.title} />
+              <ActionLogSimpleEntry
+                key={entry.id}
+                timestamp={entry.timestamp}
+                title={entry.title}
+                actorName={entry.actorName}
+              />
             ) : (
               <ActionLogNoteEntry
                 key={entry.id}
@@ -2712,7 +2824,7 @@ export function MarcusWebbNextBestActionCard({
           `takenOver` (the remedy question — or nothing, once answered —
           already covers that whole state; see `activeQuestionItem` above),
           or before the top-level question's been answered. */}
-      {!takenOver && confirmed && (
+      {!takenOver && confirmed && pureHistoryHasContent && (
         <div className="flex flex-col gap-3">
           {confirmed === "approve" ? (
             // Per explicit follow-up ("the processing approval should

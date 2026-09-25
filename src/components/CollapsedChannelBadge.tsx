@@ -1,5 +1,5 @@
 import * as React from "react";
-import { TriangleAlert, CircleAlert } from "lucide-react";
+import { TriangleAlert, CircleAlert, Pause } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge, type ChannelType, CHANNEL_TYPE_META as CHANNEL_ICON_META } from "@nicecxone/lyra-ui";
 
@@ -120,10 +120,24 @@ export interface CollapsedChannelBadgeProps {
    * both render the plain channel-type icon, same as before this prop
    * existed. */
   severity?: "success" | "warning" | "critical";
+  /** Per explicit request ("in the interactionNavItem when a call is put
+   *  on hold and the panel is collapsed make the channel badge a pause
+   *  icon and change the color to warning") — swaps this badge to a solid
+   *  warning-filled `Pause` glyph, the same "on hold" signal
+   *  `VoiceCallControls`'/the expanded card's own on-hold treatment
+   *  already shows, just condensed into this one corner badge. Takes
+   *  priority over `severity` below (a held call reads as "on hold," not
+   *  as an overdue-reply alert, even if it also happens to be past its own
+   *  SLA) — the two aren't expected to fire together in practice (a call
+   *  the agent put on hold isn't "awaiting a reply" in the same sense a
+   *  text channel is), but this ordering is the safe one if they ever did.
+   *  Defaults to false/unset — every other consumer (nothing on hold) is
+   *  unaffected. */
+  onHold?: boolean;
   className?: string;
 }
 
-export function CollapsedChannelBadge({ type, severity, className }: CollapsedChannelBadgeProps) {
+export function CollapsedChannelBadge({ type, severity, onHold, className }: CollapsedChannelBadgeProps) {
   const accent = CHANNEL_TYPE_ACCENT[type];
   const meta = CHANNEL_ICON_META[type];
   // `meta.icon` arrives with its own fixed size class (e.g. `h-4 w-4`) —
@@ -158,7 +172,9 @@ export function CollapsedChannelBadge({ type, severity, className }: CollapsedCh
         // own count badge uses for the identical tier — same reasoning:
         // a card that needs attention shouldn't still read as a calm,
         // themed teal/pink/purple chip.
-        severity === "critical"
+        onHold
+          ? "border-transparent bg-lyra-status-warning-strong text-lyra-fg-on-primary"
+          : severity === "critical"
           ? "border-transparent bg-lyra-bg-destructive text-lyra-fg-on-primary"
           : severity === "warning"
           ? "border-transparent bg-lyra-status-warning-strong text-lyra-fg-on-primary"
@@ -166,7 +182,9 @@ export function CollapsedChannelBadge({ type, severity, className }: CollapsedCh
         className
       )}
     >
-      {severity === "critical" ? (
+      {onHold ? (
+        <Pause className="h-full w-full" strokeWidth={2.25} />
+      ) : severity === "critical" ? (
         <CircleAlert className="h-full w-full" strokeWidth={2.25} />
       ) : severity === "warning" ? (
         <TriangleAlert className="h-full w-full" strokeWidth={2.25} />

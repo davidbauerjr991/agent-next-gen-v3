@@ -50,6 +50,9 @@ import {
   PlainToggleTab,
   ToggleGroup,
   Popover,
+  PanelHeader,
+  SuccessIconSolid,
+  OutcomePanel,
   Toast,
   ToastContainer,
   useToast,
@@ -249,6 +252,8 @@ import {
   Headphones,
   X,
   IdCard,
+  Trash2,
+  UserX,
   PhoneOutgoing,
   RotateCcw,
   ShieldAlert,
@@ -1493,6 +1498,16 @@ function MarcusWebbCopilotCard({
   );
 }
 
+// Per explicit request ("remove the channel toggle group in phase 2 and
+// update it with the channel design in phase 1..."): mirrors Phase 1's own
+// `SHOW_CHANNEL_TOGGLE_GROUP` (AgentWorkspaceAdvancedPage.tsx) — `false`
+// rather than deleting the `ChannelToggleGroup`/`ChannelToggle` pill row
+// entirely, so its outcome-popover/dismiss/status-label functionality
+// (still reachable from the LeftNav card's own identical controls) comes
+// back with a one-line flip if it's ever wanted here again, same as Phase
+// 1's own copy of this flag already lets that file do.
+const SHOW_CHANNEL_TOGGLE_GROUP = false;
+
 export function AgentWorkspace2WithDeskPage({
   showPageHeader = false,
   showPanelToggle = false,
@@ -1920,7 +1935,7 @@ export function AgentWorkspace2WithDeskPage({
   // rendered while `showChannelTabRow` reads `false` for the active
   // interaction (see that const's own doc comment). Mirrors Agent Workspace
   // 2.0's identical `outcomeDraftSource` union (AgentNextGenPage.tsx).
-  const [outcomeDraftSource, setOutcomeDraftSource] = useState<"leftnav" | "transcript" | "tab" | "header" | null>(null);
+  const [outcomeDraftSource, setOutcomeDraftSource] = useState<"leftnav" | "transcript" | "tab" | "header" | "hover" | null>(null);
   const buildDefaultOutcomeDraft = () => ({
     tags: ["Technical", "Account"],
     dispositionCode: OUTCOME_DISPOSITION_OPTIONS[0].value,
@@ -1975,7 +1990,7 @@ export function AgentWorkspace2WithDeskPage({
    *  reads as "real" from then on and can even show up as a possible
    *  match for a LATER unrelated unknown contact. */
   const [createdCustomerRecords, setCreatedCustomerRecords] = useState<CreateNewCustomerRecord[]>([]);
-  const handleOutcomeOpenChange = (key: string, open: boolean, source: "leftnav" | "transcript" | "tab" | "header") => {
+  const handleOutcomeOpenChange = (key: string, open: boolean, source: "leftnav" | "transcript" | "tab" | "header" | "hover") => {
     if (open) {
       // Reset to a fresh draft every time a (possibly different) channel's
       // popover opens — no real backend here to load a previously-saved
@@ -3757,6 +3772,43 @@ export function AgentWorkspace2WithDeskPage({
     setDetailsPanelOpen(true);
     setSidePanelOpen(true);
   };
+  // Per explicit request ("adjust the contact details button in phase 2
+  // to match the functionality and design in phase 1 (ie. move to the
+  // right of the page header and display the contact details on hover
+  // then toggle it open as a side panel when clicked)"): the actual "is
+  // Customer Information currently showing in the shared Details panel"
+  // signal, replacing the stale `sidePanelOpen` this file's own dead
+  // hover-preview plumbing (`openCustomerInfoPreview` etc., see those
+  // functions' own doc comments) used to gate on before this button
+  // existed to drive it — `sidePanelOpen` itself is no longer what shows
+  // or hides the real panel (see `focusCustomerPanelTab`'s own doc comment
+  // just above), so gating on it left the preview permanently unable to
+  // open (`sidePanelOpen` defaults `true` and nothing ever sets it back to
+  // `false`). Mirrors the exact "is Customer Info the shared panel's
+  // current content" ternary the panel's own render site already uses
+  // (`aiSummaryPanelOpen ? ... : customerDetailsOpen ? ...`).
+  const isContactDetailsPanelOpen = detailsPanelOpen && customerDetailsOpen && !aiSummaryPanelOpen;
+  // New header trigger's click handler — mirrors `focusCustomerPanelTab`'s
+  // own open steps above when closed (no `tab` override needed: per that
+  // hook's own doc comment, `useCustomerDetailsInteriorPanel`'s internal
+  // `activeTab` already defaults to "Overview" and resets on `recordId`
+  // change on its own), and the shared panel's own "Close Details"
+  // `PanelPinButton onToggle` steps (see that button's own render site)
+  // when open, so clicking this button again closes exactly the way the
+  // panel's own close control already does.
+  const handleContactDetailsToggle = () => {
+    if (isContactDetailsPanelOpen) {
+      setDetailsPanelOpen(false);
+      setCustomerDetailsOpen(false);
+      setAiSummaryPanelOpen(false);
+      setDetailsPanelFullScreen(false);
+    } else {
+      setAiSummaryPanelOpen(false);
+      setCustomerDetailsOpen(true);
+      setDetailsPanelOpen(true);
+      setSidePanelOpen(true);
+    }
+  };
   // No setter — always pinned. `onPinToggle` is deliberately left unset on
   // the real `SidePanel` below (see its own doc comment), so there's no
   // path that ever actually unpins this; kept as `useState` rather than a
@@ -3784,6 +3836,47 @@ export function AgentWorkspace2WithDeskPage({
   // `Popover` preview of the panel, not the panel itself.
   const [customerInfoPreviewOpen, setCustomerInfoPreviewOpen] = useState(false);
   const customerInfoPreviewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Bug fix, per explicit report ("make sure to not display the hover of
+  // the contact details when the panel is closed until a user hovers on it
+  // again, I'm seeing it auto open when the close panel is clicked even
+  // though I'm not hovering on it"): the trigger button/`Popover` fully
+  // UNMOUNTS while the real panel is open (see that button's own render
+  // site, gated on `!isContactDetailsPanelOpen`) — but `customerInfoPreviewOpen`
+  // itself lives in this component, not in that unmounted subtree, so it
+  // was never reset. If the panel was opened WHILE still genuinely hovered
+  // (the common case: hover shows the preview, then click opens the real
+  // panel without the pointer ever leaving), `customerInfoPreviewOpen`
+  // stayed stuck `true` the whole time the panel was open — so the instant
+  // the panel closed again (from ANY control, not just this button — its
+  // own "Close Details" header button included) and the trigger remounted,
+  // the `Popover` read that stale `true` and popped the preview straight
+  // open with no new hover at all. Clearing it the moment the panel
+  // actually opens (regardless of what opened it) guarantees it's already
+  // `false` by the time the button remounts on close — the only way it can
+  // become `true` again afterward is a genuine new `onMouseEnter`.
+  useEffect(() => {
+    if (isContactDetailsPanelOpen) {
+      clearTimeout(customerInfoPreviewTimer.current);
+      setCustomerInfoPreviewOpen(false);
+    }
+  }, [isContactDetailsPanelOpen]);
+  // Per explicit request ("remove the channel toggle group in phase 2 and
+  // update it with the channel design in phase 1 (display icon buttons,
+  // when hovered, display the content of the channel conversation, when
+  // clicked, navigate to that channel content) - do not mirror the
+  // behavior of opening the channel in a side panel, rather, open it in
+  // the main container like you currently do"): same hover-preview pair
+  // Phase 1 (AgentWorkspaceAdvancedPage.tsx) uses for its own channel
+  // icons' `Popover` preview — see that file's own `channelHoverPreviewKey`
+  // doc comment for the full "why" behind the shape. Phase 2 has no
+  // `channelPreviewThreadKey`/docked-channel-preview concept to also guard
+  // on (per the same explicit request, clicking a channel icon here still
+  // just switches the main column via `handleChannelSelect`, same as
+  // before), so `openChannelHoverPreview` below only guards on the ONE
+  // case that still applies: never preview the channel that's already
+  // this interaction's own main content.
+  const [channelHoverPreviewKey, setChannelHoverPreviewKey] = useState<string | null>(null);
+  const channelHoverPreviewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Per explicit follow-up request ("keep the customer information panel
   // closed when a new assignment is opened") — reverses an earlier feature
   // that had every freshly started/quick-dialed/redialed/reopened
@@ -4026,8 +4119,14 @@ export function AgentWorkspace2WithDeskPage({
     // still reach it. Confirmed live as a real bug — reported as the
     // preview popping up over the already-open real panel after navigating
     // away and back. This guard is the actual fix: never even schedule the
-    // preview open while `sidePanelOpen` is true, no matter what fired this.
-    if (sidePanelOpen) return;
+    // preview open while the real Contact Details panel is already showing,
+    // no matter what fired this — updated to key off
+    // `isContactDetailsPanelOpen` (the actual "is Customer Info currently
+    // showing" signal, see that const's own doc comment) now that this
+    // button/preview are wired up for real; `sidePanelOpen` itself never
+    // reflects the real panel's visibility (see `focusCustomerPanelTab`'s
+    // own doc comment).
+    if (isContactDetailsPanelOpen) return;
     clearTimeout(customerInfoPreviewTimer.current);
     setCustomerInfoPreviewOpen(true);
   };
@@ -4060,6 +4159,31 @@ export function AgentWorkspace2WithDeskPage({
     if (related?.closest?.("[data-radix-popper-content-wrapper]")) return;
     clearTimeout(customerInfoPreviewTimer.current);
     customerInfoPreviewTimer.current = setTimeout(() => setCustomerInfoPreviewOpen(false), 150);
+  };
+  // Same pair, generalized to a key, for the channel icons' own hover
+  // preview (own render site further down) — mirrors Phase 1's identical
+  // `openChannelHoverPreview`/`scheduleCloseChannelHoverPreview`, minus the
+  // docked-channel-preview half of that guard (Phase 2 has no
+  // `channelPreviewThreadKey` — clicking an icon here switches the main
+  // column instead, per the explicit request behind this whole feature —
+  // see `channelHoverPreviewKey`'s own doc comment above).
+  const openChannelHoverPreview = (key: string) => {
+    // Never preview the channel that's already this interaction's own main
+    // content (`activeChannelKey`/`currentThreadId`) — hovering that one's
+    // icon would otherwise pop open a floating preview showing the exact
+    // same transcript already sitting right behind it in the main column,
+    // pure visual duplication rather than an actual peek at something new.
+    // Same root-cause fix Phase 1 applied for this same reason (see that
+    // file's own `openChannelHoverPreview` doc comment).
+    if (key === activeChannelKey) return;
+    clearTimeout(channelHoverPreviewTimer.current);
+    setChannelHoverPreviewKey(key);
+  };
+  const scheduleCloseChannelHoverPreview = (e?: React.MouseEvent<Element> | React.FocusEvent<Element>) => {
+    const related = e?.relatedTarget as Element | null | undefined;
+    if (related?.closest?.("[data-radix-popper-content-wrapper]")) return;
+    clearTimeout(channelHoverPreviewTimer.current);
+    channelHoverPreviewTimer.current = setTimeout(() => setChannelHoverPreviewKey(null), 150);
   };
   // Guards against a stale `true` leaking into the next interaction this
   // icon renders for (e.g. switching interactions mid-hover, without ever
@@ -5206,7 +5330,7 @@ export function AgentWorkspace2WithDeskPage({
    *  exactly the treatment `InteractionNavItem.stories.tsx`'s "Active,
    *  Awaiting Response" story already documents, not a new visual invented
    *  for this feature. */
-  const handleSendMessage = (interactionId: string, text: string) => {
+  const handleSendMessage = (interactionId: string, text: string, channelKeyOverride?: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
 
@@ -5231,7 +5355,18 @@ export function AgentWorkspace2WithDeskPage({
     // to) to whatever channel happens to be active THEN instead of the one
     // this whole exchange actually started on.
     const interactionAtSend = interactions.find((i) => i.id === interactionId);
+    // `channelKeyOverride` — per explicit request ("include the input field
+    // in the sms/chat hovers so the agent can interact if they are not on
+    // the channel"): the channel icons' own hover preview (its own render
+    // site further down) now gets a real `InteractionComposer` too, and it
+    // sends on that SPECIFIC (possibly non-active) hovered channel, not
+    // whichever one happens to be `currentThreadId` right now — mirrors
+    // Phase 1's identical `channelKeyOverride` param
+    // (AgentWorkspaceAdvancedPage.tsx). Every other caller (the main
+    // composer, always scoped to the active channel) omits this and keeps
+    // the original derivation.
     const channelKeyAtSend =
+      channelKeyOverride ??
       interactionAtSend?.currentThreadId ??
       (interactionAtSend?.threads[interactionAtSend.threads.length - 1]
         ? interactionAtSend.threads[interactionAtSend.threads.length - 1].id ??
@@ -7974,12 +8109,6 @@ export function AgentWorkspace2WithDeskPage({
                         headerTitle={selectedAllContactsRecord?.customerName}
                         headerSubhead={selectedAllContactsRecord?.skill}
                         onClose={() => setSelectedAllContactsRecord(null)}
-                        // `PanelRightClose` — matches the "closing a docked
-                        // right-side panel" glyph used elsewhere (see
-                        // `agent-next-gen-customer-info-panel.tsx`'s own
-                        // `InteriorPanel` closeIcon) — instead of
-                        // `ContainerHeader`'s generic default `X`.
-                        closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
                         // Same mutually-exclusive Redial/Re-open convention
                         // `selectedContactHistoryEntry`'s own footer already
                         // uses (voice-only gets "Redial") — both just call
@@ -8389,63 +8518,472 @@ export function AgentWorkspace2WithDeskPage({
                       // presence signal disappear when a chat thread is
                       // still open elsewhere on the same card.
                       actions={
-                        <>
-                          {/* Per explicit follow-up request ("let's update
-                              the channel controls to always be in the
-                              session row - even if there is only one
-                              channel open (no tabs) - moving them around is
-                              confusing"): the record-header icon-button
-                              cluster that used to render here whenever
-                              `!showChannelTabRow` (Consult/Transfer,
-                              Outcome, kebab, status chip) is gone — this
-                              cluster now lives permanently in the session
-                              row instead (`InteractionTranscript`'s
-                              `showSessionActionCluster`, further down),
-                              regardless of channel count. */}
-                          {/* Per explicit request ("remove the customer info
-                              toggle button so it doesn't open the side
-                              panel anymore..."): the Customer Information
-                              hover-preview `Popover`/toggle `Button` that
-                              used to render here (see git history for
-                              `handleSidePanelIconToggle`/
-                              `CustomerInfoHoverPreview`) is gone — this
-                              header no longer has any control that opens or
-                              closes the docked Customer Information panel;
-                              `sidePanelOpen`'s own initial/per-assignment
-                              state (see that state's own doc comment) is now
-                              the only thing deciding whether it's open. */}
+                        <div className="flex items-center gap-1">
+                          {/* "+" Add Channel trigger — per explicit request
+                              ("phase 2 add channel should be the same as the
+                              current phase 1 in regards to design and
+                              position - keep functionality the same for now
+                              (open a new main container with the new
+                              channel body content)"): pulled out of
+                              `ChannelToggleGroup`'s own `action` prop (see
+                              git history for that former position/its own
+                              doc comment) and rendered as a plain standalone
+                              sibling instead, first in this row — same
+                              structure/position/classNames Phase 1
+                              (AgentWorkspaceAdvancedPage.tsx) now uses for
+                              its own "+" trigger, so the two apps' record
+                              headers read identically here. Unconditional
+                              (not gated on `activeInteraction.threads.length
+                              > 0` the way the pill row below still is) —
+                              same "always available regardless of channel
+                              count" behavior Phase 1's own "+" already has.
+                              Functionality is UNCHANGED: still the same
+                              `handleAddAdHocChannel` this file has always
+                              used, which still sets the new channel as
+                              `currentThreadId` and switches the main
+                              container to it — Phase 1's newer "never
+                              switch main content, preview in a side panel
+                              instead" behavior is deliberately NOT ported
+                              here, per that same explicit request ("keep
+                              functionality the same for now"). Same
+                              `getHeaderAction` (stock picker) ??
+                              `AddChannelAdHocButton` (directory-independent
+                              fallback) pair Phase 1 and every other "+" in
+                              this app already use, unchanged. */}
+                          {SHOW_ADD_CHANNEL_HEADER_BUTTON && (getHeaderAction(
+                            activeInteraction.id,
+                            "ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed",
+                            { label: "Add Channel", showLabel: false }
+                          ) ?? (
+                            <AddChannelAdHocButton
+                              onLaunch={handleAddAdHocChannel}
+                              skillOptions={OUTBOUND_CONFIG.skillOptions}
+                              className="ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed"
+                            />
+                          ))}
+                          {/* Per explicit request ("remove the channel
+                              toggle group in phase 2 and update it with the
+                              channel design in phase 1 (display icon
+                              buttons, when hovered, display the content of
+                              the channel conversation, when clicked,
+                              navigate to that channel content) - do not
+                              mirror the behavior of opening the channel in
+                              a side panel, rather, open it in the main
+                              container like you currently do"): same
+                              icon-button-plus-hover-preview design Phase 1
+                              (AgentWorkspaceAdvancedPage.tsx) already uses
+                              for its own channel icons (see that file's own
+                              render site, just above its now-hidden
+                              `ChannelToggleGroup` pill row) — reuses the
+                              same `CHANNEL_TYPE_META` icon/label mapping,
+                              the same hover-preview `Popover` shape (a
+                              `PanelHeader` plus an `InteractionTranscript`,
+                              "Coming soon" for email), and the same
+                              never-preview-the-active-channel guard
+                              (`openChannelHoverPreview`, declared above).
+                              UNLIKE Phase 1's version, clicking here does
+                              NOT toggle a docked/side-panel preview — per
+                              the explicit request above, it keeps this
+                              file's own existing "switch the main column"
+                              behavior (`handleChannelSelect`, same handler
+                              the now-hidden pill row's own `ChannelToggle`
+                              already called), so a click here behaves
+                              exactly as it did before this change, just
+                              from a plain icon button instead of a pill.
+                              Per further explicit request ("include the
+                              input field in the sms/chat hovers so the
+                              agent can interact if they are not on the
+                              channel"), the preview now also gets a real
+                              `InteractionComposer` — same gate Phase 1's
+                              own preview composer uses (not email, not
+                              voice, not closed), sending through
+                              `handleSendMessage`'s new `channelKeyOverride`
+                              param (see that function's own doc comment)
+                              so a reply typed here always lands on THIS
+                              hovered channel, never whichever one happens
+                              to be active. */}
+                          {activeInteraction.threads.map((c) => {
+                            const key = c.id ?? c.type;
+                            const meta = CHANNEL_TYPE_META[c.type];
+                            const isActiveChannel = !isHistoryConversationView && activeChannelKey === key;
+                            const previewLabel = c.type === "voice" ? "Voice Transcript" : meta.label;
+                            const hoverOpen = channelHoverPreviewKey === key;
+                            // Per explicit request ("add the channel
+                            // address (phone number/email/handle/etc.) to
+                            // the right of the channel name in the subhead
+                            // ... include the session buttons (delete
+                            // draft/dismiss&unassign/outcome/etc.) to the
+                            // right of the header in the hover popover for
+                            // all channels"): same
+                            // `formatPhoneForDisplay(addressLabel)` (a
+                            // no-op for a non-phone-shaped address) the
+                            // real session row already uses for this exact
+                            // "phone/email/handle" display
+                            // (agent-next-gen-transcript.tsx's own
+                            // `session.addressLabel` branch) — `subhead`
+                            // itself only accepts a plain `string`
+                            // (container-header.tsx), so this is composed
+                            // here rather than passed as a second element.
+                            const previewAddress = c.addressLabel ? formatPhoneForDisplay(c.addressLabel) : undefined;
+                            const previewSubhead = previewAddress
+                              ? `${activeInteraction.customerName} \u00b7 ${previewAddress}`
+                              : activeInteraction.customerName;
+                            // Same per-channel "genuine, untouched draft"
+                            // check the now-hidden pill row's own
+                            // `isNewOutboundThread` used (see that block's
+                            // own doc comment) — drives the Delete Draft/
+                            // Unassign & Dismiss split below exactly like
+                            // it drove `removeVariant` there.
+                            const isNewOutboundThreadForHover =
+                              c.type !== "voice" && !!c.startedFresh && c.lastCustomerMessageTick === undefined;
+                            const isClosedForHover =
+                              !!activeInteraction.closed || activeInteraction.threadStatuses?.[key] === "Closed";
+                            // Same dismiss logic the now-hidden pill row's
+                            // own `ChannelToggle.onDismiss` used, scoped to
+                            // THIS hovered channel (`c`), not necessarily
+                            // the active one.
+                            const handleDismissForHover = () => {
+                              if (activeInteraction.threads.length > 1) handleDismissChannel(activeInteraction.id, c);
+                              else handleDismissInteraction(activeInteraction.id);
+                            };
+                            // Same composite key the now-hidden pill row's
+                            // own `outcomeKey` used for this exact channel
+                            // — reused here (source `"hover"`, added to
+                            // `outcomeDraftSource`'s own union above)
+                            // rather than inventing a new scheme, so this
+                            // preview's Outcome popover shares the same
+                            // one-open-at-a-time exclusivity every other
+                            // source already gets.
+                            const outcomeKeyForHover = `${activeInteraction.id}:${key}`;
+                            return (
+                              <div
+                                key={key}
+                                onMouseEnter={() => openChannelHoverPreview(key)}
+                                onMouseLeave={scheduleCloseChannelHoverPreview}
+                              >
+                                {/* Per explicit request ("if they hover
+                                    over an active channel icon button add a
+                                    tooltip that says {channel type}
+                                    active"): the active channel's own icon
+                                    never gets the rich hover `Popover`
+                                    below (`openChannelHoverPreview`'s own
+                                    guard skips it entirely — nothing to
+                                    preview when its content is already the
+                                    main column right behind it), so
+                                    hovering it showed literally nothing at
+                                    all before this. A plain `Tooltip`
+                                    layered outside that `Popover` fills
+                                    that gap — `disabled` for every OTHER
+                                    channel so it never doubles up with (or
+                                    fights the hover-intent timing of) the
+                                    real preview `Popover` those still get.
+                                    Bug fix, per explicit follow-up report
+                                    ("the tooltip on the active is not
+                                    displaying"): `Tooltip` wraps its child
+                                    via Radix's `asChild`/Slot, which clones
+                                    its hover/focus props onto that child —
+                                    but `Popover` is an "opaque" component
+                                    (popover.tsx) that doesn't spread
+                                    arbitrary extra props through to its own
+                                    trigger, so those cloned props were
+                                    silently dropped and nothing ever
+                                    actually listened for the hover that
+                                    would open this tooltip. Same root cause
+                                    (and same fix — a plain DOM `<span>`
+                                    between the two, so Radix has an actual
+                                    element to clone onto) already
+                                    documented for this exact "Tooltip
+                                    wrapping Popover" composition at
+                                    `CreateNew`'s own collapsed trigger and
+                                    `AgentProfile`'s avatar trigger
+                                    (create-new.tsx/agent-profile.tsx — see
+                                    `Popover`'s own top-of-file doc comment,
+                                    popover.tsx, for the fuller "why"). */}
+                                <Tooltip content={`${previewLabel} active`} placement="bottom" disabled={!isActiveChannel}>
+                                <span className="inline-flex">
+                                <Popover
+                                  open={hoverOpen}
+                                  placement="bottom"
+                                  align="end"
+                                  showArrow={false}
+                                  bodyPadding={false}
+                                  className="border-0 bg-transparent p-0 shadow-none"
+                                  onOpenAutoFocus={(e: Event) => e.preventDefault()}
+                                  onCloseAutoFocus={(e: Event) => e.preventDefault()}
+                                  onInteractOutside={(e: Event) => {
+                                    if ((e.target as Element)?.closest?.("[data-radix-popper-content-wrapper]")) {
+                                      e.preventDefault();
+                                    }
+                                  }}
+                                  content={
+                                    <div
+                                      onMouseEnter={() => openChannelHoverPreview(key)}
+                                      onMouseLeave={scheduleCloseChannelHoverPreview}
+                                      className="flex max-h-[70vh] w-[340px] flex-col overflow-hidden rounded-lyra-lg border border-lyra-border-soft bg-lyra-bg-surface-container-subtle shadow-lg"
+                                    >
+                                      <PanelHeader
+                                        title={previewLabel}
+                                        subhead={previewSubhead}
+                                        actions={
+                                          <div className="flex items-center gap-1">
+                                            {/* Outcome — bug fix, per
+                                                explicit follow-up report
+                                                ("the outcome popover is not
+                                                displaying when clicked from
+                                                the hover popover - might be
+                                                a z-index issue"): this
+                                                started as a static,
+                                                disabled-style icon with no
+                                                popover wired at all (not
+                                                actually a z-index bug —
+                                                nothing was listening for
+                                                the click), matching the
+                                                real session row's own
+                                                fallback rendering whenever
+                                                no `outcome` config is
+                                                passed. Now wired for real,
+                                                using lyra-ui's own
+                                                standalone `OutcomePanel`
+                                                (outcome-panel.tsx) — the
+                                                exact same "Log Outcome"
+                                                popover `ChannelRow`/
+                                                `ChannelTab` render inline,
+                                                factored out specifically so
+                                                a caller like this one can
+                                                drop it in without
+                                                duplicating that popover's
+                                                own Status/Tags/Disposition/
+                                                Summary JSX, and already
+                                                z-indexed (`z-[10003]`) for
+                                                sitting inside another
+                                                popover's portaled content —
+                                                exactly this preview's own
+                                                situation. Reuses the exact
+                                                same shared
+                                                `outcomeDraftKey`/
+                                                `outcomeDraft` state (and
+                                                `handleOutcomeOpenChange`/
+                                                `handleOutcomeSave`/
+                                                `handleOutcomeCancel`
+                                                handlers) every other source
+                                                already shares, keyed by
+                                                `outcomeKeyForHover` and the
+                                                new `"hover"` source, so
+                                                only one Outcome popover —
+                                                from ANY source — can ever
+                                                be open at once, same
+                                                guarantee the rest of the
+                                                app already has. */}
+                                            {!isNewOutboundThreadForHover && !isClosedForHover && (
+                                              <OutcomePanel
+                                                outcome={{
+                                                  open: outcomeDraftKey === outcomeKeyForHover && outcomeDraftSource === "hover",
+                                                  onOpenChange: (open) => handleOutcomeOpenChange(outcomeKeyForHover, open, "hover"),
+                                                  resolutionOptions: TRANSCRIPT_SESSION_STATUS_OPTIONS,
+                                                  resolution: activeInteraction.threadStatuses?.[key] ?? "Open",
+                                                  onResolutionChange: (value) =>
+                                                    handleInteractionStatusChange(activeInteraction.id, key, value),
+                                                  tagOptions: OUTCOME_TAG_OPTIONS,
+                                                  selectedTags: outcomeDraft.tags,
+                                                  onTagsChange: (tags) => setOutcomeDraft((d) => ({ ...d, tags })),
+                                                  dispositionOptions: OUTCOME_DISPOSITION_OPTIONS,
+                                                  dispositionCode: outcomeDraft.dispositionCode,
+                                                  onDispositionChange: (value) => setOutcomeDraft((d) => ({ ...d, dispositionCode: value })),
+                                                  summary: outcomeDraft.summary,
+                                                  onSummaryChange: (value) => setOutcomeDraft((d) => ({ ...d, summary: value })),
+                                                  onSave: handleOutcomeSave,
+                                                  onCancel: handleOutcomeCancel,
+                                                } satisfies ChannelOutcomeConfig}
+                                              >
+                                                <Button variant="icon" size="icon-sm" title="Outcome" className="text-lyra-fg-secondary">
+                                                  <SuccessIconSolid className="h-4 w-4 text-lyra-status-info-strong" />
+                                                </Button>
+                                              </OutcomePanel>
+                                            )}
+                                            {isNewOutboundThreadForHover ? (
+                                              !isClosedForHover && (
+                                                <Button
+                                                  variant="ghost"
+                                                  size="icon-sm"
+                                                  title="Delete Draft"
+                                                  className="text-lyra-status-critical-strong hover:bg-lyra-status-critical-subtle hover:text-lyra-status-critical-strong active:bg-lyra-status-critical-medium"
+                                                  onClick={handleDismissForHover}
+                                                >
+                                                  <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                                                </Button>
+                                              )
+                                            ) : isClosedForHover ? (
+                                              <Button
+                                                variant="ghost"
+                                                size="icon-sm"
+                                                title="Remove from Queue"
+                                                className="text-lyra-status-critical-strong hover:bg-lyra-status-critical-subtle hover:text-lyra-status-critical-strong active:bg-lyra-status-critical-medium"
+                                                onClick={handleDismissForHover}
+                                              >
+                                                <X className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                              </Button>
+                                            ) : (
+                                              <Button
+                                                variant="ghost"
+                                                size="icon-sm"
+                                                title="Unassign & Dismiss"
+                                                className="text-lyra-status-critical-strong hover:bg-lyra-status-critical-subtle hover:text-lyra-status-critical-strong active:bg-lyra-status-critical-medium"
+                                                onClick={handleDismissForHover}
+                                              >
+                                                <UserX className="h-4 w-4" strokeWidth={1.5} />
+                                              </Button>
+                                            )}
+                                          </div>
+                                        }
+                                      />
+                                      <div className="flex-1 overflow-y-auto">
+                                        {c.type === "email" ? (
+                                          <div className="flex h-full items-center justify-center px-6 py-10 text-center text-sm text-lyra-fg-secondary">
+                                            Coming soon
+                                          </div>
+                                        ) : (
+                                          <InteractionTranscript
+                                            channelType={c.type}
+                                            direction={c.direction}
+                                            customerName={activeInteraction.customerName}
+                                            contactId={c.contactId ?? activeInteraction.customerId}
+                                            skillLabel={c.preview}
+                                            isFreshLaunch={!!c.startedFresh}
+                                            liveMessages={activeInteraction.liveMessages?.[key] ?? []}
+                                            showSessionActionCluster={false}
+                                            showViewDetails={false}
+                                          />
+                                        )}
+                                      </div>
+                                      {c.type !== "email" &&
+                                        c.type !== "voice" &&
+                                        !activeInteraction.closed &&
+                                        activeInteraction.threadStatuses?.[key] !== "Closed" && (
+                                          <InteractionComposer
+                                            onSend={(text) => handleSendMessage(activeInteraction.id, text, key)}
+                                          />
+                                        )}
+                                    </div>
+                                  }
+                                >
+                                  <Button
+                                    variant="outline"
+                                    size="icon-sm"
+                                    aria-pressed={isActiveChannel}
+                                    aria-label={`${isActiveChannel ? "Currently open" : "Open"} ${previewLabel}`}
+                                    className={cn(
+                                      "ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed",
+                                      isActiveChannel && PANEL_BUTTON_SELECTED_CLASS,
+                                      // Per explicit request ("maintain the
+                                      // hover state of the icon button so
+                                      // the agent knows which channel they
+                                      // are looking at when they have
+                                      // hovered into the hover content and
+                                      // off the hover icon button") plus
+                                      // the follow-up correction ("isn't
+                                      // the hover state the [shade] of
+                                      // black and not the blue?"): the
+                                      // pointer genuinely leaves this button
+                                      // the moment it crosses into the
+                                      // popover's own (portaled) content —
+                                      // `hoverOpen` stays true the whole
+                                      // time regardless (the content's own
+                                      // `onMouseEnter` re-arms
+                                      // `openChannelHoverPreview` for this
+                                      // same `key`, see that content's own
+                                      // render site above) — so this forces
+                                      // the same plain gray
+                                      // `hover:bg-lyra-state-hover` look the
+                                      // real CSS `:hover` pseudo-class
+                                      // already gives it (mirrors the
+                                      // `data-[state=open]:bg-lyra-state-
+                                      // hover` idiom the "View All Apps"
+                                      // trigger already uses for this exact
+                                      // "still looks hovered while its own
+                                      // popover/menu is open" case, just
+                                      // driven by the JS `hoverOpen` state
+                                      // here instead of a Radix data
+                                      // attribute), for exactly as long as
+                                      // ITS OWN preview is open — NOT the
+                                      // blue `PANEL_BUTTON_SELECTED_CLASS`,
+                                      // which stays reserved for
+                                      // `isActiveChannel` (the channel
+                                      // that's actually open in the main
+                                      // column right now) so the two
+                                      // meanings — "currently open" vs.
+                                      // "currently just being previewed" —
+                                      // stay visually distinct. Skipped
+                                      // when already `isActiveChannel`
+                                      // (that channel can't be hover-
+                                      // previewed at all — see
+                                      // `openChannelHoverPreview`'s own
+                                      // guard — but the `!isActiveChannel`
+                                      // check is kept here anyway so this
+                                      // class can never fight with the blue
+                                      // one above).
+                                      hoverOpen && !isActiveChannel && "bg-lyra-state-hover"
+                                    )}
+                                    onClick={() => {
+                                      setHistoryConversationTab((t) => (t && t.active ? { ...t, active: false } : t));
+                                      handleChannelSelect(activeInteraction.id, key);
+                                      // Per explicit request ("if the agent
+                                      // clicks on the hovered channel icon
+                                      // button, close the hover as you are
+                                      // displaying the same content
+                                      // twice"): clicking switches the main
+                                      // column to this exact channel (just
+                                      // above), so the still-open hover
+                                      // `Popover` would otherwise keep
+                                      // showing that same transcript
+                                      // floating right on top of the main
+                                      // column now showing it underneath —
+                                      // closing it here (same
+                                      // clear-timer-then-`null` shape
+                                      // `scheduleCloseChannelHoverPreview`
+                                      // itself uses) collapses that
+                                      // duplication the instant the click
+                                      // lands, rather than waiting on the
+                                      // 150ms hover-intent-close timer (the
+                                      // pointer may not even be leaving the
+                                      // button at all here — a click is a
+                                      // click, whether or not the mouse
+                                      // moves afterward).
+                                      clearTimeout(channelHoverPreviewTimer.current);
+                                      setChannelHoverPreviewKey(null);
+                                    }}
+                                  >
+                                    {meta.icon}
+                                  </Button>
+                                </Popover>
+                                </span>
+                                </Tooltip>
+                              </div>
+                            );
+                          })}
                           {/* Per explicit follow-up request ("no I wanted
                               the entire toggle group to float right — put
                               the '+' button back and float the toggle right
                               in the position where the customer info toggle
                               button used to be"): the whole
-                              `ChannelToggleGroup`/`ChannelToggle` pill row —
-                              its "+" Add Channel trigger restored to this
-                              same `action` slot, exactly as it worked before
-                              — now floats here, at the far right of the
-                              header, in the spot the removed Customer
-                              Information toggle button used to occupy,
-                              instead of rendering inline next to the agent/
-                              customer name via `titleSuffix` (see that
-                              slot's own doc comment, above). Same "shown
-                              whenever there's at least one open channel"
-                              gate as before. */}
-                          {activeInteraction.threads.length > 0 && (
-                            <ChannelToggleGroup
-                              action={
-                                SHOW_ADD_CHANNEL_HEADER_BUTTON && (getHeaderAction(
-                                  activeInteraction.id,
-                                  "ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed",
-                                  { label: "Add Channel", showLabel: false }
-                                ) ?? (
-                                  <AddChannelAdHocButton
-                                    onLaunch={handleAddAdHocChannel}
-                                    skillOptions={OUTBOUND_CONFIG.skillOptions}
-                                    className="ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed"
-                                  />
-                                ))
-                              }
-                            >
+                              `ChannelToggleGroup`/`ChannelToggle` pill row
+                              still floats here, at the far right of the
+                              header. Its own "+" (`action` prop) is gone
+                              now that the standalone trigger above covers
+                              it — see this whole block's own doc comment,
+                              just above. Same "shown whenever there's at
+                              least one open channel" gate as before.
+                              Per the newer explicit request at the very top
+                              of this block, this pill row itself is now
+                              HIDDEN (`SHOW_CHANNEL_TOGGLE_GROUP`, defined
+                              module-level above the component, mirrors
+                              Phase 1's own identical flag) — the plain icon
+                              row just above replaces it as the actual
+                              channel switcher; this stays only so its
+                              outcome-popover/dismiss/status-label
+                              functionality can come back with a one-line
+                              flip if it's ever wanted here again. */}
+                          {SHOW_CHANNEL_TOGGLE_GROUP && activeInteraction.threads.length > 0 && (
+                            <ChannelToggleGroup>
                               {activeInteraction.threads.map((c) => {
                                 const key = c.id ?? c.type;
                                 const outcomeKey = `${activeInteraction.id}:${key}`;
@@ -8539,7 +9077,134 @@ export function AgentWorkspace2WithDeskPage({
                               )}
                             </ChannelToggleGroup>
                           )}
-                        </>
+                          {/* "Contact Details" toggle — per explicit request
+                              ("adjust the contact details button in phase 2
+                              to match the functionality and design in phase
+                              1 (ie. move to the right of the page header and
+                              display the contact details on hover then
+                              toggle it open as a side panel when clicked)"):
+                              same rightmost position, design and hover-
+                              preview-then-click-to-toggle behavior Phase 1
+                              (AgentWorkspaceAdvancedPage.tsx) already uses
+                              for its own identically-named button — see
+                              that file's own doc comment on its button for
+                              the full "why" behind this shape. Unlike
+                              Phase 1's version (which previews/opens a
+                              lightweight docked side panel this file never
+                              had), this one drives Phase 2's REAL Contact
+                              Details surface: the shared `SidePanel`
+                              (`detailsPanelOpen`) in its Customer
+                              Information content mode (`customerDetailsOpen`)
+                              — the same surface `focusCustomerPanelTab`
+                              already opens from elsewhere in this file (see
+                              that function's own doc comment) — via the new
+                              `isContactDetailsPanelOpen`/
+                              `handleContactDetailsToggle` pair declared
+                              alongside it. The hover preview itself reuses
+                              `CustomerInfoHoverPreview` (imported but never
+                              actually rendered anywhere in this file before
+                              now — see that component's own doc comment)
+                              fed the exact same interaction-derived inputs
+                              already wired to `customerDetailsPanel`
+                              (`useCustomerDetailsInteriorPanel`) just above,
+                              so the preview and the real panel never
+                              disagree on what they show. */}
+                          {/* Per explicit follow-up request ("hide the
+                              contact details button when the contact
+                              details side panel is open"): the trigger/
+                              hover-preview button itself now fully
+                              unmounts while `isContactDetailsPanelOpen` is
+                              true, rather than just switching to its
+                              `PANEL_BUTTON_SELECTED_CLASS` "selected"
+                              styling — the real open panel's own "Close
+                              Details" header button (see that button's
+                              own render site) is the close control while
+                              open, so this header trigger has nothing left
+                              to do until it closes again. */}
+                          {!isContactDetailsPanelOpen && (
+                            <div onMouseEnter={openCustomerInfoPreview} onMouseLeave={scheduleCloseCustomerInfoPreview}>
+                              <Popover
+                                open={customerInfoPreviewOpen && !isContactDetailsPanelOpen}
+                                placement="bottom"
+                                align="end"
+                                showArrow={false}
+                                bodyPadding={false}
+                                className="border-0 bg-transparent p-0 shadow-none"
+                                onOpenAutoFocus={(e: Event) => e.preventDefault()}
+                                onCloseAutoFocus={(e: Event) => e.preventDefault()}
+                                onInteractOutside={(e: Event) => {
+                                  if ((e.target as Element)?.closest?.("[data-radix-popper-content-wrapper]")) {
+                                    e.preventDefault();
+                                  }
+                                }}
+                                content={
+                                  <CustomerInfoHoverPreview
+                                    customerName={activeInteraction?.customerName}
+                                    recordId={activeInteraction?.customerId ?? ""}
+                                    channels={activeInteraction?.threads ?? []}
+                                    startedFresh={!!activeChannel?.startedFresh}
+                                    tabs={activeInteractionIsRealCustomer ? CUSTOMER_PANEL_TABS : (["Detail"] as const)}
+                                    onMouseEnter={openCustomerInfoPreview}
+                                    onMouseLeave={scheduleCloseCustomerInfoPreview}
+                                    onAddToast={addToast}
+                                    recordDraft={activeCustomerRecordDraft}
+                                    overviewEditing={activeCustomerOverviewEditing}
+                                    onOverviewEditingChange={setActiveCustomerOverviewEditing}
+                                    matchState={
+                                      activeInteractionIsRealCustomer || !activeInteraction
+                                        ? undefined
+                                        : {
+                                            step: customerMatchStep,
+                                            query: customerMatchQuery,
+                                            onQueryChange: setCustomerMatchQuery,
+                                            possibleMatches: possibleCustomerMatches,
+                                            searchResults: customerSearchResults,
+                                            onLinkRecord: handleLinkCustomerRecord,
+                                            onStartCreate: handleStartCreateCustomer,
+                                            onBackToSearch: handleBackToCustomerSearch,
+                                            onSaveNewCustomer: handleSaveNewCustomer,
+                                          }
+                                    }
+                                    copilotExtra={
+                                      activeInteraction?.id === MARCUS_WEBB_ID ? (
+                                        <MarcusWebbCopilotCard
+                                          state={marcusWebbState}
+                                          onSelectAction={handleMarcusWebbSelectAction}
+                                          onCompleteActivity={handleMarcusWebbCompleteActivity}
+                                          onSelectMessage={handleMarcusWebbSelectMessage}
+                                          onWrapUp={handleMarcusWebbWrapUp}
+                                          onResetVerifyIdentity={handleMarcusWebbResetVerifyIdentity}
+                                          onResetGeneratePassword={handleMarcusWebbResetGeneratePassword}
+                                          onResetRegeneratePassword={handleMarcusWebbResetRegeneratePassword}
+                                          onResetConfirmLogin={handleMarcusWebbResetConfirmLogin}
+                                        />
+                                      ) : undefined
+                                    }
+                                    onStartInteraction={(contact, channel, phone, skillId) =>
+                                      handleStartCall({ contact, channel, phone, skillId })
+                                    }
+                                  />
+                                }
+                              >
+                                <Button
+                                  variant="outline"
+                                  size="md"
+                                  className={cn(
+                                    "shrink-0",
+                                    recordHeaderWidth < 768 && "w-8 gap-0 px-0",
+                                    isContactDetailsPanelOpen && PANEL_BUTTON_SELECTED_CLASS
+                                  )}
+                                  aria-pressed={isContactDetailsPanelOpen}
+                                  onClick={handleContactDetailsToggle}
+                                  aria-label={isContactDetailsPanelOpen ? "Close Contact Details" : "Open Contact Details"}
+                                >
+                                  <IdCard className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                                  {recordHeaderWidth >= 768 && <span>Contact Details</span>}
+                                </Button>
+                              </Popover>
+                            </div>
+                          )}
+                        </div>
                       }
                     />
                     {/* The old channel `TabList`/`ChannelTab` row that used
@@ -8610,6 +9275,12 @@ export function AgentWorkspace2WithDeskPage({
                         <VoiceCallControls
                           stretch
                           className="px-0 py-0 bg-transparent"
+                          // Per explicit request ("hide the video button in
+                          // v3 for now - keep it in phase 2"): same
+                          // `showAddVideo` gate Agent Workspace 2.0 Phase 1
+                          // already established (see that prop's own doc
+                          // comment, agent-next-gen-voice-call-controls.tsx).
+                          showAddVideo={false}
                           // Per explicit request ("putting an active call on
                           // hold from the call controls should turn the on
                           // hold button warning color and add an on hold
@@ -9095,34 +9766,22 @@ export function AgentWorkspace2WithDeskPage({
                               setDetailsPanelOpen(true);
                             }
                           }}
-                          // "Open Details Panel" (each session row's own
-                          // icon button, right of Unassign & Dismiss) — per
-                          // further explicit follow-up request, this is now
-                          // a plain open/close toggle of the shared
-                          // `detailsPanelOpen` flag, no menu — see
-                          // AgentNextGenPage.tsx's identical prop for the
-                          // full rationale. Whatever content the panel was
-                          // last showing (Customer Information/AI Summary,
-                          // if one of those was opened some other way) is
-                          // what reappears when this reopens it — this
-                          // button has no opinion on THAT.
-                          //
-                          // It does have one opinion, per further explicit
-                          // follow-up request ("make details the first tab
-                          // in view when the panel toggle is clicked") —
-                          // see AgentNextGenPage.tsx's identical prop for
-                          // the full rationale: opening the panel this way
-                          // always lands on voice's own "Details" tab, not
-                          // whatever tab ("Transcript", most often) it was
-                          // left on. Only on the OPENING half of the
-                          // toggle; non-voice has no tabs to default here.
-                          onToggleDetailsPanel={() => {
-                            const opening = !detailsPanelOpen;
-                            if (opening && activeChannelType === "voice") {
-                              setVoiceDetailsPanelTab("Details");
-                            }
-                            setDetailsPanelOpen(opening);
-                          }}
+                          // Per explicit request ("hide the panel details
+                          // button since you have the contact details
+                          // button above it in phase 2"): each session
+                          // row's own "Open Details Panel" icon button
+                          // (`detailsPanelButton`, agent-next-gen-
+                          // transcript.tsx) only renders when
+                          // `onToggleDetailsPanel` is actually passed — so
+                          // simply not passing it here hides that button
+                          // for Phase 2 specifically, now that the new
+                          // header-level "Contact Details" button (see that
+                          // button's own render site above) already covers
+                          // opening the same shared Details panel. Phase 1
+                          // (AgentWorkspaceAdvancedPage.tsx) and every other
+                          // `InteractionTranscript` caller still pass this
+                          // prop unchanged, so this only affects this one
+                          // call site.
                         />
                         {/* Full-screen video — see AgentNextGenPage.tsx's
                             identical render site for the full rationale. */}
@@ -9690,10 +10349,6 @@ export function AgentWorkspace2WithDeskPage({
                       setSelectedQueueId(null);
                       setSelectedContactHistoryEntry(null);
                     }}
-                    // `PanelRightClose` — same "closing a docked right-side
-                    // panel" glyph as this panel's sibling instance above,
-                    // instead of `ContainerHeader`'s generic default `X`.
-                    closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
                     // Redial/Re-open — per explicit request, these now live
                     // here (the summary panel) instead of directly on the
                     // Contact History row. Mutually exclusive by channel

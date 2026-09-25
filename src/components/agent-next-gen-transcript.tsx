@@ -5,6 +5,7 @@ import {
   AccordionHeadless,
   AccordionHeadlessItem,
   AccordionHeadlessContent,
+  Avatar,
   ContactOverview,
   type ContactOverviewInfo,
   CustomerContextOverview,
@@ -43,8 +44,7 @@ import {
 } from "@nicecxone/lyra-ui";
 import {
   Copy,
-  User,
-  ArrowUpRight,
+  ArrowLeftRight,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
@@ -737,12 +737,13 @@ function TypingIndicator({
     <div className="flex flex-col items-start" aria-live="polite" aria-label="Customer is typing">
       <div className={cn("flex items-start gap-2", bubbleFullWidth ? "max-w-full" : "max-w-[80%]")}>
         {!narrow && (
-          <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lyra-accent-green-soft text-lyra-accent-green-strong lyra-body-sm-emphasis"
-            aria-hidden="true"
-          >
-            {identified ? initials : <User className="h-4 w-4" strokeWidth={1.5} />}
-          </span>
+          // Per explicit follow-up request ("extend avatar size/color to
+          // cover those"): now built on lyra-ui's shared `Avatar`
+          // (avatar.tsx, `color="customer"`/`size="xs"` added for exactly
+          // this chat-bubble shape) instead of this hand-rolled span —
+          // same green tone, same 28px circle, same `identified ?
+          // initials : genericIcon` split, just the shared component now.
+          <Avatar initials={identified ? initials : undefined} color="customer" size="xs" />
         )}
         <div className="flex min-w-0 flex-col gap-1">
           <div className="rounded-lyra-lg rounded-tl-none border border-transparent bg-lyra-state-hover px-4 py-3.5">
@@ -947,18 +948,15 @@ export function TranscriptSessionDetails({
    session's status is independent, and only one status popover should
    ever be open across the whole transcript at a time. */
 
-/** Person + redirect-arrow composite — same "no single Lucide icon covers
- *  transfer" composition lyra-ui's own `ConsultTransferIcon` uses
- *  (channel-row.tsx) for its Consult/Transfer button, recreated locally here
- *  since that one's a private, unexported helper in that file — this app
- *  only needs the same LOOK, not a shared import. */
+/** Per explicit request ("update the consult/transfer icon to be 2 arrows
+ *  like in screenshot 2") — was a Person + redirect-arrow composite,
+ *  mirroring lyra-ui's own `ConsultTransferIcon` (channel-row.tsx), which
+ *  got the identical swap; both now render Lucide's own `ArrowLeftRight`
+ *  (two opposing horizontal arrows) directly, so this is a plain icon
+ *  rather than a composed one, still recreated locally here since lyra-ui's
+ *  copy stays a private, unexported helper in that file. */
 export function TransferIcon() {
-  return (
-    <span className="relative inline-flex h-4 w-4 items-center justify-center" aria-hidden="true">
-      <User className="h-4 w-4" strokeWidth={1.5} />
-      <ArrowUpRight className="absolute -right-1 -top-1 h-2.5 w-2.5" strokeWidth={2.5} />
-    </span>
-  );
+  return <ArrowLeftRight className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />;
 }
 
 /** Status pill + its Popover/Menu/"Close Contact?" confirm-view dropdown —
@@ -1142,7 +1140,8 @@ export function TranscriptSessionSeparator({
   onToggleCollapsed,
   compactHeader = false,
   hideFade = false,
-  showViewDetails = true,
+showViewDetails = true,
+  viewDetailsLabel = "View Details",
   portalTarget,
 }: {
   session: Contact;
@@ -1489,7 +1488,12 @@ export function TranscriptSessionSeparator({
    *  drops the "View Details" text + chevron entirely, leaving the plain
    *  "{n} Messages | # contactId · date" cluster as inert (non-`Button`)
    *  text — every other call site keeps the default `true`. */
-  showViewDetails?: boolean;
+showViewDetails?: boolean;
+  /** Per explicit follow-up request, Phase 1 (Advanced) only ("rename the
+   *  view details link 'Session Details'") — overrides this link's own
+   *  text. Defaults to "View Details", unchanged for every other consumer
+   *  (Premium, Agent Workspace 2.0) that doesn't pass this. */
+  viewDetailsLabel?: string;
   /** Per explicit request ("move the session row into the page header
    *  container so when the details are opened they look like the attached
    *  screenshot, instead of overlaying the session row"): when a real DOM
@@ -1754,7 +1758,20 @@ export function TranscriptSessionSeparator({
                       cluster hides, there's nothing left of "View Details"
                       for a leading divider to separate it from. */}
                   {!compactHeader && <span aria-hidden="true">|</span>}
-                  <span className="text-lyra-fg-link hover:underline">View Details</span>
+                  {/* Per explicit follow-up request, Phase 1 (Advanced)
+                      only ("rename the view details link 'Session
+                      Details'") — `viewDetailsLabel` (default "View
+                      Details", below) lets that one tier's own label read
+                      "Session Details" without touching Premium/Agent
+                      Workspace 2.0's identical link. Everything else about
+                      this link (styling, the external panel it opens via
+                      `onViewDetails`, the `showViewDetails`/`compactHeader`
+                      gating above) is unchanged. Every doc comment
+                      elsewhere in this file still says "View Details" when
+                      describing this feature's own history — left as-is,
+                      since they're accurately describing what was true
+                      when written, not the current label. */}
+                  <span className="text-lyra-fg-link hover:underline">{viewDetailsLabel}</span>
                   {/* Static now — was a `ChevronDown`/`ChevronRight` toggle
                       mirroring the old inline-expand `open` state; "View
                       Details" is a one-way navigation trigger now (opens an
@@ -2395,6 +2412,7 @@ export function InteractionTranscript({
   customerContextOverview,
   showCustomerContextProfile,
   showCustomerContextSnapshot,
+  showCustomerContextNextBestAction,
   contactOverviewPosition,
   onViewCustomerInfo,
   onViewInteractionHistory,
@@ -2433,6 +2451,7 @@ export function InteractionTranscript({
   onDetailsPanelPreviewHoverStart,
   onDetailsPanelPreviewHoverEnd,
   showViewDetails = true,
+  viewDetailsLabel = "View Details",
   sessionRowPortalTarget,
   onCurrentSessionChange,
   hideSessionSeparatorFade = false,
@@ -2558,6 +2577,24 @@ export function InteractionTranscript({
    * `CustomerContextOverview`'s own `showContactSnapshot` default.
    */
   showCustomerContextSnapshot?: boolean;
+  /**
+   * Same idea as `showCustomerContextProfile`/`showCustomerContextSnapshot`
+   * above, for the "Next Best Action" container. Per explicit follow-up
+   * request ("replace the next best action in all new assignments with
+   * autosummary — tie the autosummary to the contact so it is not random
+   * info"): AgentWorkspaceAdvancedPage.tsx's own main-column
+   * `<InteractionTranscript>` call site now passes `false` here (alongside
+   * flipping `showCustomerContextSnapshot` back to `true`) so a fresh
+   * assignment's main transcript column shows the real, per-contact
+   * "Autosummary" recap (`customerContextOverview.snapshot` —  the exact
+   * same contact-specific bullet list already shown in the "Details" side
+   * panel, not placeholder/random copy) instead of the generic
+   * "Next Best Action" suggestion. `undefined` (default) keeps the
+   * existing behavior (shown, matching `CustomerContextOverview`'s own
+   * `showNextBestAction = true` default) for every other consumer/call
+   * site.
+   */
+  showCustomerContextNextBestAction?: boolean;
   /**
    * Overrides which of the two `ContactOverview` render spots is used —
    * see either spot's own doc comment below for what each means. Only
@@ -2819,6 +2856,11 @@ export function InteractionTranscript({
    *  "why" — the nested instance inside voice's "Transcript" tab passes
    *  `false`). Defaults `true`; every other call site is unaffected. */
   showViewDetails?: boolean;
+  /** Forwarded straight through to every `TranscriptSessionSeparator`'s own
+   *  `viewDetailsLabel` prop (see that prop's own doc comment) — Phase 1
+   *  (Advanced)'s own call sites pass `"Session Details"`; every other
+   *  consumer omits this and keeps the original "View Details" label. */
+  viewDetailsLabel?: string;
   /** Forwarded straight through to the CURRENT session's own
    *  `TranscriptSessionSeparator` as `portalTarget` (see that prop's own
    *  doc comment for the full "why" — relocating that row out from under
@@ -3088,6 +3130,10 @@ export function InteractionTranscript({
         // `undefined` here falls through to `CustomerContextOverview`'s
         // own `showContactSnapshot = true` default.
         showContactSnapshot={showCustomerContextSnapshot}
+        // See `showCustomerContextNextBestAction`'s own doc comment above —
+        // `undefined` here falls through to `CustomerContextOverview`'s
+        // own `showNextBestAction = true` default.
+        showNextBestAction={showCustomerContextNextBestAction}
         onViewCustomerInfo={onViewCustomerInfo}
         onViewInteractionHistory={onViewInteractionHistory}
       />
@@ -3669,6 +3715,7 @@ export function InteractionTranscript({
                   onDetailsPanelPreviewHoverStart={onDetailsPanelPreviewHoverStart}
                   onDetailsPanelPreviewHoverEnd={onDetailsPanelPreviewHoverEnd}
                   showViewDetails={showViewDetails}
+                  viewDetailsLabel={viewDetailsLabel}
                   // See `sessionRowPortalTarget`'s own doc comment above —
                   // only the CURRENT session's row ever relocates into the
                   // record header; a historical session (if one somehow

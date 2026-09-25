@@ -105,11 +105,14 @@
 import React, { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
+  Avatar,
   Button,
+  KebabMenuButton,
   Popover,
   Slider,
   Spinner,
   Tooltip,
+  type MenuEntry,
   type ToastItem,
 } from "@nicecxone/lyra-ui";
 import {
@@ -121,6 +124,7 @@ import {
   AudioLinesOff,
   Circle,
   Grid3x3,
+  MoreHorizontal,
   Video,
   VideoOff,
   PhoneOff,
@@ -128,7 +132,6 @@ import {
   Volume2,
   VolumeX,
   FileText,
-  User,
 } from "lucide-react";
 import { formatElapsedTime } from "@/components/agent-next-gen-shared-utils";
 
@@ -526,6 +529,19 @@ export interface VoiceCallControlsProps {
    *  provided — omit to leave this button exactly as before (a purely
    *  local, decorative toggle with no effect outside this component). */
   onHoldChange?: (onHold: boolean) => void;
+  /** Per explicit request ("when a call is placed on hold, add an on hold
+   *  timer below the call timer in the call controls and in the
+   *  interaction nav item") — seconds since this call was put on hold,
+   *  rendered as a second "On hold MM:SS" line directly below the running
+   *  call-duration timer, in the same red/critical color every other
+   *  "needs attention" reading in this app uses, whenever `onHold` is also
+   *  true. Only meaningful (and only rendered) while `onHold` is true;
+   *  ignored otherwise. Omit to render nothing extra — same "renders fine
+   *  without it" fallback every other optional prop here already follows.
+   *  Mirrors lyra-ui's own identical `VoiceCallControls` prop
+   *  (voice-call-controls.tsx) — kept in sync per this file's own
+   *  established "app-local twin" convention. */
+  onHoldElapsedSeconds?: number;
   /** Per explicit request (Agent Workspace 2.0 Phase 1 only): hides the
    *  "Add video" button entirely. This bar's own divider just before it
    *  stays either way — it still separates the call-feature cluster from
@@ -579,6 +595,7 @@ export function VoiceCallControls({
   videoOpen,
   onHold: onHoldControlled,
   onHoldChange,
+  onHoldElapsedSeconds,
   showAddVideo = true,
   stretch = false,
   customerLabel,
@@ -705,11 +722,27 @@ export function VoiceCallControls({
   // `ScheduleToolbar`'s own `containerRef`/`isWide`/`isCompact`
   // (SchedulePanel.tsx) already uses, and the same one this file's own
   // now-removed `isCompact` used to use before it was dropped.
+  // A THIRD, narrower breakpoint (ported from lyra-ui's own identical
+  // fix, voice-call-controls.tsx -- per the same explicit follow-up
+  // request, "as the call controls goes below 600px add a more (3 dots)
+  // button and put transcript, keypad, mask and record in the menu"):
+  // those four controls (already icon-only since the first breakpoint)
+  // collapse further, out of the row entirely, into a single
+  // `KebabMenuButton` "more" trigger -- Hold and Volume stay in the row
+  // as their own icon-only buttons; only Mask/Record/Keypad/Transcript
+  // move into the menu. Keypad's own dialpad body reuses `MenuItemDef`'s
+  // `submenuContent` escape hatch rather than a separate `Popover`, for
+  // the same reason lyra-ui's own version does (see that file's own top
+  // doc comment): a `Popover` trigger nested inside `KebabMenuButton`'s
+  // own Radix dropdown would fight that dropdown for the same
+  // outside-click/Escape handling.
   const CONTROLS_COMPACT_BREAKPOINT = 991;
   const CONTROLS_ICON_ONLY_BREAKPOINT = 768;
+  const CONTROLS_MENU_BREAKPOINT = 600;
   const cardRef = useRef<HTMLDivElement>(null);
   const [controlsCompact, setControlsCompact] = useState(false);
   const [controlsIconOnly, setControlsIconOnly] = useState(false);
+  const [controlsMenu, setControlsMenu] = useState(false);
   useEffect(() => {
     const el = cardRef.current;
     if (!el) return;
@@ -717,6 +750,7 @@ export function VoiceCallControls({
       const width = entry.contentRect.width;
       setControlsCompact(width < CONTROLS_COMPACT_BREAKPOINT);
       setControlsIconOnly(width < CONTROLS_ICON_ONLY_BREAKPOINT);
+      setControlsMenu(width < CONTROLS_MENU_BREAKPOINT);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -729,6 +763,74 @@ export function VoiceCallControls({
     const raf = requestAnimationFrame(() => setCollapseHeight(0));
     return () => cancelAnimationFrame(raf);
   }, [isExiting]);
+  // Mask/Record/Keypad/Transcript's own menu-item equivalents, built once
+  // per render for the `controlsMenu` (<600px) overflow `KebabMenuButton`
+  // just below -- see that render site's own doc comment. Ported from
+  // lyra-ui's identical array (voice-call-controls.tsx); Mask's icon here
+  // swaps between `AudioLines`/`AudioLinesOff` (this file's own existing
+  // two-icon convention -- see the Mask button's own doc comment further
+  // down) rather than lyra-ui's single-icon/tint-only version, since v3's
+  // pinned lucide-react actually has `AudioLinesOff` available. `useMemo`
+  // isn't used here -- this array is cheap to rebuild and only matters
+  // while `controlsMenu` is actually true.
+  const overflowMenuItems: MenuEntry[] = [
+    {
+      id: "mask",
+      label: "Mask",
+      icon: masked ? (
+        <AudioLinesOff className="h-4 w-4" strokeWidth={1.5} />
+      ) : (
+        <AudioLines className="h-4 w-4" strokeWidth={1.5} />
+      ),
+      active: masked,
+      disabled: isEnding,
+      onClick: () => {
+        const next = !masked;
+        setMasked(next);
+        if (next && recording) {
+          setRecording(false);
+        }
+      },
+    },
+    {
+      id: "record",
+      label: recording ? "Stop" : "Record",
+      icon: (
+        <Circle
+          className={cn("h-4 w-4", recording && "fill-lyra-status-critical-strong text-lyra-status-critical-strong")}
+          strokeWidth={1.5}
+        />
+      ),
+      active: recording,
+      disabled: recordDisabled,
+      onClick: () => {
+        if (recordDisabled) return;
+        const next = !recording;
+        setRecording(next);
+      },
+    },
+    {
+      id: "keypad",
+      label: "Keypad",
+      icon: <Grid3x3 className="h-4 w-4" strokeWidth={1.5} />,
+      active: keypadOpen,
+      disabled: isEnding,
+      submenuContent: <DialPad />,
+    },
+    ...(onToggleTranscript
+      ? [
+          {
+            id: "transcript",
+            label: "Transcript",
+            icon: <FileText className="h-4 w-4" strokeWidth={1.5} />,
+            active: transcriptOpen,
+            disabled: isEnding,
+            onClick: onToggleTranscript,
+          } satisfies MenuEntry,
+        ]
+      : []),
+  ];
+
   const handleHangUp = () => {
     // Guards against a double-fire (e.g. a stray extra click before the
     // button's own `disabled` re-renders) from scheduling `onHangUp` twice.
@@ -832,24 +934,42 @@ export function VoiceCallControls({
           // icon+label `WideCallControlButton`s (each roughly h-16 now,
           // was h-8) so they don't sit flush against this card's own
           // border.
-          "w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2"
+          "w-full grid grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-lg px-3 py-2"
         )}
       >
-        {/* Three real flex slots now (timer / main buttons+volume / dark
-            mute+video+End Call), replacing the former two-slot layout — per
-            explicit request/reference screenshot ("update the call control
-            button order to be like the attached screenshot"). The
-            screenshot's own left-to-right shape is: a timer alone at the
-            far left with a large gap after it, a centered cluster of
-            lighter/decorative controls, a divider, a visibly DARKER
-            mute+video pair, then a large red "End Call" button anchored to
-            the far right. `justify-between` on this row still does the
-            bookending work (leading/trailing slots `shrink-0`, middle slot
-            `flex-1`+`justify-center` claims whatever space is left and
-            centers its own contents within it) — same mechanism the old
-            two-slot layout already used, just with a third slot added and
-            the controls redistributed among all three. */}
-        <div className="flex shrink-0 items-center gap-2">
+        {/* Three real slots (customer identity+timer / main buttons+
+            volume / dark mute+video+End Call), replacing the former
+            two-slot layout — per explicit request/reference screenshot
+            ("update the call control button order to be like the attached
+            screenshot"). The screenshot's own left-to-right shape is: a
+            timer alone at the far left with a large gap after it, a
+            centered cluster of lighter/decorative controls, a divider, a
+            visibly DARKER mute+video pair, then a large red "End Call"
+            button anchored to the far right.
+
+            This row used to be a plain `flex justify-between` with
+            `shrink-0` leading/trailing slots and a `flex-1` middle one —
+            per a LATER explicit follow-up request/bug report ("the middle
+            buttons shift position when the name is longer... this
+            requires those containers to be equal width and not dependent
+            on the length of the customer name"), that's a CSS grid
+            instead (ported from lyra-ui's own identical fix,
+            voice-call-controls.tsx): `grid-cols-[1fr_auto_1fr]` forces the
+            leading and trailing columns to the SAME width (whichever
+            needs more room) regardless of either one's own content, so
+            the `auto` middle column — and the decorative cluster centered
+            within it — stays genuinely fixed at the bar's true center
+            instead of drifting right as `customerLabel` grows. Under the
+            old `flex`, only the middle slot's own CONTENTS were centered
+            within a box whose left edge tracked the (variable-width)
+            identity slot next to it — never actually centered on the bar
+            as a whole. Each of the three columns keeps its own `min-w-0`
+            (grid items default to `min-width: auto`, sized to fit their
+            content, same overflow footgun flex has) so the identity
+            slot's existing name `truncate` can still do its job if its
+            equal share ever runs short, rather than forcing the whole bar
+            wider. */}
+        <div className="flex min-w-0 items-center gap-2">
           {/* Avatar chip + identity line — added per explicit request/
               reference screenshot ("add the customer avatar. Add the name /
               number/email above the timer"). Only renders while the caller
@@ -864,29 +984,21 @@ export function VoiceCallControls({
               though not black") rather than this design system's default
               (dark) icon color. */}
           {customerLabel && (
-            <div
-              aria-hidden="true"
-              // Per a later explicit follow-up request ("update the purple
-              // plus to be a primary avatar with the users initials"):
-              // swapped from this app's own "Voice channel = purple" accent
-              // (see this file's own top doc comment for that original
-              // reasoning) to lyra-ui's actual `Button`-`"default"`-variant
-              // primary token pair (`bg-lyra-bg-primary` +
-              // `text-lyra-fg-on-primary`) and a generic `User` outline
-              // glyph in place of `Plus` — matching `interaction-nav-item
-              // .tsx`'s own no-contact-match avatar fallback (a person
-              // outline, not the quickdial-specific `Plus` this bar
-              // originally reused) now that a real design-system component
-              // (lyra-ui's `VoiceCallControls`) exists to be consistent
-              // with.
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-lyra-bg-primary"
-            >
-              {customerInitials ? (
-                <span className="lyra-label-sm text-lyra-fg-on-primary">{customerInitials}</span>
-              ) : (
-                <User className="h-4 w-4 text-lyra-fg-on-primary" strokeWidth={1.5} />
-              )}
-            </div>
+            // Per explicit follow-up request ("add a story to the avatar
+            // component ... use it in agent-next-gen-v3"): now built on
+            // lyra-ui's shared `Avatar` (avatar.tsx) instead of this
+            // hand-rolled circle — that component generalizes exactly this
+            // "initials over a generic fallback glyph" shape, and its own
+            // initials text class fixes a bug this hand-rolled version had
+            // (`lyra-label-sm`, which doesn't exist in this design
+            // system's type scale — `Avatar` uses plain `lyra-label`
+            // instead, the same size `ContactOverview`'s own identity-card
+            // avatar already uses at this same 36px circle). Same
+            // `bg-lyra-bg-primary`/`text-lyra-fg-on-primary` "primary"
+            // look via `color="primary"`, same generic `User` outline
+            // fallback (now `Avatar`'s own built-in default, so `icon`
+            // isn't even passed here) when `customerInitials` isn't set.
+            <Avatar initials={customerInitials} color="primary" size="md" />
           )}
           <div className="flex min-w-0 flex-col justify-center">
             {customerLabel && (
@@ -938,9 +1050,20 @@ export function VoiceCallControls({
               <span className="w-[34px] shrink-0 text-right tabular-nums">{formatElapsedTime(elapsedSeconds)}</span>
             </span>
           )}
+          {/* On-hold timer — see `onHoldElapsedSeconds`'s own doc comment.
+              A second line directly below the call timer above, not a
+              replacement for it. */}
+          {onHold && onHoldElapsedSeconds !== undefined && (
+            <span
+              className="lyra-body-sm text-lyra-status-critical-strong"
+              aria-label={`On hold ${formatElapsedTime(onHoldElapsedSeconds)}`}
+            >
+              On hold {formatElapsedTime(onHoldElapsedSeconds)}
+            </span>
+          )}
           </div>
         </div>
-        <div className="flex min-w-0 flex-1 items-stretch justify-center gap-1">
+        <div className="flex min-w-0 items-stretch justify-center gap-1">
           {/* Decorative cluster — Hold/Mask/Record/Keypad/Transcript/Volume,
               unchanged in behavior/styling from before, just relocated out
               of the old leading `justify-start` slot into this slot
@@ -998,7 +1121,6 @@ export function VoiceCallControls({
                 onClick={() => {
                   const next = !onHold;
                   setOnHold(next);
-                  onAddToast?.({ variant: "info", title: next ? "Call on hold" : "Call resumed" });
                 }}
                 disabled={isEnding}
               />
@@ -1016,12 +1138,27 @@ export function VoiceCallControls({
               onClick={() => {
                 const next = !onHold;
                 setOnHold(next);
-                onAddToast?.({ variant: "info", title: next ? "Call on hold" : "Call resumed" });
               }}
               disabled={isEnding}
             />
           )}
-          {controlsCompact ? (
+          {/* Below 600px (`controlsMenu`, this file's own top doc
+              comment): Mask/Record/Keypad/Transcript disappear from the
+              row entirely and move into a single `KebabMenuButton`
+              overflow trigger instead -- Hold and Volume stay put as
+              their own icon-only buttons either side of it. Ported from
+              lyra-ui's identical fix (voice-call-controls.tsx). */}
+          {controlsMenu ? (
+            <KebabMenuButton
+              items={overflowMenuItems}
+              ariaLabel="More call controls"
+              icon={<MoreHorizontal className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
+              className="h-10 w-10 rounded-lyra-sm text-lyra-fg-secondary hover:text-lyra-fg-default"
+              disabled={isEnding}
+            />
+          ) : (
+            <>
+            {controlsCompact ? (
             <Tooltip content="Mask" placement="top">
               <CompactCallControlButton
                 icon={
@@ -1038,10 +1175,6 @@ export function VoiceCallControls({
                   setMasked(next);
                   if (next && recording) {
                     setRecording(false);
-                  }
-                  onAddToast?.({ variant: "info", title: next ? "Voice masking on" : "Voice masking off" });
-                  if (next && recording) {
-                    onAddToast?.({ variant: "info", title: "Recording stopped" });
                   }
                 }}
                 disabled={isEnding}
@@ -1081,10 +1214,6 @@ export function VoiceCallControls({
                 if (next && recording) {
                   setRecording(false);
                 }
-                onAddToast?.({ variant: "info", title: next ? "Voice masking on" : "Voice masking off" });
-                if (next && recording) {
-                  onAddToast?.({ variant: "info", title: "Recording stopped" });
-                }
               }}
               // See `isEnding`'s own doc comment above.
               disabled={isEnding}
@@ -1120,7 +1249,6 @@ export function VoiceCallControls({
                   if (recordDisabled) return;
                   const next = !recording;
                   setRecording(next);
-                  onAddToast?.({ variant: next ? "success" : "info", title: next ? "Recording started" : "Recording stopped" });
                 }}
                 onKeyDown={(e) => {
                   if (recordDisabled && (e.key === "Enter" || e.key === " ")) {
@@ -1144,7 +1272,6 @@ export function VoiceCallControls({
                   if (recordDisabled) return;
                   const next = !recording;
                   setRecording(next);
-                  onAddToast?.({ variant: next ? "success" : "info", title: next ? "Recording started" : "Recording stopped" });
                 }}
                 onKeyDown={(e) => {
                   if (recordDisabled && (e.key === "Enter" || e.key === " ")) {
@@ -1233,6 +1360,8 @@ export function VoiceCallControls({
               disabled={isEnding}
             />
           ))}
+            </>
+          )}
           <CompactVolumeButton volume={volume} onVolumeChange={setVolume} disabled={isEnding} compact={controlsCompact} />
           {/* Right separator — see the leading one's own doc comment
               (this slot's opening `<div>`, above) for why this lives here,
@@ -1240,7 +1369,7 @@ export function VoiceCallControls({
               trailing boundary. */}
           <span aria-hidden="true" className="h-4 w-px shrink-0 self-center bg-lyra-border-subtle" />
         </div>
-        <div className="flex shrink-0 items-stretch gap-2">
+        <div className="flex min-w-0 items-stretch justify-end gap-2">
           {/* Mute — moved out of the centered cluster above and given
               `strong` (see `WideCallControlButton`'s own doc comment for
               what that darkens) per the reference screenshot, which shows

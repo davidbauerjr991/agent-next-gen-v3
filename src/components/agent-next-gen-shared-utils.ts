@@ -910,6 +910,20 @@ function buildCustomerContextOverviewInfo(
    *  when there's no real `priorContact` match), `undefined` only for a
    *  genuinely brand-new/unknown contact (same gate as `customerCard`). */
   detailedSummary?: string[];
+  /** Per explicit request ("replace the autosummary card in the contact
+   *  details with the content depicted in the screenshot of the real time
+   *  summary card") — feeds the Details panel's new "Real-Time Summary"
+   *  container (`CustomerContextOverview`'s own `realTimeSummary` prop,
+   *  lyra-ui/contact-overview.tsx) as one flowing paragraph, grounded in
+   *  this SAME contact's real facts — literally this same call's own
+   *  `snapshot` lines below, joined with a space, never separately
+   *  authored/random copy (per the earlier explicit "tie the autosummary
+   *  to the contact so it is not random info" request). Always set
+   *  alongside `snapshot` (never populated when `snapshot` itself is
+   *  empty/omitted), so the two stay in lockstep automatically as the
+   *  underlying facts change — one place computes the facts, both
+   *  presentations read off it. */
+  realTimeSummary?: string;
 } {
   const hash = hashSeed(seed);
   if (!isKnownCustomer) {
@@ -925,12 +939,14 @@ function buildCustomerContextOverviewInfo(
     // chat "customer" — an email, a handle) — the plain "no prior contact
     // history" line is all that case gets, same as before this change.
     const location = resolveCustomerLocation(customerName, hash);
+    const unknownSnapshot = [
+      "No prior contact history on file — this is a new conversation.",
+      ...(location ? buildLocationSnapshotLines(location) : []),
+    ];
     return {
       nextBestAction: NEXT_BEST_ACTION_NEW[hash % NEXT_BEST_ACTION_NEW.length],
-      snapshot: [
-        "No prior contact history on file — this is a new conversation.",
-        ...(location ? buildLocationSnapshotLines(location) : []),
-      ],
+      snapshot: unknownSnapshot,
+      realTimeSummary: unknownSnapshot.join(" "),
     };
   }
   const tier = CUSTOMER_PROFILE_TIERS[hash % CUSTOMER_PROFILE_TIERS.length];
@@ -961,16 +977,19 @@ function buildCustomerContextOverviewInfo(
       snapshot: snapshot.length > 0 ? snapshot : undefined,
       nextBestAction: PRIOR_CONTACT_NEXT_BEST_ACTION[category],
       detailedSummary,
+      realTimeSummary: snapshot.length > 0 ? snapshot.join(" ") : undefined,
     };
   }
 
+  const genericSnapshot = CONTACT_OVERVIEW_SNAPSHOTS[hash % CONTACT_OVERVIEW_SNAPSHOTS.length];
   return {
     customerCard,
-    snapshot: CONTACT_OVERVIEW_SNAPSHOTS[hash % CONTACT_OVERVIEW_SNAPSHOTS.length],
+    snapshot: genericSnapshot,
     nextBestAction: NEXT_BEST_ACTION_RETURNING[hash % NEXT_BEST_ACTION_RETURNING.length],
     detailedSummary: [
       "No prior case history is on file for this contact yet — this summary reflects general account patterns only.",
     ],
+    realTimeSummary: genericSnapshot.join(" "),
   };
 }
 

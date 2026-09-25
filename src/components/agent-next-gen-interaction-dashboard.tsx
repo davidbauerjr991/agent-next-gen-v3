@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 import {
   Home,
   Settings,
-  ArrowUpDown,
+  Settings2,
   ChevronsDownUp,
   ChevronsUpDown,
   type LucideIcon,
@@ -242,6 +242,21 @@ export interface Thread {
    *  `undefined` whenever a fresh voice `Thread` replaces this one (every
    *  `newChannel` builder simply omits it). */
   heldByAgent?: boolean;
+  /** Per explicit request ("when a call is placed on hold, add an on hold
+   *  timer below the call timer in the call controls and in the
+   *  interaction nav item") — the `clockTick` value at the moment
+   *  `heldByAgent` was last set `true`, so a caller can derive a running
+   *  "how long has this call been on hold" duration
+   *  (`clockTick - heldSinceTick`), the same `clockTick`-diff pattern
+   *  every other timer in this app already uses (`Thread.startTick`, etc.).
+   *  Set alongside `heldByAgent` by the same `onHoldChange` handler passed
+   *  to `VoiceCallControls` (cleared back to `undefined` the instant hold
+   *  is released, same as `heldByAgent` itself) — reset to `undefined`
+   *  whenever a fresh voice `Thread` replaces this one, same as
+   *  `heldByAgent`. Optional/independent from `heldByAgent` on purpose: a
+   *  consumer that only wants the boolean chip (e.g. Agent Workspace
+   *  2.0's own `OnHoldPill`) can leave this unset entirely. */
+  heldSinceTick?: number;
   /** REMOVED (was `interactionId?: string`) — a plain synthesized digit
    *  shown on this Thread's `ChannelToggle` tooltip as "#{interactionId}",
    *  genuinely redundant now that `Contact.contactId` exists as the real,
@@ -781,7 +796,23 @@ export function AssignmentsSortButton({
               title : undefined}` line) without triggering that second
               Tooltip, since only `title` opts a button into it. */}
           <ActionIconButton size="sm" aria-label={`Sort by: ${selectedLabel}`} aria-expanded={open}>
-            <ArrowUpDown className="h-3.5 w-3.5" strokeWidth={1.5} />
+            {/* Per explicit request ("use the sliders vertical instead of
+                the arrows vertical icon for the Sort By in the Assignments
+                panel") — this is the REAL Sort By button this app renders
+                (`AssignmentsSortButton`, this file's own local fork of
+                lyra-ui's identically-purposed `AssignmentsSectionCaption`
+                sort control — a separate, unrelated component of the same
+                name, which was fixed first by mistake before this one was
+                found). Swaps lucide's plain up/down-arrows glyph for its
+                "adjustments" one (two vertical tracks with handles),
+                matching the filter icon already used elsewhere. */}
+            {/* Per explicit follow-up request ("use the settings 2 icon
+                from lucide and flip it on its side") — swaps
+                `SlidersVertical` for lucide's `Settings2` glyph. Rotation
+                corrected from an initial 45° to 90° per immediate
+                follow-up ("rotate 90 degrees") — `rotate-90` (Tailwind's
+                rotate utility). */}
+            <Settings2 className="h-3.5 w-3.5 rotate-90" strokeWidth={1.5} />
           </ActionIconButton>
         </Popover>
       </span>

@@ -20,7 +20,6 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import {
-  AIInput,
   AppHeader,
   AppNameMenu,
   CXoneLogo,
@@ -29,6 +28,7 @@ import {
   Draggable,
   ContainerHeader,
   NotificationsBell,
+  Avatar,
   AgentProfile,
   Container,
   PageHeader,
@@ -275,15 +275,13 @@ import {
   Search,
   Bell,
   Pin,
-  PanelRight,
+  IdCard,
   PanelLeftClose,
-  PanelRightClose,
   History,
   Maximize2,
   Minimize2,
   PhoneOutgoing,
   RotateCcw,
-  User,
   Headphones,
   ChevronRight,
   CircleAlert,
@@ -363,6 +361,32 @@ function extractPriorContactInfo(entry: ContactHistoryEntry | undefined): Custom
 // agent-next-gen-*.ts(x) files for everything this component itself no
 // longer declares — split out once this file crossed Babel's 500KB
 // code-generator threshold)
+// Per explicit request ("hide the toggle group for now"): the channel
+// switching/outcome/history-tab pill row (`ChannelToggleGroup`, its own
+// render site further down) is feature-flagged off rather than deleted —
+// a named `const` (not a literal `false` at the use site, which trips
+// `no-constant-binary-expression`) so it comes back with a one-line flip.
+const SHOW_CHANNEL_TOGGLE_GROUP = false;
+// Per explicit request ("hide the '+' add channel button in the contact
+// page header - this will only have inbound/outbound voice capabilities"),
+// later broadened by an explicit follow-up ("hide the '+' add icon button
+// from the header of the interactionNavItems in phase 1 since we can't add
+// new channels"): this deployment of Phase 1 is voice-only, so an agent
+// should never be offered an ad-hoc non-voice channel to launch from
+// EITHER the record header's own standalone "+" trigger OR the LeftNav
+// card's own inline "+" (Add Channel) row on the active card — both read
+// off this one flag now (renamed from the original, record-header-only
+// `SHOW_RECORD_HEADER_ADD_CHANNEL_BUTTON`, once a second render site
+// needed it too). Deliberately still NOT a flip of the shared, app-wide
+// `SHOW_ADD_CHANNEL_HEADER_BUTTON` import (agent-next-gen-shared-utils.ts)
+// itself — this const only gates the two render sites in THIS file, so a
+// future deployment that wants the header trigger back has a single,
+// local, one-line flip rather than having to touch the shared default
+// every other page using that import also reads. Same "named const, not a
+// literal `false` at the use site" reasoning as `SHOW_CHANNEL_TOGGLE_GROUP`
+// just above (avoids `no-constant-binary-expression`).
+const SHOW_ADD_CHANNEL_HEADER_BUTTONS = false;
+
 const SHARED_PANEL_DEFAULT_WIDTH = 360;
 
 // The true, VISUAL minimum content width the interaction record's own main
@@ -541,11 +565,20 @@ interface InteractionNavCardProps extends InteractionNavItemProps {
    *  `CollapsedChannelBadge` so the collapsed badge escalates in lockstep
    *  with the rest of the card. */
   badgeSeverity?: "success" | "warning" | "critical";
+  /** Per explicit request ("in the interactionNavItem when a call is put
+   *  on hold and the panel is collapsed make the channel badge a pause
+   *  icon and change the color to warning") — true when this card's live
+   *  voice thread is currently held (`c.heldByAgent`, same field the
+   *  expanded card's own on-hold timer reads — see that render site's own
+   *  doc comment). Passed straight through to `CollapsedChannelBadge`'s own
+   *  `onHold` prop. */
+  cardOnHold?: boolean;
 }
 function InteractionNavCard({
   currentChannelType,
   showChannelBadge,
   badgeSeverity,
+  cardOnHold,
   expanded,
   ...itemProps
 }: InteractionNavCardProps) {
@@ -553,7 +586,7 @@ function InteractionNavCard({
     <div className="relative">
       <InteractionNavItem expanded={expanded} {...itemProps} />
       {currentChannelType && showChannelBadge && (
-        <CollapsedChannelBadge type={currentChannelType} severity={badgeSeverity} />
+        <CollapsedChannelBadge type={currentChannelType} severity={badgeSeverity} onHold={cardOnHold} />
       )}
     </div>
   ) : (
@@ -1197,14 +1230,15 @@ export function AgentWorkspaceAdvancedPage({
    */
   sidePanelToggleLabel?: string;
 }) {
-  // Open by default on load — per explicit request ("when phase 1b advanced
-  // starts - default the assignment panel to open"), matching
-  // `AgentNextGenPage.tsx`'s own Phase 1 default. Was `false` (collapsed):
-  // not gated on `initialInteraction` either way — the rail's initial state
-  // is the same regardless of whether the agent is seeded mid-call.
-  // `handleResize`'s narrow-viewport auto-collapse (a few lines down) still
-  // applies after that first paint.
-  const [navOpen, setNavOpen] = useState(true);
+  // Closed by default on load again — per a LATER explicit request
+  // ("default the assignment panel closed when the app launches"),
+  // reverting the earlier "when phase 1b advanced starts - default the
+  // assignment panel to open" request above. Not gated on
+  // `initialInteraction` either way — the rail's initial state is the same
+  // regardless of whether the agent is seeded mid-call. `handleResize`'s
+  // narrow-viewport auto-collapse (a few lines down) still applies after
+  // that first paint.
+  const [navOpen, setNavOpen] = useState(false);
   // No interactions exist until the agent launches one from the CreateNew
   // menu (Start Interaction / quick dial) — see handleStartCall/handleQuick
   // Dial below. Click any resulting InteractionNavItem card to make it the
@@ -1531,10 +1565,27 @@ export function AgentWorkspaceAdvancedPage({
   // rather than left unused. `InteractionTranscript`'s own session-row
   // status popover (`statusMenuOpenId`/`statusMenuView`) is the only copy
   // of this left.
-  const contactHistoryByRange = useMemo(
-    () => buildContactHistoryByRange(dismissedContactHistory),
-    [dismissedContactHistory]
-  );
+  // Per explicit request ("hide all non-voice contacts from the contact
+  // history - this will only have inbound/outbound voice capabilities"):
+  // filters EVERY range `buildContactHistoryByRange` returns down to
+  // `channelType === "voice"` — that builder also mixes in the shared
+  // static mock fixtures (`CONTACT_HISTORY`/`EXTENDED_CONTACT_HISTORY`/
+  // `CONTACT_HISTORY_STRESS_BATCH`, agent-next-gen-contact-history.tsx) for
+  // the "Last 48/72 Hours" ranges, not just this file's own
+  // `dismissedContactHistory`, so filtering `dismissedContactHistory`
+  // itself before calling in wouldn't have caught those. Filtered here,
+  // at this one Phase 1 call site, rather than inside the shared builder
+  // itself — that function (and its mock fixtures) is reused elsewhere
+  // (Agent Workspace 2.0/Phase 2), neither of which this voice-only
+  // request applies to.
+  const contactHistoryByRange = useMemo(() => {
+    const byRange = buildContactHistoryByRange(dismissedContactHistory);
+    return {
+      today: byRange.today.filter((entry) => entry.channelType === "voice"),
+      last48h: byRange.last48h.filter((entry) => entry.channelType === "voice"),
+      last72h: byRange.last72h.filter((entry) => entry.channelType === "voice"),
+    };
+  }, [dismissedContactHistory]);
   // Drives `AssignmentsSortButton`'s `RadioGroup` — "Last Updated" (default,
   // matching a typical inbox's own default order) or "Create Date". Actual
   // ordering happens where the cards render (`sortAssignments`), leaving
@@ -1597,6 +1648,27 @@ export function AgentWorkspaceAdvancedPage({
   const [activeInteractionId, setActiveInteractionId] = useState<string | null>(
     () => initialInteraction?.id ?? null
   );
+  /** Per explicit request ("add the new badge to any unread assignments
+   *  (assignments that haven't been clicked on yet)") — every interaction
+   *  id that has ever BECOME the active one, by any path (a LeftNav card
+   *  click, the Marcus Webb toast's "Review"/"Takeover", a freshly-started
+   *  outbound call landing on itself, etc.), not just a literal card
+   *  click; see the effect right below for why tracking "became active"
+   *  covers every one of those paths in one place instead of hunting down
+   *  each `setActiveInteractionId` call site individually. Seeded with
+   *  `initialInteraction`'s own id (when present) so a session that starts
+   *  already mid-call never flashes its own starting card as "new" for a
+   *  render before that effect's first run. `isNewAssignment` (below, at
+   *  the card render site) is simply "not in this set yet". */
+  const [clickedInteractionIds, setClickedInteractionIds] = useState<Set<string>>(
+    () => new Set(initialInteraction ? [initialInteraction.id] : [])
+  );
+  useEffect(() => {
+    if (!activeInteractionId) return;
+    setClickedInteractionIds((prev) =>
+      prev.has(activeInteractionId) ? prev : new Set(prev).add(activeInteractionId)
+    );
+  }, [activeInteractionId]);
   // Customers table's "+ Filter" state, lifted up here (not local to
   // `CustomersListView`) — that component sits inside the Desk dashboard's
   // own branch of the `showSettings ? ... : activeInteraction ? ... : (
@@ -1751,6 +1823,23 @@ export function AgentWorkspaceAdvancedPage({
     setCustomerMatchStep("search");
     setCustomerMatchQuery("");
   }, [activeInteraction?.id]);
+  /** Per explicit request ("contact details panel for unmatched customers
+   *  should match the hover popover. add a button above auto summary that
+   *  says link to existing customer and then when that is clicked slide in
+   *  a panel with the search customer / create new customer panel
+   *  content") — the docked Customer Information panel now shows the same
+   *  `DetailsPanelAccordions` content the hover popover always shows
+   *  (`bodyOverride`, unconditionally) instead of jumping straight to the
+   *  `matchState` search/create flow for an unmatched customer; this flag
+   *  is what that flow now gates on instead (see the docked panel's own
+   *  `matchState`/`onLinkCustomer` render-site doc comments further down).
+   *  Reset alongside `customerMatchStep`/`customerMatchQuery` above, same
+   *  "genuinely different card, or this same card's own flow just
+   *  resolved" reasoning as that effect's own doc comment. */
+  const [linkCustomerPanelOpen, setLinkCustomerPanelOpen] = useState(false);
+  useEffect(() => {
+    setLinkCustomerPanelOpen(false);
+  }, [activeInteraction?.id]);
 
   /* A past session's conversation opened as a TAB in the interaction space
      (record header), via the Customer Information panel's Overview "Open
@@ -1853,6 +1942,21 @@ export function AgentWorkspaceAdvancedPage({
   // handling.
   const liveVoiceCallInteraction = interactions.find((i) => !!findLiveVoiceThread(i)) ?? null;
   const liveVoiceCallThread = liveVoiceCallInteraction ? findLiveVoiceThread(liveVoiceCallInteraction) : undefined;
+  /** Same "real, matched customer vs. a raw unidentified address" gate
+   *  `activeInteractionIsRealCustomer` (above) already establishes, scoped
+   *  to `liveVoiceCallInteraction` instead of `activeInteraction` since a
+   *  live call and the page's currently-viewed interaction can be two
+   *  different interactions (see this call's own `VoiceCallControls` doc
+   *  comment below). Feeds `customerInitials` there — per explicit request
+   *  ("avatars within the contact and call details should be the initials
+   *  of the customer OR a customer avatar if no customer name is known"),
+   *  the same `hasCustomerName ? initials : <User />` split
+   *  `interaction-nav-item.tsx`'s own collapsed-tile avatar already uses. */
+  const liveVoiceCallInteractionIsRealCustomer = liveVoiceCallInteraction
+    ? CREATE_NEW_CUSTOMERS.some((c) => c.id === liveVoiceCallInteraction.id) ||
+      createdCustomerRecords.some((c) => c.id === liveVoiceCallInteraction.id) ||
+      liveVoiceCallInteraction.id.startsWith("history:")
+    : false;
   // Whether the call-controls bar below is showing for whichever
   // interaction is ALSO the one currently on screen — `onToggleTranscript`/
   // `onToggleVideo` below only make sense against that one interaction's
@@ -2215,6 +2319,41 @@ export function AgentWorkspaceAdvancedPage({
   // started" elapsed display — independent of `elapsedSeconds` below, which
   // is the agent's own status timer and resets on status change.
   const [clockTick, setClockTick] = useState(0);
+  // Per explicit request ("replace the autosummary card in the contact
+  // details with the content depicted in the screenshot of the real time
+  // summary card") — the "Real-Time Summary" container's own "Updated X
+  // ago" caption (`DetailsPanelAccordions`'/`CustomerContextOverview`'s
+  // own `realTimeSummaryUpdatedLabel` prop) needs a reference point to
+  // measure elapsed time FROM. Captured once per contact (reset whenever
+  // `activeInteractionId` changes, in the effect right below) rather than
+  // tracking every individual fact change that actually feeds the summary
+  // — this is a "freshness since you opened this contact's Details" clock,
+  // the same practical signal the reference screenshot's own ticking
+  // seconds counter conveys, not a literal per-field last-write timestamp
+  // (this app has no such timestamp to read for any of `snapshot`'s
+  // underlying facts). `clockTick` itself (just above) is what actually
+  // ticks every real second; this only stores WHICH tick to measure from.
+  const [realTimeSummaryUpdatedAtTick, setRealTimeSummaryUpdatedAtTick] = useState(0);
+  useEffect(() => {
+    setRealTimeSummaryUpdatedAtTick(clockTick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeInteractionId]);
+  // `"Updated 8 seconds ago"`/`"Updated 3 minutes ago"`-style caption,
+  // recomputed every tick from `realTimeSummaryUpdatedAtTick` above —
+  // deliberately plain seconds/minutes/hours (no relative-time library
+  // pulled in for one caption), same "hand-roll the handful of buckets
+  // actually needed" precedent `agent-next-gen-interactions-table.tsx`'s
+  // own `formatMinutesAgo`-style helper already set for this exact "m
+  // ago"/"h ago" shape elsewhere in this app — this one additionally
+  // covers whole seconds, which none of those needed.
+  const realTimeSummaryUpdatedLabel = useMemo(() => {
+    const elapsed = Math.max(0, clockTick - realTimeSummaryUpdatedAtTick);
+    if (elapsed < 60) return `Updated ${elapsed} second${elapsed === 1 ? "" : "s"} ago`;
+    const minutes = Math.floor(elapsed / 60);
+    if (minutes < 60) return `Updated ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+    const hours = Math.floor(minutes / 60);
+    return `Updated ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  }, [clockTick, realTimeSummaryUpdatedAtTick]);
   // Whether ANY assignment in the whole Personal Queue has a channel that's
   // actually breached SLA (red/"critical", not just "warning") — drives the
   // home header's "Personal Queue" chip color per explicit request ("make
@@ -2422,6 +2561,23 @@ export function AgentWorkspaceAdvancedPage({
   // toggling does that).
   const marcusWebbPendingInteractionRef = useRef<Interaction | null>(null);
   const [marcusWebbNoticeOpen, setMarcusWebbNoticeOpen] = useState(false);
+  // Per explicit request ("on new contact toasts, if the agent goes to the
+  // assignment in the left nav, close the toast automatically"): the toast
+  // (`MarcusWebbIncomingCallNotice`, its own render site far below) used to
+  // only close via its own "Close"/"Review"/"Takeover" buttons — an agent
+  // who instead just clicked Marcus's tile directly in the LeftNav (it's
+  // already visible there the instant the toast opens, per
+  // `commitMarcusWebbInteraction`'s own doc comment) landed on his
+  // interaction with the toast still sitting open on top of it, since
+  // nothing about `switchActiveInteraction`/clicking a tile ever touched
+  // `marcusWebbNoticeOpen`. This effect closes it the moment Marcus
+  // actually becomes the active interaction by ANY path — the LeftNav
+  // tile click included — not just the toast's own two buttons, which
+  // still work exactly as before (they set this directly, so this effect
+  // is a harmless no-op right behind them in that case).
+  useEffect(() => {
+    if (activeInteractionId === MARCUS_WEBB_ID) setMarcusWebbNoticeOpen(false);
+  }, [activeInteractionId]);
   // Per explicit follow-up request ("when the agent clicks review from the
   // toast display an action bar component in place of the call controls"):
   // this is the split the toast's own `onReview`/`onTakeover` doc comment
@@ -2436,6 +2592,29 @@ export function AgentWorkspaceAdvancedPage({
   // pair one level down the flow). Reset to `false` on hang-up too (see
   // `onHangUp` below) so a call that's ended never leaves this stuck `true`.
   const [marcusWebbReviewing, setMarcusWebbReviewing] = useState(false);
+  // Whether the agent themself is genuinely "on a call" right now, for the
+  // purposes of the "we cannot have 2+ calls at once" restrictions below
+  // (disabling "New Outbound" and Contact History's "Redial" button) — per
+  // explicit follow-up bug report ("marcus webb new outbound shouldn't be
+  // disabled until takeover is clicked since the agent is not on the call
+  // yet. Same with the redial from the contact history - only disable when
+  // the agent is on an active call"): `liveVoiceCallInteraction` alone
+  // (a live voice THREAD exists somewhere) isn't the right signal for
+  // this — Marcus's own scripted call is already "live" the moment it's
+  // triggered, well before the agent ever picks up (the AI agent handles
+  // it solo, then the agent can just "Review" without taking over at all),
+  // so gating on `liveVoiceCallInteraction` alone incorrectly treated the
+  // agent as mid-call the instant Marcus was triggered. Reuses the exact
+  // same "is this actually a call the agent is on" exclusion the live-call
+  // controls bar itself already applies (`!(marcusWebbReviewing &&
+  // liveVoiceCallInteraction.id === MARCUS_WEBB_ID)`, see that render
+  // site's own doc comment below) — Marcus's call only counts once the
+  // agent has actually clicked "Takeover" (`marcusWebbReviewing` flips to
+  // `false`), matching the same moment the call-controls bar itself
+  // switches from the "Reviewing this conversation" `ActionBar` over to
+  // real `VoiceCallControls`.
+  const agentOnActiveVoiceCall =
+    !!liveVoiceCallInteraction && !(marcusWebbReviewing && liveVoiceCallInteraction.id === MARCUS_WEBB_ID);
   // Whether the Reject flow's customer-provided photo (rendered inline in
   // `MarcusWebbNextBestActionCard`, never in the transcript — see that
   // file's own top doc comment) is taking over the MAIN interaction
@@ -2729,6 +2908,36 @@ export function AgentWorkspaceAdvancedPage({
   useEffect(() => {
     if (selectedDetailPanelContent) setLastDetailPanelContent(selectedDetailPanelContent);
   }, [selectedDetailPanelContent]);
+  // Per explicit request ("when a new interaction is added, instead of
+  // changing the main content ... add an icon representing the channel
+  // ... and open a side panel (like contact details) with the channel
+  // content"), refined by a later explicit follow-up ("put the content of
+  // the channels IN the side panel (where the contact details content is
+  // now)" / "so a chat opens in that side panel"): which non-active
+  // Thread (by its own `id ?? type` key, same scheme every other
+  // per-channel lookup in this file uses) is currently taking over the
+  // docked Contact Details panel's own content — `null` when nothing's
+  // being previewed, in which case that panel (if open) shows its normal
+  // Overview/Session tabs as usual. Set on add (`handleAddAdHocChannel`/
+  // `handleStartCall`, above) for anything but voice, and toggled by the
+  // header icon row (own render site) the rest of the time.
+  const [channelPreviewThreadKey, setChannelPreviewThreadKey] = useState<string | null>(null);
+  // Looked up once here (rather than inline at the
+  // `CustomerInformationSidePanel` render call site) since it now feeds
+  // several of that single docked panel's own override props — see each
+  // prop's own doc comment at that render site for how each one branches
+  // on it. Looks the key back up fresh every render (rather than storing
+  // the whole `Thread` in state) so its content — `liveMessages`,
+  // `awaitingResponse`, etc. — always reflects the live `interactions`
+  // array, same reasoning `activeChannel`'s own derivation (above)
+  // already follows.
+  const channelPreviewThread = activeInteraction?.threads.find(
+    (c) => (c.id ?? c.type) === channelPreviewThreadKey
+  );
+  const channelPreviewThreadStableKey = channelPreviewThread
+    ? channelPreviewThread.id ?? channelPreviewThread.type
+    : null;
+  const channelPreviewMeta = channelPreviewThread ? CHANNEL_TYPE_META[channelPreviewThread.type] : undefined;
   // Toggle-open: clicking whatever's ALREADY showing closes the panel
   // (same semantics `selectedActionLogEntryId`'s own doc comment already
   // established); clicking something else just swaps this one panel's
@@ -3134,8 +3343,15 @@ export function AgentWorkspaceAdvancedPage({
      (matches the reference screenshot's own Inbound Voice row: 0 contacts,
      00:00:00 wait) rather than ticking up forever regardless of whether
      anyone's still waiting. */
+  // Per explicit request ("remove the digital and work item cards in the
+  // queue row") — the "Digital" and "Work Item" queue widgets are dropped
+  // from this tier's home tab. Filtered by name rather than by
+  // `LATEST_CONTACTS_STATIC`'s own `id`s, which stay meaningful (matching
+  // `queueSubItems`/`AGENTS_COUNT_BY_QUEUE`/`QUEUE_WAIT_BASE_SECONDS`, all
+  // still keyed by the full original id set) — only the rendered widget
+  // row itself shrinks.
   const latestContacts = useMemo<LatestContact[]>(() => {
-    return LATEST_CONTACTS_STATIC.map((base) => {
+    return LATEST_CONTACTS_STATIC.filter((base) => base.name !== "Digital" && base.name !== "Work Item").map((base) => {
       const contactsCount = sumInQueue(queueSubItems[base.id]);
       return {
         ...base,
@@ -3188,6 +3404,16 @@ export function AgentWorkspaceAdvancedPage({
   // .tsx`'s still-live `CustomerInfoHoverPreview` call site uses.
   const [customerInfoPreviewOpen, setCustomerInfoPreviewOpen] = useState(false);
   const customerInfoPreviewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Per explicit follow-up request ("on hover for the voice, chat, sms,
+  // email channel icons in the top right, display the content of the
+  // panel like you do for contact details"): the SAME hover-preview
+  // pattern as `customerInfoPreviewOpen` just above, generalized to a key
+  // (rather than a bool) since it's shared across every channel icon in
+  // the row (own render site further down) — only one can be
+  // hover-previewed at a time, so a single slot is enough. `null` means
+  // no channel is currently being hover-previewed.
+  const [channelHoverPreviewKey, setChannelHoverPreviewKey] = useState<string | null>(null);
+  const channelHoverPreviewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Backstop for `customerInfoPreviewOpen` — per explicit bug report ("when
   // the session details panel is closed the hover panel is displayed even
   // if I don't hover on the panel icon... doesn't go away until I hover
@@ -3214,6 +3440,15 @@ export function AgentWorkspaceAdvancedPage({
   useEffect(() => {
     setCustomerInfoPreviewOpen(false);
   }, [activeInteractionId, sidePanelOpen]);
+  // Same backstop as `customerInfoPreviewOpen`'s own, just above, for the
+  // channel icons' hover preview — also cleared whenever a channel
+  // preview actually opens (clicking an icon, or the "Contact Details"
+  // button switching away from one), so a lingering hover-preview never
+  // shows stale on top of the real panel now genuinely showing that
+  // content.
+  useEffect(() => {
+    setChannelHoverPreviewKey(null);
+  }, [activeInteractionId, sidePanelOpen, channelPreviewThreadKey]);
   // Drives `CustomerInformationSidePanel`'s own `focusTabOverride` prop —
   // see that prop's doc comment (agent-next-gen-customer-info-panel.tsx).
   // Fed by the Contact Overview's own "View customer info" link
@@ -3245,6 +3480,24 @@ export function AgentWorkspaceAdvancedPage({
     customerPanelFocusTabVersionRef.current += 1;
     setCustomerPanelFocusTab({ tab, version: customerPanelFocusTabVersionRef.current });
     setCustomerInfoOverlayOpen(true);
+    // Per explicit request ("if an interior panel is opened from a hover
+    // popover, close the hover when the panel opens so they don't
+    // overlap") — this handler's own doc comment above already notes
+    // "View customer info" can be clicked from inside the "Contact
+    // Details" hover preview's own body (`customerInfoPreviewOpen`,
+    // `openCustomerInfoPreview`'s own doc comment). That popover doesn't
+    // auto-close on click — only on mouse-leave — so without this, the
+    // freshly-opened `customerInfoOverlayOpen` InteriorPanel could render
+    // right on top of (or behind) the still-open hover popover for as
+    // long as the pointer stays over either one. `clearTimeout` guards
+    // against a close already scheduled by a mouse-leave racing this same
+    // click (harmless either way, since both just want it closed, but
+    // avoids a redundant pending timer). Immediate, not the same 150ms
+    // debounce `scheduleCloseCustomerInfoPreview` uses elsewhere — a
+    // panel opening is a definite, deliberate close, not a "might the
+    // pointer come back" hover case.
+    clearTimeout(customerInfoPreviewTimer.current);
+    setCustomerInfoPreviewOpen(false);
   };
   // No setter — always pinned. `onPinToggle` is deliberately left unset on
   // the real `SidePanel` below (see its own doc comment), so there's no
@@ -3393,6 +3646,13 @@ export function AgentWorkspaceAdvancedPage({
   const handleSidePanelClose = () => {
     setSidePanelOpen(false);
     setSidePanelFullScreen(false);
+    // Per explicit follow-up request ("put the content of the channels IN
+    // the side panel"): a channel preview now lives INSIDE this same
+    // panel (see `channelPreviewThreadKey`'s own doc comment), so closing
+    // the panel itself must clear it too — otherwise the next open would
+    // silently land back on whatever channel was showing instead of the
+    // normal Overview tab.
+    setChannelPreviewThreadKey(null);
     // Per later explicit request ("put the transcript and session tabs
     // into the new customer information side panel"): a closed-then-
     // reopened panel always lands back on "Details" (the accordions),
@@ -3401,15 +3661,26 @@ export function AgentWorkspaceAdvancedPage({
     setCustomerPanelActiveTab("Details");
   };
 
-  /* Per-assignment memory for the Customer Information panel's open/closed
-     and full-screen state — per explicit request: switching between two
-     already-active assignments (e.g. clicking a different LeftNav
-     assignment card) must not let one assignment's full-screen/closed
-     choice leak onto another. Closing the panel on assignment A and
-     leaving it full-screen on assignment B, then switching back to A,
-     should show A closed again — not full-screen just because that's
-     wherever the shared `sidePanelOpen`/`sidePanelFullScreen` state
-     happened to land last.
+  /* Per-assignment memory for the Customer Information panel's full-screen
+     state only — per explicit request: switching between two already-
+     active assignments (e.g. clicking a different LeftNav assignment card)
+     must not let one assignment's full-screen choice leak onto another.
+     Leaving the panel full-screen on assignment B, then switching to A,
+     should show A's panel at its normal (non-full-screen) width — not
+     full-screen just because that's wherever the shared
+     `sidePanelFullScreen` state happened to land last.
+
+     `sidePanelOpen` itself is deliberately NOT remembered per-assignment
+     anymore — per later explicit bug report ("when I launch marcus webb
+     then launch another interaction, when I go back to marcus and the
+     other interaction the voice transcript side panel is open - it should
+     not be"): every switch now closes the panel unconditionally (see the
+     plain `setSidePanelOpen(false)` below, no `saved.open` branch), same
+     as a genuinely first-ever open already did. An assignment whose panel
+     the agent had open (say, the live call's own "Transcript" toggle) goes
+     back to closed the moment they navigate away — reopening it again is
+     always a fresh, deliberate action on return, never something this
+     page silently restores on their behalf.
 
      Deliberately a small helper called from every place `activeInteractionId`
      changes, rather than a `useEffect` keyed on it (the "effect instead of
@@ -3435,14 +3706,9 @@ export function AgentWorkspaceAdvancedPage({
 
      A never-before-seen assignment id (no snapshot yet) always gets
      `fullScreen: false` — a fresh assignment should never silently inherit
-     full-screen from whatever was active before — but `sidePanelOpen` is
-     deliberately left untouched here: each "new interaction" call site
-     below already decides that correctly (hardcoded `setSidePanelOpen(false)`
-     — see that doc comment above) right after calling this, and re-deciding
-     it here too would just be a second, competing source of truth for the
-     same value.
+     full-screen from whatever was active before.
 
-     Restoring a different assignment's own open/full-screen values here
+     Restoring a different assignment's own full-screen value here
      used to still visibly play `SidePanel`'s own width/opacity transitions
      (side-panel.tsx — `transition: "width 250ms cubic-bezier(...)"` on
      open/close, `"opacity 150ms ease 30ms"` on its inner content) exactly
@@ -3466,9 +3732,10 @@ export function AgentWorkspaceAdvancedPage({
      content column already uses for its own fade-in — see that div's own
      doc comment further down for why this solves BOTH problems at once
      without any transition-suppression trickery. This helper's own job
-     stays exactly what it says above: decide WHAT `sidePanelOpen`/
-     `sidePanelFullScreen` should be for the incoming assignment, not HOW
-     that change gets animated. */
+     stays exactly what it says above: decide WHAT `sidePanelFullScreen`
+     should be for the incoming assignment (`sidePanelOpen` is now always
+     just closed — see this helper's own top doc comment), not HOW that
+     change gets animated. */
   const sidePanelStateByAssignmentId = useRef(new Map<string, { open: boolean; fullScreen: boolean }>());
   const switchActiveInteraction = (nextId: string | null) => {
     const outgoingId = activeInteractionId;
@@ -3482,12 +3749,16 @@ export function AgentWorkspaceAdvancedPage({
     setActiveInteractionId(nextId);
     if (nextId && nextId !== outgoingId) {
       const saved = sidePanelStateByAssignmentId.current.get(nextId);
-      if (saved) {
-        setSidePanelOpen(saved.open);
-        setSidePanelFullScreen(saved.fullScreen);
-      } else {
-        setSidePanelFullScreen(false);
-      }
+      // Per explicit bug report ("when I go back to marcus and the other
+      // interaction the voice transcript side panel is open - it should
+      // not be"): `sidePanelOpen` is always force-closed on every switch
+      // now, whether or not a saved entry exists — only `sidePanelFullScreen`
+      // still reads from `saved` (see this helper's own top doc comment for
+      // the full "why"). Every "new interaction" launch path's own
+      // hardcoded `setSidePanelOpen(false)` right after calling this is
+      // now redundant with this line, but harmless alongside it.
+      setSidePanelOpen(false);
+      setSidePanelFullScreen(saved ? saved.fullScreen : false);
     }
   };
 
@@ -3500,7 +3771,21 @@ export function AgentWorkspaceAdvancedPage({
   // `actions` block's own doc comment for the full history/reasoning).
   // This function's click half has stayed the same throughout every move.
   const handleSidePanelIconToggle = () => {
-    setSidePanelOpen((v) => !v);
+    // Per explicit follow-up request ("toggle between the channels and
+    // contact details when they are clicked - don't allow multiple to be
+    // active at the same time"): while a channel preview is showing, this
+    // button always SWITCHES to actual Contact Details (open, channel
+    // cleared) rather than toggling `sidePanelOpen` — which may already
+    // be `true` underneath an active channel preview, so a plain toggle
+    // would close the whole panel instead of just switching its content.
+    // Only when NO channel preview is active does this fall back to the
+    // original open/closed toggle.
+    if (channelPreviewThreadKey) {
+      setSidePanelOpen(true);
+    } else {
+      setSidePanelOpen((v) => !v);
+    }
+    setChannelPreviewThreadKey(null);
     // Clicking this button always OPENS the real panel from here (it only
     // renders while closed — see the render site's own comment), which
     // unmounts the hover-preview `Popover` right along with it. Explicitly
@@ -3512,6 +3797,25 @@ export function AgentWorkspaceAdvancedPage({
     clearTimeout(customerInfoPreviewTimer.current);
     setCustomerInfoPreviewOpen(false);
   };
+  // Per explicit request ("the link to existing customer button should
+  // also appear in the popover of the contact details - you should use
+  // the same content for both the popover and the panel") — the hover
+  // popover's own "Link to existing customer" button (same
+  // `DetailsPanelAccordions`/`onLinkCustomer` the docked panel already
+  // uses, per that prop's own doc comment) can't open the on-demand
+  // search/create overlay INSIDE itself the way the docked panel does —
+  // it's a transient hover preview, not the real panel — so this instead
+  // does what `handleSidePanelIconToggle` does to force the real panel
+  // open (minus its toggle branch: always open here, never close) and
+  // then arms `linkCustomerPanelOpen` the same way the docked panel's own
+  // button does, so the agent lands on the real, docked overlay.
+  const handleLinkCustomerFromPreview = () => {
+    setSidePanelOpen(true);
+    setChannelPreviewThreadKey(null);
+    clearTimeout(customerInfoPreviewTimer.current);
+    setCustomerInfoPreviewOpen(false);
+    setLinkCustomerPanelOpen(true);
+  };
   // Opens the restored hover-preview (`customerInfoPreviewOpen`, see that
   // state's own doc comment) — mirrors `AgentNextGenPage.tsx`'s own
   // still-live `openCustomerInfoPreview` exactly, including the same guard:
@@ -3521,7 +3825,16 @@ export function AgentWorkspaceAdvancedPage({
   // `!detailsPanelOpen` gate, so this is mostly a belt-and-suspenders
   // check).
   const openCustomerInfoPreview = () => {
-    if (sidePanelOpen) return;
+    // Per explicit follow-up request ("if a panel is open the inactive
+    // channel icon and contact details should retain their hover actions
+    // so agents can preview other channels while on a current channel"):
+    // only suppressed when Contact Details itself is what's already
+    // showing in the docked panel (`sidePanelOpen && !channelPreviewThreadKey`)
+    // - nothing to peek at there that isn't already fully visible. While a
+    // CHANNEL's preview is open instead (`channelPreviewThreadKey` set),
+    // Contact Details is not the visible content, so hovering it should
+    // still offer its own peek.
+    if (sidePanelOpen && !channelPreviewThreadKey) return;
     clearTimeout(customerInfoPreviewTimer.current);
     setCustomerInfoPreviewOpen(true);
   };
@@ -3537,6 +3850,37 @@ export function AgentWorkspaceAdvancedPage({
     if (related?.closest?.("[data-radix-popper-content-wrapper]")) return;
     clearTimeout(customerInfoPreviewTimer.current);
     customerInfoPreviewTimer.current = setTimeout(() => setCustomerInfoPreviewOpen(false), 150);
+  };
+  // Same pair, generalized to a key, for the channel icons' own hover
+  // preview (own render site further down) — see
+  // `channelHoverPreviewKey`'s own doc comment above for the full "why".
+  // Same guard as `openCustomerInfoPreview`: never preview while the real
+  // panel is already open, whether showing Contact Details or another
+  // channel's own preview — nothing to peek at that isn't already fully
+  // visible.
+  const openChannelHoverPreview = (key: string) => {
+    // Suppressed in two cases now: (1) the ONE icon whose own content is
+    // already the docked panel's visible content right now (unchanged from
+    // before); and (2) per explicit follow-up request ("the chat should
+    // only be displaying in the chat panel - not the main content area
+    // anymore"), the channel that's already THIS interaction's main
+    // content (`activeChannelKey`/`currentThreadId`) - hovering that one's
+    // own icon would otherwise pop open a floating preview showing the
+    // exact same transcript that's already sitting right behind it in the
+    // main column, which is pure visual duplication, not an actual peek at
+    // something new. Every other icon (and Contact Details, guarded
+    // separately by `openCustomerInfoPreview`) still offers its own hover
+    // peek regardless of whether some other channel or Contact Details
+    // happens to be open already.
+    if (channelPreviewThreadKey === key || key === activeChannelKey) return;
+    clearTimeout(channelHoverPreviewTimer.current);
+    setChannelHoverPreviewKey(key);
+  };
+  const scheduleCloseChannelHoverPreview = (e?: React.MouseEvent<Element> | React.FocusEvent<Element>) => {
+    const related = e?.relatedTarget as Element | null | undefined;
+    if (related?.closest?.("[data-radix-popper-content-wrapper]")) return;
+    clearTimeout(channelHoverPreviewTimer.current);
+    channelHoverPreviewTimer.current = setTimeout(() => setChannelHoverPreviewKey(null), 150);
   };
 
   // Track window width — still drives `isCompactHeader` below.
@@ -3819,14 +4163,24 @@ export function AgentWorkspaceAdvancedPage({
         const threads = chIdx === -1
           ? [...interaction.threads, newChannel]
           : interaction.threads.map((c, j) => (j === chIdx ? newChannel : c));
-        // The channel just started/restarted always takes over as current —
-        // mirrors InteractionNavItem's own auto-select-newest rule, now
-        // mirrored up here too since this state is what drives both the
-        // card (via currentChannelKey) and the new ChannelToggle bar.
+        // Per explicit request ("if a new channel is opened it should
+        // open in the side panel not switch to the new channel - the main
+        // content area should always stay the same"), later generalized
+        // by an explicit follow-up ("when a new channel is open, do not
+        // change the main content ... keep it the same no matter what
+        // channel is selected" — voice included): adding/restarting ANY
+        // channel here — voice included — never takes over the
+        // interaction's current/main-content thread; `currentThreadId`
+        // stays exactly what it already was. Mirrors the identical
+        // gating already applied to `handleAddAdHocChannel`'s own
+        // `currentThreadId` assignment. The new/restarted channel is
+        // instead surfaced via the docked channel-preview panel
+        // (`channelPreviewThreadKey`, set just below, after
+        // `setInteractions`).
         return {
           ...interaction,
           threads,
-          currentThreadId: newChannel.id,
+          currentThreadId: interaction.currentThreadId,
           // Only matters when `chIdx !== -1` (same-address restart, reused
           // `newChannel.id`) — clears that one channel's possibly-stale
           // "Closed" entry so a redialed/reopened channel reads as freshly
@@ -3860,6 +4214,18 @@ export function AgentWorkspaceAdvancedPage({
         };
       });
     });
+    // Mirrors `handleAddAdHocChannel`'s own post-`setInteractions` call:
+    // ANY channel — voice included, per the explicit follow-up request
+    // above — just started/restarted on an ALREADY-open interaction opens
+    // in the docked channel-preview panel instead of stealing main-content
+    // focus (see the `currentThreadId` gating just above). Gated on
+    // `!isNewInteraction` — a genuinely brand-new card (no existing
+    // interaction to preserve) already shows this channel as its main
+    // content via the `idx === -1` branch above, so there's nothing for
+    // the preview panel to add there.
+    if (!isNewInteraction) {
+      setChannelPreviewThreadKey(newChannel.id);
+    }
     switchActiveInteraction(selection.contact.id);
     // Only a genuinely NEW interaction touches Customer Information's
     // open/closed state at all — starting a second interaction with a
@@ -4221,6 +4587,18 @@ export function AgentWorkspaceAdvancedPage({
     });
     switchActiveInteraction(id);
     if (isNewInteraction) setSidePanelOpen(false);
+    // Per explicit request ("after a contact is redialed from the contact
+    // history panel, close the panel in the home page so when the agent
+    // goes back it is not open") — clears the shared interior panel's own
+    // `selectedContactHistoryEntry` slot, the same state that keeps this
+    // panel `open` (see that render site's own doc comment further down).
+    // Left set, the Home tab would still show this entry's summary/footer
+    // open the moment the agent navigated back there post-redial, even
+    // though the interaction itself has already moved to the active
+    // transcript. Unconditional (not gated on `isNewInteraction` like
+    // `setSidePanelOpen` above) — a redial to an already-open interaction
+    // still came from this panel and should still close it.
+    setSelectedContactHistoryEntry(null);
   };
 
   // Redial button's own onClick (Contact History summary panel's footer,
@@ -4326,7 +4704,21 @@ export function AgentWorkspaceAdvancedPage({
         return {
           ...interaction,
           threads,
-          currentThreadId: newChannel.id,
+          // Per explicit request ("when a new interaction is added,
+          // instead of changing the main content ... add an icon ... and
+          // open a side panel"), later generalized by an explicit
+          // follow-up ("do not change the main content ... no matter what
+          // channel is selected" — voice included): adding a channel here
+          // never switches the main content over to it, whatever its
+          // type — `currentThreadId` stays exactly what it was, so
+          // whatever's currently showing in the main column (a live call,
+          // another channel) stays put. The new channel is instead
+          // surfaced via `channelPreviewThreadKey` (its own state's doc
+          // comment, and the header icon/panel render sites further down)
+          // — same "won't steal focus" reasoning `ChannelToggleGroup`
+          // being hidden already forced for every OTHER way to reach a
+          // non-active thread.
+          currentThreadId: interaction.currentThreadId,
           threadStatuses: withoutChannelStatus(interaction.threadStatuses, newChannel.id),
           // Same type-gated reset as `handleStartCall`'s own — see that
           // call site's doc comment — since this ad-hoc "+" flow can also
@@ -4336,6 +4728,10 @@ export function AgentWorkspaceAdvancedPage({
         };
       })
     );
+    // Auto-opens the new channel-preview panel for ANY channel type now
+    // — voice included, per the explicit follow-up request above (own
+    // render site/state doc comment further down).
+    setChannelPreviewThreadKey(newChannel.id);
   };
 
   /** Fired by the "Re-open" button on a Contact History entry's summary
@@ -4446,16 +4842,37 @@ export function AgentWorkspaceAdvancedPage({
         // messages, addresses, ids, statuses — is touched; this is purely
         // resetting the per-session SLA clock, not any real conversation
         // content.
+        // Per explicit bug report ("if I open a chat from contact history
+        // - it should display that chat in the side panel - currently it's
+        // launching a voice call"): `...storedRecord` above carries the
+        // record's OWN `currentThreadId` forward verbatim - whatever
+        // channel happened to be active the LAST time this case was
+        // dismissed, regardless of which Contact History row (which
+        // `entry.channelType`) the agent actually just clicked. For a case
+        // whose last session was voice, clicking a completely different
+        // CHAT row for that same case restored the old voice thread as
+        // "current" and showed a voice call in the main column instead of
+        // the chat the agent asked for. Forces `currentThreadId` onto a
+        // thread matching the clicked row's own channel type instead, so
+        // reopening always shows the channel the agent actually clicked -
+        // falls back to the stored record's own value only in the (rare)
+        // case that channel type genuinely isn't among its restored
+        // threads at all.
+        const restoredThreads = storedRecord.threads.map((t) => ({
+          ...t,
+          startTick: clockTick,
+          awaitingResponse: undefined,
+          lastCustomerMessageTick: undefined,
+        }));
+        const clickedChannelThread = restoredThreads.find((t) => t.type === entry.channelType);
         const restored: Interaction = {
           ...storedRecord,
           id,
           customerId: entry.caseId,
-          threads: storedRecord.threads.map((t) => ({
-            ...t,
-            startTick: clockTick,
-            awaitingResponse: undefined,
-            lastCustomerMessageTick: undefined,
-          })),
+          threads: restoredThreads,
+          currentThreadId: clickedChannelThread
+            ? (clickedChannelThread.id ?? clickedChannelThread.type)
+            : storedRecord.currentThreadId,
         };
         setInteractions((prev) => {
           const idx = prev.findIndex((i) => i.id === id);
@@ -4756,15 +5173,49 @@ export function AgentWorkspaceAdvancedPage({
     );
   };
 
-  /** Fired by a card row's `onCurrentChannelChange` or a `ChannelToggle`'s
-   *  `onClick` — both point at this same setter so either one updates the
-   *  other (see `Interaction.currentThreadId`'s own doc comment). */
+  /** Fired by a card row's `onCurrentChannelChange` or a (currently
+   *  hidden) `ChannelToggle`'s `onClick`. Per explicit follow-up request
+   *  ("toggle between channels [on the left-nav card] - it should stay the
+   *  same [main column]"), generalizing the same "no channel switch ever
+   *  changes main content" rule already applied to adding/restarting a
+   *  channel (`handleStartCall`/`handleAddAdHocChannel`) and to the header's
+   *  own channel-preview icons: this NO LONGER writes `currentThreadId` at
+   *  all. Selecting a channel on the ACTIVE card instead just opens/toggles
+   *  that channel's preview in the shared docked side panel, exactly like
+   *  clicking its header icon does (see `channelPreviewThreadKey`) - the
+   *  card's own `currentChannelKey` prop is driven by that same state for
+   *  the active card (see that render site's own doc comment) so its
+   *  highlighted channel still tracks what's showing. Selecting a channel
+   *  on a NON-active card switches to that interaction first (mirroring
+   *  `handleStartCall`'s own `switchActiveInteraction` call), then opens
+   *  that channel's preview the same way.
+   *
+   *  Per explicit follow-up bug report ("when I launch marcus webb then
+   *  launch another interaction, when I go back to marcus and the other
+   *  interaction the voice transcript side panel is open - it should not
+   *  be"): the actual repro was clicking a card's own channel ROW (this
+   *  handler, via `onCurrentChannelChange`) rather than the card header —
+   *  every card in this voice-only deployment has exactly one row, its
+   *  voice channel, so simply switching between cards by clicking their
+   *  channel rows was silently opening/toggling that channel's preview
+   *  every time, exactly like clicking any other channel row would. Voice
+   *  is now guarded out of the "open/toggle a preview" behavior entirely —
+   *  same "always active, never a side-panel toggle" rule the record
+   *  header's own voice icon button already follows (its own render site's
+   *  `isVoiceChannel` doc comment) — while still switching cards normally
+   *  for a click on a non-active card's voice row. */
   const handleChannelSelect = (interactionId: string, channelKey: string) => {
-    setInteractions((prev) =>
-      prev.map((interaction) =>
-        interaction.id === interactionId ? { ...interaction, currentThreadId: channelKey } : interaction
-      )
-    );
+    const channel = interactions
+      .find((i) => i.id === interactionId)
+      ?.threads.find((c) => (c.id ?? c.type) === channelKey);
+    const isVoiceChannel = channel?.type === "voice";
+    if (interactionId === activeInteractionId) {
+      if (isVoiceChannel) return;
+      setChannelPreviewThreadKey((prev) => (prev === channelKey ? null : channelKey));
+      return;
+    }
+    switchActiveInteraction(interactionId);
+    if (!isVoiceChannel) setChannelPreviewThreadKey(channelKey);
   };
 
   /** Fired by `MarcusWebbNextBestActionCard`'s own `onComplete` — per
@@ -4928,7 +5379,7 @@ export function AgentWorkspaceAdvancedPage({
    *  exactly the treatment `InteractionNavItem.stories.tsx`'s "Active,
    *  Awaiting Response" story already documents, not a new visual invented
    *  for this feature. */
-  const handleSendMessage = (interactionId: string, text: string) => {
+  const handleSendMessage = (interactionId: string, text: string, channelKeyOverride?: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
 
@@ -4953,7 +5404,15 @@ export function AgentWorkspaceAdvancedPage({
     // to) to whatever channel happens to be active THEN instead of the one
     // this whole exchange actually started on.
     const interactionAtSend = interactions.find((i) => i.id === interactionId);
+    // `channelKeyOverride` — per explicit request ("add an icon ... and
+    // open a side panel ... with the channel content"): the new channel-
+    // preview panel's own `InteractionComposer` (its own render site
+    // further down) sends on a SPECIFIC, possibly non-active thread, not
+    // whichever one happens to be `currentThreadId` right now — every
+    // other caller (the main composer, always scoped to the active
+    // channel) omits this and keeps the original derivation.
     const channelKeyAtSend =
+      channelKeyOverride ??
       interactionAtSend?.currentThreadId ??
       (interactionAtSend?.threads[interactionAtSend.threads.length - 1]
         ? interactionAtSend.threads[interactionAtSend.threads.length - 1].id ??
@@ -6571,25 +7030,32 @@ export function AgentWorkspaceAdvancedPage({
                 header icon collapse" gap measurement above, alongside
                 `appNameMeasureRef`. */}
             {/* Per explicit follow-up request ("add the search app icon
-                button back to the top right panel") — re-adds just the
-                Search icon that the broader row-hide below removed. Kept as
-                its own always-rendered button rather than folded back into
-                the `panelOrder.filter(showHeaderIcon).map(...)` row just
-                below (still `false &&`'d out in full), since only Search
-                itself was asked back, not the rest of that row or the "View
-                All Apps" kebab. Same `ActionIconButton`/`handlePanelButtonClick`/
-                `PANEL_BUTTON_SELECTED_CLASS` wiring the row uses per-icon, so
-                clicking it opens the real Search panel exactly like it did
-                before the row was hidden. */}
-            <ActionIconButton
-              size="xl"
-              title={PANEL_KEY_METADATA.search.label}
-              aria-expanded={panelOpen && activePanelKey === "search"}
-              onClick={handlePanelButtonClick("search")}
-              className={panelOpen && activePanelKey === "search" ? PANEL_BUTTON_SELECTED_CLASS : undefined}
-            >
-              <Search className="h-5 w-5" strokeWidth={1.5} />
-            </ActionIconButton>
+                button back to the top right panel") — re-added just the
+                Search icon that the broader row-hide below removed, as its
+                own always-rendered button rather than folded back into the
+                `panelOrder.filter(showHeaderIcon).map(...)` row just below
+                (still `false &&`'d out in full), since only Search itself
+                was asked back, not the rest of that row or the "View All
+                Apps" kebab. Per a LATER explicit request ("hide the search
+                icon button in the top right for now - that will not be
+                part of phase 1"), this is now itself wrapped in `false &&`
+                — same "kept, not deleted, in case it needs to come back"
+                treatment as the row below, rather than removing the button
+                outright. Same `ActionIconButton`/`handlePanelButtonClick`/
+                `PANEL_BUTTON_SELECTED_CLASS` wiring the row uses per-icon,
+                so re-enabling this opens the real Search panel exactly like
+                it did before. */}
+            {false && (
+              <ActionIconButton
+                size="xl"
+                title={PANEL_KEY_METADATA.search.label}
+                aria-expanded={panelOpen && activePanelKey === "search"}
+                onClick={handlePanelButtonClick("search")}
+                className={panelOpen && activePanelKey === "search" ? PANEL_BUTTON_SELECTED_CLASS : undefined}
+              >
+                <Search className="h-5 w-5" strokeWidth={1.5} />
+              </ActionIconButton>
+            )}
             {/* Per explicit request ("remove the apps in the top right
                 including the app selector to match phase 1") — the app icon
                 row (Search / Customers / Accounts / Tickets / WEM / Screen
@@ -6883,8 +7349,35 @@ export function AgentWorkspaceAdvancedPage({
                 onQuickDial: handleDialpadSubmit,
                 dialpadRequest,
                 onDialpadRequestHandled: () => setDialpadRequest(null),
+                // Per explicit request ("when the user clicks New Outbound
+                // just display the dial pad content with no back button
+                // and rename the header 'New Outbound' instead of 'Dial
+                // Pad' since we are not doing omnichannel for phase 1"):
+                // with `groups` filtered down to just "dialpad" above,
+                // screen 1's own group-row list would otherwise show a
+                // single, pointless "Dial Pad" row to click through before
+                // reaching the exact same screen this now opens on
+                // directly — see `skipGroupPicker`'s own doc comment
+                // (create-new.tsx) for the full mechanics (no back button,
+                // header falls back to this popover's own `title` instead
+                // of the group's "Dial Pad" label).
+                skipGroupPicker: true,
               }}
               expanded={navOpen}
+              // Per explicit request ("in phase 1, we cannot have 2 or
+              // more calls at the same time, so if an agent is on an
+              // active call then disable the new outbound button"), then a
+              // follow-up bug report ("marcus webb new outbound shouldn't
+              // be disabled until takeover is clicked since the agent is
+              // not on the call yet"): `agentOnActiveVoiceCall` (see that
+              // const's own doc comment above) — not the plain
+              // `liveVoiceCallInteraction` this originally read — since a
+              // live voice THREAD existing somewhere (e.g. Marcus's own
+              // scripted call, handled solo by the AI agent before anyone
+              // clicks "Takeover") isn't the same thing as the AGENT
+              // themself being on a call.
+              disabled={agentOnActiveVoiceCall}
+              disabledReason="A call is already in progress"
             />
           }
           header={
@@ -6953,7 +7446,17 @@ export function AgentWorkspaceAdvancedPage({
                   reorders a copy. */}
               {sortAssignments(interactions, assignmentSort, assignmentSortDirection).map((interaction) => {
                 const mostRecentId = interaction.threads[interaction.threads.length - 1]?.id;
-                const currentId = interaction.currentThreadId ?? mostRecentId;
+                // For the active card specifically, an open channel preview
+                // (`channelPreviewThreadKey`) takes over which channel this
+                // card highlights as "current" - `currentThreadId` itself
+                // no longer changes when a channel's selected (see
+                // `handleChannelSelect`'s own doc comment), so without this
+                // the card's highlight would never move off whichever
+                // channel happened to be current when it was added.
+                const currentId =
+                  interaction.id === activeInteractionId && channelPreviewThreadKey
+                    ? channelPreviewThreadKey
+                    : (interaction.currentThreadId ?? mostRecentId);
                 // Seconds since the CUSTOMER last wrote on this channel —
                 // only meaningful (and only ever read) for a channel that's
                 // actually awaiting, which per `hasCustomerResponded` below
@@ -7082,6 +7585,24 @@ export function AgentWorkspaceAdvancedPage({
                       : effectiveAwaitingResponse
                       ? formatElapsedTime(channelAwaitingWaitSeconds(c))
                       : formatElapsedTime(clockTick - c.startTick),
+                    // Per explicit request ("when a call is placed on hold,
+                    // add an on hold timer below the call timer in the call
+                    // controls and in the interaction nav item") — a NEW
+                    // line below `elapsed` above (`ChannelRowProps.
+                    // onHoldElapsed`, channel-row.tsx — deliberately not
+                    // `elapsedOverride`, which SWAPS that line instead; see
+                    // that prop's own doc comment for why this request gets
+                    // its own separate field), driven by the same
+                    // `heldByAgent`/`heldSinceTick` pair the call controls
+                    // bar's own `onHoldChange` handler sets above. Only
+                    // meaningful for the live voice thread itself, so
+                    // `c.heldSinceTick` (rather than any card-level state)
+                    // is checked directly — every other channel/thread never
+                    // has this field set at all.
+                    onHoldElapsed:
+                      c.heldByAgent && c.heldSinceTick !== undefined
+                        ? formatElapsedTime(clockTick - c.heldSinceTick)
+                        : undefined,
                     preview: c.preview,
                     current: c.id === currentId,
                     // See `effectiveAwaitingResponse` above — not read
@@ -7187,14 +7708,26 @@ export function AgentWorkspaceAdvancedPage({
                     showConsultTransfer: false,
                     // Per explicit follow-up request ("always have the more
                     // options available in the interactionNavItem") — the
-                    // kebab is unconditional now for every row, superseding
-                    // the earlier Marcus-only exception to a "hide kebab for
-                    // every voice channel" rule (a reopened Contact History
-                    // voice assignment, e.g. Nathan Cole, used to have no
-                    // kebab at all — that's the bug report this fixed).
-                    // `undefined` lets `ChannelRow`'s own default (`true`)
-                    // apply everywhere, voice or not, Marcus or not.
-                    showKebab: undefined,
+                    // kebab was made unconditional for every row for a
+                    // while, superseding an earlier Marcus-only exception
+                    // to a "hide kebab for every voice channel" rule (a
+                    // reopened Contact History voice assignment, e.g.
+                    // Nathan Cole, used to have no kebab at all — that's
+                    // the bug report that fixed). Reversed by a LATER
+                    // explicit request ("remove the more options for phase
+                    // 1 - these will not be available until phase 2"):
+                    // `false` hides it outright for every row/channel type
+                    // here again — there's currently nothing behind it this
+                    // page actually wants exposed yet (Consult/Transfer is
+                    // hidden too, `showConsultTransfer: false` just above,
+                    // and "Unassign & Dismiss" is stripped from every kebab
+                    // dropdown regardless — see that prop's own doc comment
+                    // right below), so an always-present kebab was just a
+                    // dead-end trigger. `AgentWorkspace2WithDeskPage.tsx`
+                    // ("Phase 2") keeps its own identical prop wired
+                    // however it already had it — this change is scoped to
+                    // this page's own channel-row mapping only.
+                    showKebab: false,
                     alwaysShowOutcome: c.type === "voice" ? true : undefined,
                     // "Unassign & Dismiss" is stripped from every row's
                     // kebab dropdown outright (`ChannelRow`'s own
@@ -7340,10 +7873,27 @@ export function AgentWorkspaceAdvancedPage({
                 // left to compute from. (Despite the name, "open" here means
                 // "still counts toward the SLA timer," not "not closed" —
                 // this is a timer-only list, not the read-only-lockdown one.)
+                //
+                // Marcus's own voice channel is a deliberate, scoped
+                // exception to the "Resolved drops out" half of this rule —
+                // per explicit follow-up request ("the timer should be
+                // visible in the marcus webb collapsed interactionNavItem").
+                // `handleMarcusWebbResolved` (above) flips his channel's
+                // session status to "Resolved" the moment the agent
+                // approves the refund, but the CALL ITSELF is still live at
+                // that point (same "resolved disposition, still-connected
+                // call" gap `showDismissButton`'s own doc comment already
+                // documents for this exact channel) — the collapsed tile's
+                // timer disappearing right as the agent approves would read
+                // as the call having ended, when it hasn't. Gated on
+                // `!interaction.voiceCallEnded` so this exception itself
+                // switches off, same as every other card, the moment the
+                // call actually does end.
                 const cardOpenChannels = interaction.threads.filter(
                   (c) =>
-                    interaction.threadStatuses?.[c.id] !== "Closed" &&
-                    interaction.threadStatuses?.[c.id] !== "Resolved"
+                    (interaction.id === MARCUS_WEBB_ID && c.type === "voice" && !interaction.voiceCallEnded) ||
+                    (interaction.threadStatuses?.[c.id] !== "Closed" &&
+                      interaction.threadStatuses?.[c.id] !== "Resolved")
                 );
                 // Per explicit request: an open channel that's never actually
                 // heard from the customer yet (`hasCustomerResponded` above)
@@ -7395,11 +7945,45 @@ export function AgentWorkspaceAdvancedPage({
                 // `navOpen` the way it originally did.
                 const currentChannelType =
                   channels.find((c) => c.id === currentId)?.type ?? channels[channels.length - 1]?.type;
+                // Same `heldByAgent` field the expanded card's own
+                // `onHoldElapsed` line above already reads directly off
+                // `interaction.threads` — re-derived here (not from
+                // `cardOpenChannels`, which a closed/resolved held call
+                // would already have dropped out of) since a collapsed
+                // card's badge should keep showing "on hold" for as long as
+                // the live call controls bar itself would.
+                const cardOnHold = interaction.threads.some((c) => c.type === "voice" && c.heldByAgent);
+                // Per explicit follow-up request ("when a call is put on
+                // hold use the hold time in the collapsed
+                // interactionNavItem") — the same `c.heldSinceTick` the
+                // expanded card's own `onHoldElapsed` line reads (above),
+                // re-derived here for whichever thread `cardOnHold` just
+                // found. `undefined` whenever nothing's actually held,
+                // which is exactly when the plain `elapsed` computation
+                // below should be used instead (see that prop's own call
+                // site further down).
+                const cardHeldSinceTick = interaction.threads.find(
+                  (c) => c.type === "voice" && c.heldByAgent
+                )?.heldSinceTick;
                 return (
                   <InteractionNavCard
                     key={interaction.id}
                     currentChannelType={currentChannelType}
                     showChannelBadge={channels.length <= 1}
+                    cardOnHold={cardOnHold}
+                    // `InteractionNavItem`'s OWN `onHold` prop (lyra-ui) —
+                    // distinct from `cardOnHold` just above (this file's
+                    // own wrapper prop, forwarded only to
+                    // `CollapsedChannelBadge`). Flows through `itemProps`
+                    // to `InteractionNavItem` itself, which per explicit
+                    // follow-up request ("make the hold counter red in the
+                    // collapsed interactionNavItem") now also recolors the
+                    // collapsed tile's own elapsed-time text red while
+                    // true — see that prop's own doc comment
+                    // (interaction-nav-item.tsx) — on top of the
+                    // border/background treatment it already drove on the
+                    // EXPANDED card.
+                    onHold={cardOnHold}
                     // Same `cardAwaitingWaitSeconds`/`getAwaitingSeverity`
                     // this card's own `awaitingSeverity` prop below already
                     // resolves — reused, not recomputed, so a single-channel
@@ -7419,6 +8003,11 @@ export function AgentWorkspaceAdvancedPage({
                     // that address — `customerName` itself is untouched, so
                     // the card's title text still reads as the address.
                     customerIdentified={!interaction.id.startsWith("adhoc:")}
+                    // Per explicit request ("add the new badge to any
+                    // unread assignments (assignments that haven't been
+                    // clicked on yet)") — see `clickedInteractionIds`'s own
+                    // doc comment above for what counts as "clicked".
+                    isNewAssignment={!clickedInteractionIds.has(interaction.id)}
                     active={activeInteractionId === interaction.id}
                     // Exits fullscreen directly here (not just via the
                     // `activeInteractionId`-keyed effect near
@@ -7442,7 +8031,23 @@ export function AgentWorkspaceAdvancedPage({
                     // rendering the elapsed span entirely for an empty
                     // string, so the counter itself disappears rather than
                     // showing a stale/frozen time.
-                    elapsed={earliestStart !== undefined ? formatElapsedTime(cardAwaitingWaitSeconds ?? clockTick - earliestStart) : ""}
+                    // While on hold, the collapsed tile's own timer
+                    // switches to counting the HOLD time (same reasoning
+                    // as `cardHeldSinceTick`'s own doc comment above) —
+                    // matching what the docked call-controls footer
+                    // already shows ("On hold 00:04") instead of the
+                    // total call duration the plain `elapsed` computation
+                    // below would otherwise keep showing. Falls back to
+                    // that plain computation whenever nothing's held
+                    // (`cardHeldSinceTick === undefined`), exactly as
+                    // before this feature existed.
+                    elapsed={
+                      cardHeldSinceTick !== undefined
+                        ? formatElapsedTime(clockTick - cardHeldSinceTick)
+                        : earliestStart !== undefined
+                        ? formatElapsedTime(cardAwaitingWaitSeconds ?? clockTick - earliestStart)
+                        : ""
+                    }
                     expanded={navOpen}
                     channels={channels}
                     onDismiss={() => handleDismissInteraction(interaction.id)}
@@ -7466,14 +8071,16 @@ export function AgentWorkspaceAdvancedPage({
                     // identical control regardless of which one happens to
                     // render for a given card.
                     headerAction={
-                      getHeaderAction(interaction.id) ??
-                      (SHOW_ADD_CHANNEL_HEADER_BUTTON && interaction.id === activeInteractionId && (
-                        <AddChannelAdHocButton
-                          onLaunch={handleAddAdHocChannel}
-                          skillOptions={OUTBOUND_CONFIG.skillOptions}
-                          className="h-6 w-6 px-0 bg-transparent text-lyra-fg-secondary hover:bg-lyra-state-hover active:bg-lyra-state-pressed"
-                        />
-                      ))
+                      SHOW_ADD_CHANNEL_HEADER_BUTTONS &&
+                      (getHeaderAction(interaction.id) ??
+                        (SHOW_ADD_CHANNEL_HEADER_BUTTON &&
+                          interaction.id === activeInteractionId && (
+                            <AddChannelAdHocButton
+                              onLaunch={handleAddAdHocChannel}
+                              skillOptions={OUTBOUND_CONFIG.skillOptions}
+                              className="h-6 w-6 px-0 bg-transparent text-lyra-fg-secondary hover:bg-lyra-state-hover active:bg-lyra-state-pressed"
+                            />
+                          )))
                     }
                     // Renders side by side with `collapsible`'s own
                     // expand/collapse chevron, rather than being replaced
@@ -7717,12 +8324,19 @@ export function AgentWorkspaceAdvancedPage({
                         headerTitle={selectedAllContactsRecord?.customerName}
                         headerSubhead={selectedAllContactsRecord?.skill}
                         onClose={() => setSelectedAllContactsRecord(null)}
-                        // `PanelRightClose` — matches the "closing a docked
-                        // right-side panel" glyph used elsewhere (see
-                        // `agent-next-gen-customer-info-panel.tsx`'s own
-                        // `InteriorPanel` closeIcon) — instead of
-                        // `ContainerHeader`'s generic default `X`.
-                        closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
+                        // Per explicit follow-up request ("update the
+                        // toggle close icon for interior panels to be an
+                        // 'x' icon") — reverts the `PanelRightClose`
+                        // override an earlier request introduced here,
+                        // back to `ContainerHeader`'s own generic default
+                        // `X` (simply omitting `closeIcon` entirely now
+                        // gets that default). Applies everywhere this
+                        // pattern was used, not just Phase 1 — see the
+                        // other 5 identical reverts (this file's own
+                        // second `InteriorPanel`, `AgentWorkspace2WithDesk
+                        // Page.tsx`'s two, `agent-next-gen-customer-info-
+                        // panel.tsx`'s two, `agent-next-gen-in-contact-
+                        // panel.tsx`'s one).
                         // Same mutually-exclusive Redial/Re-open convention
                         // `selectedContactHistoryEntry`'s own footer already
                         // uses (voice-only gets "Redial") — both just call
@@ -7965,12 +8579,36 @@ export function AgentWorkspaceAdvancedPage({
                       // (the status menu).
                       icon={
                         <span className="relative inline-flex">
-                          <Icon
-                            icon={activeInteractionIsAgentCall ? Headphones : User}
-                            background={activeInteractionIsAgentCall ? "active" : "shell"}
-                            shape="circle"
-                            size="md"
-                          />
+                          {/* Per explicit follow-up request ("avatars
+                              within the contact and call details should be
+                              the initials of the customer OR a customer
+                              avatar if no customer name is known", then
+                              "add a story to the avatar component ... use
+                              it in agent-next-gen-v3"): now built on
+                              lyra-ui's shared `Avatar` (avatar.tsx) instead
+                              of the hand-rolled `Icon`/purple-circle split
+                              this block used right after the first request
+                              — that hand-rolled version is exactly what
+                              `Avatar` generalizes (see its own doc
+                              comment). `color="active"` for an agent call
+                              (was `Icon background="active"`), `color=
+                              "primary"` (this app's purple "identified
+                              customer" chip, same as `VoiceCallControls`'s
+                              own) once a real match's name is known, else
+                              `color="shell"` with no `initials` — `Avatar`
+                              itself falls back to a generic `User` glyph
+                              whenever `initials` is omitted, so that
+                              branch no longer needs its own explicit
+                              `icon={User}`. `size="md"` matches this
+                              header's prior `Icon size="md"` exactly (both
+                              are the same 36px circle). */}
+                          {activeInteractionIsAgentCall ? (
+                            <Avatar icon={Headphones} color="active" size="md" />
+                          ) : activeInteractionIsRealCustomer && activeInteraction.customerName ? (
+                            <Avatar initials={initialsFor(activeInteraction.customerName)} color="primary" size="md" />
+                          ) : (
+                            <Avatar color="shell" size="md" />
+                          )}
                           {!activeInteractionIsAgentCall && hasOpenChatThread && (
                             // Per explicit request ("add a tooltip to the
                             // user status badge"), wrapped in a real
@@ -8146,33 +8784,259 @@ export function AgentWorkspaceAdvancedPage({
                       // rather than needing its own separate `actions` slot.
                       actions={
                         <div className="flex items-center gap-1">
-                        {activeInteraction.threads.length > 0 && (
-                          <ChannelToggleGroup
-                            // The "+" Add Channel trigger — same
-                            // `getHeaderAction` (stock picker) ?? `Add
-                            // ChannelAdHocButton` (directory-independent
-                            // fallback) pair this tier's own `actions` slot
-                            // used to render as a separate standalone button
-                            // (see this slot's own doc comment above for the
-                            // full history) — folded into this same
-                            // bordered shell instead, right after the last
-                            // pill, per an earlier explicit request/
-                            // agent-next-gen-v1's own reference layout
-                            // (unchanged by this latest move).
-                            action={
-                              SHOW_ADD_CHANNEL_HEADER_BUTTON && (getHeaderAction(
-                                activeInteraction.id,
-                                "ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed",
-                                { label: "Add Channel", showLabel: false }
-                              ) ?? (
-                                <AddChannelAdHocButton
-                                  onLaunch={handleAddAdHocChannel}
-                                  skillOptions={OUTBOUND_CONFIG.skillOptions}
-                                  className="ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed"
-                                />
-                              ))
-                            }
-                          >
+                        {/* "+" Add Channel trigger — per explicit follow-up
+                            request ("move the + button outside of the
+                            toggle group and hide the toggle group for
+                            now"), no longer folded into `ChannelToggleGroup`'s
+                            own bordered shell via its `action` prop (see
+                            that prop's own former doc comment, still on
+                            `ChannelToggleGroup` below, for why it moved IN
+                            there in the first place) — rendered as a plain
+                            standalone sibling instead, so it keeps working
+                            even while the toggle group itself is hidden.
+                            Same `getHeaderAction` (stock picker) ??
+                            `AddChannelAdHocButton` (directory-independent
+                            fallback) pair, unchanged. */}
+                        {SHOW_ADD_CHANNEL_HEADER_BUTTONS && SHOW_ADD_CHANNEL_HEADER_BUTTON && (getHeaderAction(
+                          activeInteraction.id,
+                          "ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed",
+                          { label: "Add Channel", showLabel: false }
+                        ) ?? (
+                          <AddChannelAdHocButton
+                            onLaunch={handleAddAdHocChannel}
+                            skillOptions={OUTBOUND_CONFIG.skillOptions}
+                            className="ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed"
+                          />
+                        ))}
+                        {/* Per explicit request ("add an icon representing
+                            the channel to the right of the '+' ... and
+                            open a side panel ... with the channel
+                            content"), later broadened by an explicit
+                            follow-up ("the chat icon should be visible ...
+                            all open channels should display"): one small
+                            icon per Thread on this interaction — ALL of
+                            them, including whichever one is currently
+                            `currentThreadId`/shown in the main transcript
+                            column, not just the non-active ones (that
+                            channel's own panel-based preview, toggled by
+                            this same icon, is a genuinely separate view
+                            from the main column — see this whole icon
+                            row's shared `channelPreviewThreadKey` doc
+                            comment further up — so it still needs its own
+                            toggle here too, same as every other channel).
+                            With the pill row above hidden, this is now the
+                            only way to reach a channel's own preview.
+                            Reuses `CHANNEL_TYPE_META` (lyra-ui,
+                            channel-row.tsx) for the icon/label rather than
+                            inventing a second mapping — the same one this
+                            header's own active-channel icon already uses a
+                            few hundred lines up. Toggle-open, same
+                            semantics `openDetailPanelContent`'s own doc
+                            comment established: clicking the icon for
+                            whatever's ALREADY showing closes the panel
+                            instead of re-opening it — mutually exclusive
+                            with every other channel icon AND the Contact
+                            Details button (see `handleSidePanelIconToggle`'s
+                            own doc comment) since they all share this one
+                            `channelPreviewThreadKey` state. */}
+                        {/* Per explicit follow-up request ("just hide the
+                            voice icon in phase 1 it's confusing with no
+                            other channels"): with voice as the only
+                            channel this deployment ever has (see
+                            `SHOW_ADD_CHANNEL_HEADER_BUTTONS`'s own doc
+                            comment — no way to launch a second, non-voice
+                            one), this icon button no longer earns its
+                            place next to Contact Details — it can't
+                            distinguish one channel from another when
+                            there's only ever the one, so it just reads as
+                            a redundant, always-on duplicate of the phone
+                            icon in the record header's own title/call
+                            controls. Skipped entirely (not merely
+                            disabled/dimmed) rather than deleting the whole
+                            block below — every other channel type keeps
+                            rendering here untouched, and this comes back
+                            with a one-line removal of this guard if a
+                            future deployment adds a second channel type
+                            back. Every one of the `isVoiceChannel`
+                            special-cases below (active-tooltip, no-op
+                            click, etc.) stays in place regardless — dead
+                            code for now, but exactly what a future
+                            multi-channel deployment would need again the
+                            moment this early return comes back out. */}
+                        {activeInteraction.threads.map((c) => {
+                          if (c.type === "voice") return null;
+                          const key = c.id ?? c.type;
+                          const meta = CHANNEL_TYPE_META[c.type];
+                          // Per explicit request ("update the functionality
+                          // of the top right channel buttons in phase 1 to
+                          // match phase 2 ... you just need to address the
+                          // voice icon button - it should be active and not
+                          // toggle the side panel"): this deployment is
+                          // voice-only now (see `SHOW_RECORD_HEADER_ADD_
+                          // CHANNEL_BUTTON`'s own doc comment above — no way
+                          // to launch a second, non-voice channel anymore),
+                          // so voice is always both the only channel AND
+                          // this interaction's own main content
+                          // (`activeChannelKey`) — there's nothing left for
+                          // its icon to "preview" in a side panel; clicking
+                          // it used to toggle `channelPreviewThreadKey`
+                          // open, popping the exact same transcript already
+                          // showing in the main column into a redundant
+                          // side-panel copy of itself. Every OTHER channel
+                          // type keeps the original `channelPreviewThreadKey`
+                          // toggle behavior untouched — out of scope per the
+                          // request's own wording, and effectively unreached
+                          // now that there's no way to add one of them.
+                          const isVoiceChannel = c.type === "voice";
+                          const isOpen = isVoiceChannel ? key === activeChannelKey : channelPreviewThreadKey === key;
+                          // Whether this icon's own channel is the one
+                          // currently showing in the main column — drives
+                          // the "{channel} active" `Tooltip` below, same as
+                          // Phase 2's `isActiveChannel`. Independent of
+                          // `isOpen`/`isVoiceChannel`: today only voice can
+                          // ever be `activeChannelKey`, but this stays
+                          // generic rather than voice-specific so another
+                          // channel type picks it up for free if the
+                          // voice-only restriction is ever lifted.
+                          const isActiveChannel = key === activeChannelKey;
+                          // Per explicit follow-up request: the voice
+                          // icon's own hover label reads "Voice
+                          // Transcript" (this preview IS just the
+                          // transcript — see `footerOverride`'s own doc
+                          // comment further down for why voice never gets
+                          // a composer here) rather than plain "Voice",
+                          // which reads more like a still-ringing/active
+                          // call indicator. Every other channel keeps
+                          // `meta.label` unchanged.
+                          const previewLabel = c.type === "voice" ? "Voice Transcript" : meta.label;
+                          const hoverOpen = channelHoverPreviewKey === key;
+                          // Per explicit follow-up request ("on hover for
+                          // the voice, chat, sms, email channel icons in
+                          // the top right, display the content of the
+                          // panel like you do for contact details"): same
+                          // hover-preview `Popover` pattern as the
+                          // "Contact Details" button's own (render site
+                          // further down) — a plain text `Tooltip` isn't
+                          // enough content on its own anymore, so it's
+                          // replaced here rather than layered underneath.
+                          // The preview body mirrors exactly what clicking
+                          // this icon opens in the real docked panel (see
+                          // `bodyOverride`/`footerOverride`'s own doc
+                          // comments at that render site) — duplicated
+                          // rather than shared, same as the Contact
+                          // Details hover preview's own duplication of
+                          // `DetailsPanelAccordions`/tabs just below.
+                          return (
+                            <div
+                              key={key}
+                              onMouseEnter={() => openChannelHoverPreview(key)}
+                              onMouseLeave={scheduleCloseChannelHoverPreview}
+                            >
+                              {/* `Tooltip` wraps `Popover` through a plain
+                                  `span` rather than directly — `Popover`
+                                  doesn't spread arbitrary extra props
+                                  through to its own trigger, so `Tooltip`'s
+                                  `asChild`/Slot injection silently drops
+                                  without that intervening real DOM node.
+                                  Same fix as Phase 2's own copy of this
+                                  exact composition; see lyra-ui's
+                                  `popover.tsx` top-of-file comment. */}
+                              <Tooltip content={`${meta.label} active`} placement="bottom" disabled={!isActiveChannel}>
+                              <span className="inline-flex">
+                              <Popover
+                                open={hoverOpen}
+                                placement="bottom"
+                                align="end"
+                                showArrow={false}
+                                bodyPadding={false}
+                                className="border-0 bg-transparent p-0 shadow-none"
+                                onOpenAutoFocus={(e: Event) => e.preventDefault()}
+                                onCloseAutoFocus={(e: Event) => e.preventDefault()}
+                                onInteractOutside={(e: Event) => {
+                                  if ((e.target as Element)?.closest?.("[data-radix-popper-content-wrapper]")) {
+                                    e.preventDefault();
+                                  }
+                                }}
+                                content={
+                                  <div
+                                    onMouseEnter={() => openChannelHoverPreview(key)}
+                                    onMouseLeave={scheduleCloseChannelHoverPreview}
+                                    className="flex max-h-[70vh] w-[340px] flex-col overflow-hidden rounded-lyra-lg border border-lyra-border-soft bg-lyra-bg-surface-container-subtle shadow-lg"
+                                  >
+                                    <PanelHeader title={previewLabel} subhead={activeInteraction.customerName} />
+                                    <div className="flex-1 overflow-y-auto">
+                                      {c.type === "email" ? (
+                                        <div className="flex h-full items-center justify-center px-6 py-10 text-center text-sm text-lyra-fg-secondary">
+                                          Coming soon
+                                        </div>
+                                      ) : (
+                                        <InteractionTranscript
+                                          channelType={c.type}
+                                          direction={c.direction}
+                                          customerName={activeInteraction.customerName}
+                                          contactId={c.contactId ?? activeInteraction.customerId}
+                                          // Per explicit request ("display
+                                          // the phone number instead of the
+                                          // contact ID in the session row")
+                                          // — see `InteractionTranscript`'s
+                                          // own `channelAddressLabel` prop
+                                          // doc comment (agent-next-gen-
+                                          // transcript.tsx) and
+                                          // AgentWorkspace2WithDeskPage.tsx's
+                                          // identical wiring.
+                                          channelAddressLabel={c.addressLabel}
+                                          skillLabel={c.preview}
+                                          isFreshLaunch={!!c.startedFresh}
+                                          liveMessages={activeInteraction.liveMessages?.[key] ?? []}
+                                          showSessionActionCluster={false}
+                                          showViewDetails={false}
+                                        />
+                                      )}
+                                    </div>
+                                    {c.type !== "email" &&
+                                      c.type !== "voice" &&
+                                      !activeInteraction.closed &&
+                                      activeInteraction.threadStatuses?.[key] !== "Closed" && (
+                                        <InteractionComposer
+                                          onSend={(text) => handleSendMessage(activeInteraction.id, text, key)}
+                                        />
+                                      )}
+                                  </div>
+                                }
+                              >
+                                <Button
+                                  variant="outline"
+                                  size="icon-sm"
+                                  aria-pressed={isOpen}
+                                  aria-label={
+                                    isVoiceChannel
+                                      ? `${previewLabel} active`
+                                      : `${isOpen ? "Close" : "Open"} ${previewLabel} preview`
+                                  }
+                                  className={cn(
+                                    "ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed",
+                                    isOpen && PANEL_BUTTON_SELECTED_CLASS
+                                  )}
+                                  onClick={() => {
+                                    if (isVoiceChannel) return;
+                                    setChannelPreviewThreadKey((prev) => (prev === key ? null : key));
+                                  }}
+                                >
+                                  {meta.icon}
+                                </Button>
+                              </Popover>
+                              </span>
+                              </Tooltip>
+                            </div>
+                          );
+                        })}
+                        {/* Hidden for now per that same explicit request —
+                            `false &&` rather than deleting the block, so
+                            the pill row (channel switching/outcome/history
+                            tab UI) comes back with a one-line flip once
+                            it's wanted again. */}
+                        {SHOW_CHANNEL_TOGGLE_GROUP && activeInteraction.threads.length > 0 && (
+                          <ChannelToggleGroup>
                             {activeInteraction.threads.map((c) => {
                               const key = c.id ?? c.type;
                               const outcomeKey = `${activeInteraction.id}:${key}`;
@@ -8268,22 +9132,55 @@ export function AgentWorkspaceAdvancedPage({
                         )}
                         {/* "Open Details Panel" — see this `actions` block's
                             own top doc comment for the full history of where
-                            this button has lived. Hidden entirely once the
-                            real panel is already open (`!sidePanelOpen`),
-                            same reasoning `detailsPanelOpen` used to give
-                            `TranscriptSessionSeparator`'s own copy of it —
-                            nothing to toggle open that isn't already fully
-                            visible. The wrapping div's hover handlers (not
-                            the `Popover`'s own trigger) are what open/close
-                            the preview — same split
-                            `TranscriptSessionSeparator`'s former render of
-                            this used, so the pointer can cross from this
-                            button into the popover's own (portaled) content
-                            without it flickering shut. */}
-                        {!sidePanelOpen && (
-                          <div onMouseEnter={openCustomerInfoPreview} onMouseLeave={scheduleCloseCustomerInfoPreview}>
+                            this button has lived. Per explicit follow-up
+                            request ("make the contact details toggle button
+                            not disappear when it's open"), this trigger
+                            stays visible/clickable at all times now — it no
+                            longer unmounts once the real panel is open, so
+                            it still works to close the panel again (or, per
+                            the earlier explicit request behind
+                            `handleSidePanelIconToggle`'s own doc comment,
+                            to switch a channel preview back to actual
+                            Contact Details). The hover-preview `Popover`
+                            itself only shows while Contact Details ISN'T
+                            already the panel's own visible content —
+                            `sidePanelOpen && !channelPreviewThreadKey`, the
+                            same condition `openCustomerInfoPreview`'s own
+                            guard now uses (not whenever the panel is merely
+                            open at all): per explicit follow-up request ("if
+                            a panel is open the inactive channel icon and
+                            contact details should retain their hover
+                            actions so agents can preview other channels
+                            while on a current channel"), a CHANNEL preview
+                            being open doesn't block this hover peek at
+                            Contact Details, since Contact Details isn't
+                            what's actually showing in that case. The
+                            wrapping div's hover handlers (not the
+                            `Popover`'s own trigger) are what open/close the
+                            preview — same split `TranscriptSessionSeparator`'s
+                            former render of this used, so the pointer can
+                            cross from this button into the popover's own
+                            (portaled) content without it flickering shut. */}
+                        {/* Per explicit follow-up request ("go back to
+                            hiding the contact details button when the
+                            panel is open"): reverting the earlier explicit
+                            request ("make the contact details toggle
+                            button not disappear when it's open") this
+                            trigger's outer wrapper got — it's gated behind
+                            `!(sidePanelOpen && !channelPreviewThreadKey)`
+                            again now, same condition the hover-preview
+                            `Popover` just below already uses for its own
+                            `open` prop, so this button unmounts entirely
+                            (rather than merely losing its "selected" look)
+                            once the real Contact Details panel is the
+                            side panel's visible content. A channel preview
+                            being open instead doesn't hide it — Contact
+                            Details isn't what's showing then, so this
+                            trigger (and its own hover peek) still work. */}
+                        {!(sidePanelOpen && !channelPreviewThreadKey) && (
+                        <div onMouseEnter={openCustomerInfoPreview} onMouseLeave={scheduleCloseCustomerInfoPreview}>
                             <Popover
-                              open={customerInfoPreviewOpen && !sidePanelOpen}
+                              open={customerInfoPreviewOpen && !(sidePanelOpen && !channelPreviewThreadKey)}
                               placement="bottom"
                               align="end"
                               showArrow={false}
@@ -8337,6 +9234,16 @@ export function AgentWorkspaceAdvancedPage({
                                         direction={activeChannel?.direction}
                                         customerName={activeInteraction.customerName}
                                         contactId={activeChannel?.contactId ?? activeInteraction.customerId}
+                                        // Per explicit request ("display
+                                        // the phone number instead of the
+                                        // contact ID in the session row")
+                                        // — see `InteractionTranscript`'s
+                                        // own `channelAddressLabel` prop
+                                        // doc comment (agent-next-gen-
+                                        // transcript.tsx) and
+                                        // AgentWorkspace2WithDeskPage.tsx's
+                                        // identical wiring.
+                                        channelAddressLabel={activeChannel?.addressLabel}
                                         skillLabel={activeChannel?.preview}
                                         isFreshLaunch={!!activeChannel?.startedFresh}
                                         liveMessages={activeInteraction.liveMessages?.[activeChannelKey] ?? []}
@@ -8359,10 +9266,36 @@ export function AgentWorkspaceAdvancedPage({
                                       <DetailsPanelAccordions
                                         customerName={activeInteraction.customerName}
                                         customerContextOverview={customerContextOverviewInfo}
+                                        // Per explicit request ("replace the
+                                        // autosummary card in the contact
+                                        // details with the content depicted
+                                        // in the screenshot of the real
+                                        // time summary card") — same
+                                        // content the docked panel's own
+                                        // `DetailsPanelAccordions` call
+                                        // shows just below (per that same
+                                        // "hover preview and docked panel
+                                        // use the exact same content" rule
+                                        // this file's own `onLinkCustomer`
+                                        // doc comment already documents).
+                                        showRealTimeSummary
+                                        realTimeSummaryUpdatedLabel={realTimeSummaryUpdatedLabel}
                                         onViewCustomerInfo={
                                           activeInteractionIsRealCustomer
                                             ? () => focusCustomerPanelTab("Overview")
                                             : undefined
+                                        }
+                                        // Same button/content the docked panel's own
+                                        // `DetailsPanelAccordions` call shows (see
+                                        // `linkCustomerPanelOpen`'s own doc comment) —
+                                        // per explicit request, the hover preview and
+                                        // the docked panel use the exact same content,
+                                        // this button included. Opens the real, docked
+                                        // panel's own overlay (`handleLinkCustomerFromPreview`
+                                        // just above) since this preview itself is only
+                                        // ever a transient hover popover.
+                                        onLinkCustomer={
+                                          activeInteractionIsRealCustomer ? undefined : handleLinkCustomerFromPreview
                                         }
                                       />
                                     )}
@@ -8370,14 +9303,48 @@ export function AgentWorkspaceAdvancedPage({
                                 </div>
                               }
                             >
+                              {/* Ported from Agent Workspace 2.0/v2's own
+                                  identical toggle (`AgentWorkspaceAdvancedPage.tsx`,
+                                  that project's copy) per explicit request
+                                  ("replace the current toggle icon ... with
+                                  the customer information button from v2
+                                  ... keep the hover state, etc. - just
+                                  update the button"): same `Button`
+                                  variant/size, `IdCard` icon + responsive
+                                  "Contact Details" label (collapses to
+                                  icon-only below 768px, measured off this
+                                  record header itself via
+                                  `recordHeaderWidth`), and the same
+                                  "selected" treatment
+                                  (`PANEL_BUTTON_SELECTED_CLASS`) the header's
+                                  other panel-toggle buttons already use
+                                  while their own panel is open — this one
+                                  simply never had it. `aria-pressed`/a
+                                  dynamic `aria-label` (open vs close) swap
+                                  in too. The hover-preview wiring around
+                                  this button (the wrapping `div`'s
+                                  `onMouseEnter`/`onMouseLeave`, and the
+                                  `Popover`'s own `open`/placement props,
+                                  just above) is untouched — only the
+                                  trigger `Button` itself changes. */}
                               <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                title="Open Details Panel"
-                                className="shrink-0 text-lyra-fg-secondary"
+                                variant="outline"
+                                size="md"
+                                className={cn(
+                                  "shrink-0 animate-in fade-in-0 duration-200",
+                                  recordHeaderWidth < 768 && "w-8 gap-0 px-0",
+                                  sidePanelOpen && !channelPreviewThreadKey && PANEL_BUTTON_SELECTED_CLASS
+                                )}
+                                aria-pressed={sidePanelOpen && !channelPreviewThreadKey}
                                 onClick={handleSidePanelIconToggle}
+                                aria-label={
+                                  sidePanelOpen && !channelPreviewThreadKey
+                                    ? "Close Contact Details"
+                                    : sidePanelToggleLabel ?? "Open Contact Details"
+                                }
                               >
-                                <PanelRight className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                <IdCard className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                                {recordHeaderWidth >= 768 && <span>Contact Details</span>}
                               </Button>
                             </Popover>
                           </div>
@@ -8503,6 +9470,23 @@ export function AgentWorkspaceAdvancedPage({
                           // comment on `Thread`) — a real Contact id is
                           // always preferred when one exists.
                           contactId={activeChannel?.contactId ?? activeInteraction.customerId}
+                          // Per explicit request ("display the phone
+                          // number instead of the contact ID in the
+                          // session row") — see `InteractionTranscript`'s
+                          // own `channelAddressLabel` prop doc comment
+                          // (agent-next-gen-transcript.tsx) and
+                          // AgentWorkspace2WithDeskPage.tsx's identical
+                          // wiring.
+                          channelAddressLabel={activeChannel?.addressLabel}
+                          // Per explicit request ("rename the view details
+                          // link 'Session Details'") — see
+                          // `InteractionTranscript`'s own
+                          // `viewDetailsLabel` prop doc comment
+                          // (agent-next-gen-transcript.tsx). The only Phase
+                          // 1 call site that actually renders this link at
+                          // all (`showViewDetails` defaults `true` here,
+                          // unlike every other call site on this page).
+                          viewDetailsLabel="Session Details"
                           skillLabel={activeChannel?.preview}
                           // Per-Thread — see `Thread.startedFresh`'s own doc
                           // comment for why this reads the ACTIVE channel's
@@ -8729,29 +9713,59 @@ export function AgentWorkspaceAdvancedPage({
                           // contact overview accordion back into the main
                           // container above next best action" — "Contact
                           // Snapshot" specifically; "Customer Profile"
-                          // stays hidden), then a LATER follow-up request
+                          // stays hidden), then a follow-up request
                           // ("Autosummary should only display in the
-                          // contact details") reversing that middle step:
-                          // both "Customer Profile" and "Contact Snapshot"
-                          // (since renamed "Autosummary" — see
-                          // `CustomerContextOverview`'s own doc comment,
-                          // contact-overview.tsx) are force-hidden here
-                          // again, leaving only "Next Best Action" visible
-                          // in the main transcript column. The voice
+                          // contact details") reversing that middle step
+                          // (both hidden again, "Next Best Action" only),
+                          // then a LATEST follow-up request ("replace the
+                          // next best action in all new assignments with
+                          // autosummary — tie the autosummary to the
+                          // contact so it is not random info") reversing
+                          // THAT: "Customer Profile" stays hidden, but
+                          // "Contact Snapshot" (renamed "Autosummary" —
+                          // see `CustomerContextOverview`'s own doc
+                          // comment, contact-overview.tsx) is shown again
+                          // here while "Next Best Action" is force-hidden
+                          // instead — the main transcript column's fresh-
+                          // assignment card now surfaces the real,
+                          // per-contact Autosummary recap
+                          // (`customerContextOverviewInfo.snapshot`, built
+                          // per contact by `buildCustomerContextOverviewInfo`
+                          // same as every other consumer of that object —
+                          // never placeholder/random copy) instead of the
+                          // generic Next Best Action suggestion. The voice
                           // "Details" side panel tab (below, near
                           // `activeChannelType === "voice"`) still shows
-                          // ALL of Customer Profile/Contact Snapshot via
                           // its own separate, un-gated
                           // `DetailsPanelAccordions` render — see that
-                          // render site's own doc comment — which is now
-                          // the ONLY place Autosummary/Contact Snapshot
-                          // renders, matching that latest request. See
-                          // `InteractionTranscript`'s own
-                          // `showCustomerContextProfile`/
-                          // `showCustomerContextSnapshot` prop doc
+                          // render site's own doc comment — so Autosummary
+                          // now renders in BOTH spots, matching this
+                          // latest request. See `InteractionTranscript`'s
+                          // own `showCustomerContextProfile`/
+                          // `showCustomerContextSnapshot`/
+                          // `showCustomerContextNextBestAction` prop doc
                           // comments (agent-next-gen-transcript.tsx).
                           showCustomerContextProfile={false}
-                          showCustomerContextSnapshot={false}
+                          showCustomerContextSnapshot={true}
+                          // Marcus Webb is the one exception: his own
+                          // "Next Best Action" isn't a plain suggested
+                          // sentence at all, it's the interactive Approve/
+                          // Reject/Something-else escalation card
+                          // (`MarcusWebbNextBestActionCard`, wired above
+                          // via `nextBestActionContent`/`nextBestActionBare`)
+                          // the agent actually has to act on to resolve his
+                          // scenario — `CustomerContextOverview` filters
+                          // the whole "next-best-action" section (bare
+                          // card included) out of `sections` entirely
+                          // whenever `showNextBestAction` is `false` (see
+                          // that component's own `.filter` on `sections`,
+                          // contact-overview.tsx), so force-hiding it here
+                          // unconditionally would silently break his
+                          // takeover flow rather than just swap its look.
+                          // Every other interaction keeps the new
+                          // Autosummary-instead-of-Next-Best-Action
+                          // behavior.
+                          showCustomerContextNextBestAction={activeInteraction.id === MARCUS_WEBB_ID}
                           // "View customer info" — per explicit request
                           // ("match the customer info side panel content
                           // to what is currently in phase 1 (clicking
@@ -8806,6 +9820,23 @@ export function AgentWorkspaceAdvancedPage({
                           showSessionAddParticipant={false}
                           sessionTransferInKebabMenu
                           sessionStatusAndKebabBeforeOutcome
+                          // Per explicit follow-up request ("remove the
+                          // more options for phase 1 - these will not be
+                          // available until phase 2") — `showSessionKebabMenu`
+                          // defaults to `true` (`InteractionTranscript`'s own
+                          // default, agent-next-gen-transcript.tsx); `false`
+                          // hides this session row's own kebab outright,
+                          // mirroring the identical `showKebab: false` change
+                          // at the LeftNav's own `ChannelRow` channel mapping
+                          // above (same request, same reasoning — nothing
+                          // behind either kebab is ready for this phase yet).
+                          // `sessionTransferInKebabMenu` just above is left
+                          // as-is rather than removed too — with the kebab
+                          // itself hidden it's simply inert (nothing left to
+                          // fold Consult/Transfer into), so Phase 2 (which
+                          // still wants this exact prop combination) doesn't
+                          // need it re-added later.
+                          showSessionKebabMenu={false}
                           // Per explicit request: while reviewing Marcus
                           // Webb's still-live AI-agent conversation, the
                           // status chip/kebab/Outcome button are locked
@@ -9053,64 +10084,38 @@ export function AgentWorkspaceAdvancedPage({
                           ref={setMarcusQuestionSlotEl}
                           className="mx-auto flex w-full max-w-[768px] shrink-0 flex-col gap-3 overflow-y-auto px-6 pb-3 empty:hidden max-h-[50vh]"
                         >
-                          {/* Per explicit request, every interaction OTHER
-                              than Marcus Webb gets an inert "ask a
-                              question" field here instead of this slot
-                              just collapsing to nothing — Marcus's own
-                              card (elsewhere in this same return, when
-                              active) portals its scripted questions AND
-                              its own real ask-flow into this same node via
-                              `questionSlotElement`; the two are mutually
-                              exclusive by construction (only one
-                              interaction is ever active), so there's never
-                              a collision between this ordinary child and
-                              that portal's writes. Fully uncontrolled/
-                              inert — no `value`/`onChange`/`onSubmit` —
-                              same "present but not wired to anything real
-                              yet" pattern already used for Copilot's own
-                              `AIInput` footer in
-                              agent-next-gen-customer-info-panel.tsx.
-                              Gated like `InteractionComposer` just below
-                              on closed/read-only, but per explicit
-                              decision NOT excluded for voice/email — this
-                              is a distinct affordance, not a reply
-                              mechanism. */}
-                          {activeInteraction.id !== MARCUS_WEBB_ID &&
-                            !activeInteraction.closed &&
-                            activeChannelStatus !== "Closed" && (
-                              <AIInput singleLine helperText="" placeholder="Ask a question..." className="w-full" />
-                            )}
+                          {/* Per explicit follow-up request ("remove the
+                              AI ask a question from the contact main
+                              containers for all interactions"): every
+                              interaction OTHER than Marcus Webb used to get
+                              an inert "ask a question" field here — fully
+                              uncontrolled/inert (no `value`/`onChange`/
+                              `onSubmit`), never wired to anything real —
+                              instead of this slot just collapsing to
+                              nothing. That's gone now; this node exists
+                              purely as Marcus Webb's own portal target
+                              (`questionSlotElement`, set via
+                              `setMarcusQuestionSlotEl` above) for his
+                              scripted questions AND his own real ask-flow,
+                              elsewhere in this same return when he's
+                              active — every other interaction now leaves
+                              this slot genuinely empty (`empty:hidden`
+                              above collapses it to nothing, same as
+                              before). */}
                         </div>
-                        {/* `activeChannelType !== "email" && !== "voice"` —
-                            per explicit request, hidden for now on Email
-                            specifically: a plain "Chat with Customer" text
-                            composer sitting under its own "Coming Soon ...
-                            Content" placeholder above (see that
-                            placeholder's own doc comment) reads as broken/
-                            out of place — there's no real Email UI yet for
-                            it to actually send into. Will come back once
-                            real content replaces that placeholder. Voice no
-                            longer falls into this same "nothing renders"
-                            bucket — its own composer-slot equivalent
-                            (`VoiceCallControls`) used to render right here
-                            too, but per later explicit follow-up request
-                            ("move the call controls below the main
-                            container so if a user navigates to home/
-                            settings while on a call the controls of the
-                            current call stay visible") it's been hoisted
-                            all the way out to right below `</Container>`
-                            instead — see that render site's own doc comment
-                            for the full "why" and what replaced it here
-                            (nothing — this branch simply has no
-                            voice-specific composer-slot content of its own
-                            anymore, EXCEPT the "Reviewing this conversation"
-                            `ActionBar` just below). */}
-                        {!activeInteraction.closed &&
-                          activeChannelStatus !== "Closed" &&
-                          activeChannelType !== "email" &&
-                          activeChannelType !== "voice" && (
-                            <InteractionComposer onSend={(text) => handleSendMessage(activeInteraction.id, text)} />
-                          )}
+                        {/* Per explicit request ("don't add the chat input
+                            to the main container when a new chat is open -
+                            keep it in the side panel"): the main transcript
+                            column never renders its own `InteractionComposer`
+                            anymore, for ANY channel type, including chat/
+                            SMS/WhatsApp, which used to get one here. Replying
+                            now always happens through the docked side panel
+                            (`CustomerInformationSidePanel`'s channel-preview
+                            override, opened via that channel's own icon in
+                            the header row - see `channelPreviewThreadKey`),
+                            the same single composer surface every other
+                            channel preview already uses, rather than a
+                            second, main-column-only composer instance. */}
                         {/* "Reviewing this conversation" action bar — per a
                             LATER explicit follow-up request ("move the
                             review action bar back to the bottom and remove
@@ -9188,6 +10193,16 @@ export function AgentWorkspaceAdvancedPage({
                                   <Button
                                     variant="destructive"
                                     size="md"
+                                    disabled={
+                                      !!liveVoiceCallInteraction &&
+                                      liveVoiceCallInteraction.id !== MARCUS_WEBB_ID
+                                    }
+                                    title={
+                                      liveVoiceCallInteraction &&
+                                      liveVoiceCallInteraction.id !== MARCUS_WEBB_ID
+                                        ? "A call is already in progress"
+                                        : undefined
+                                    }
                                     onClick={() => setMarcusWebbReviewing(false)}
                                   >
                                     Takeover
@@ -9391,7 +10406,7 @@ export function AgentWorkspaceAdvancedPage({
               ) : (
                 <>
                 <div key={activeDeskTab} className="flex flex-1 flex-col min-w-0 overflow-y-auto px-6 py-6 animate-in fade-in-0 duration-200">
-                  <div className="w-full max-w-[1200px] mx-auto lyra-container-grid-wrap">
+                  <div className="w-full max-w-[1024px] mx-auto lyra-container-grid-wrap">
                     {showPageHeader && (
                       // Dashboard header — per explicit request ("go back
                       // to the version of the home page that does NOT
@@ -9524,6 +10539,12 @@ export function AgentWorkspaceAdvancedPage({
                         }}
                         selectedEntryId={selectedContactHistoryEntry?.id ?? null}
                         historyByRange={contactHistoryByRange}
+                        // Per explicit request ("default the phase 1
+                        // contact history filter to last 72 hours") — see
+                        // `ContactHistoryCard`'s own `defaultDateFilter`
+                        // doc comment (agent-next-gen-contact-history.tsx)
+                        // for why this tier alone passes it.
+                        defaultDateFilter="last72h"
                         // `onOpenAllContacts` intentionally omitted — per
                         // explicit request ("remove all contacts button from
                         // the contact history in the home dashboard"). This
@@ -9602,7 +10623,6 @@ export function AgentWorkspaceAdvancedPage({
                     // `PanelRightClose` — same "closing a docked right-side
                     // panel" glyph as this panel's sibling instance above,
                     // instead of `ContainerHeader`'s generic default `X`.
-                    closeIcon={<PanelRightClose className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />}
                     // Redial/Re-open — per explicit request, these now live
                     // here (the summary panel) instead of directly on the
                     // Contact History row. Mutually exclusive by channel
@@ -9634,6 +10654,26 @@ export function AgentWorkspaceAdvancedPage({
                         selectedContactHistoryEntry.redial ? (
                           <Button
                             variant="outline"
+                            // Per explicit request ("in phase 1, we cannot
+                            // have 2 or more calls at the same time, so if
+                            // an agent is on an active call then disable
+                            // the ... redial buttons in the contact
+                            // history"), then a follow-up bug report ("only
+                            // disable when the agent is on an active
+                            // call") — same `agentOnActiveVoiceCall` signal
+                            // the "New Outbound" trigger's own identical
+                            // `disabled` wiring uses (see that render
+                            // site's own doc comment, and
+                            // `agentOnActiveVoiceCall`'s own doc comment,
+                            // for why this isn't the plain
+                            // `liveVoiceCallInteraction` it originally
+                            // read). `title` (native `Button` prop,
+                            // button.tsx) renders as a plain browser
+                            // tooltip on this non-icon variant, same as
+                            // every other `title` this file already passes
+                            // to a non-icon `Button`.
+                            disabled={agentOnActiveVoiceCall}
+                            title={agentOnActiveVoiceCall ? "A call is already in progress" : undefined}
                             onClick={(e) => {
                               handleRedialButtonClick(selectedContactHistoryEntry, e.currentTarget);
                             }}
@@ -9909,7 +10949,7 @@ export function AgentWorkspaceAdvancedPage({
                   className="shrink-0 h-full z-[5] animate-in fade-in-0 duration-200 delay-150 fill-mode-backwards"
                 >
                 <CustomerInformationSidePanel
-                  open={sidePanelOpen}
+                  open={sidePanelOpen || !!channelPreviewThreadKey}
                   // Always unpinned (floating overlay) while full-screen —
                   // per explicit request this should overlay the parent
                   // Container, not push the tab row/transcript column over
@@ -9972,19 +11012,30 @@ export function AgentWorkspaceAdvancedPage({
                     handleStartCall({ contact, channel, phone, skillId })
                   }
                   focusTabOverride={customerPanelFocusTab}
-                  // Per explicit request: an unknown-contact interaction
-                  // (`!activeInteractionIsRealCustomer` — same signal
-                  // `tabs` above already keys off) gets the customer-
-                  // matching UI (search/possible-matches/create-new)
-                  // instead of its normal tabs+body — see `matchState`'s
-                  // own doc comment (agent-next-gen-customer-info-
-                  // panel.tsx) for what each piece does. `undefined` for a
-                  // real-customer interaction, same as every OTHER
-                  // consumer of this component always passes.
+                  // Per explicit request ("contact details panel for
+                  // unmatched customers should match the hover popover.
+                  // add a button above auto summary that says link to
+                  // existing customer and then when that is clicked slide
+                  // in a panel with the search customer / create new
+                  // customer panel content") — the customer-matching UI
+                  // (search/possible-matches/create-new) no longer shows
+                  // automatically just because the interaction is
+                  // unmatched (`!activeInteractionIsRealCustomer` alone);
+                  // it now also requires `linkCustomerPanelOpen`, set by
+                  // the new "Link to existing customer" button
+                  // (`onLinkCustomer` on `bodyOverride`'s own
+                  // `DetailsPanelAccordions` below) — an unmatched
+                  // customer's docked panel therefore shows the SAME
+                  // `bodyOverride` content the hover popover always shows
+                  // by default now, matching it, with this flow reachable
+                  // as an on-demand overlay instead of the default view.
+                  // See `matchState`'s own doc comment (agent-next-gen-
+                  // customer-info-panel.tsx) for what each piece does.
+                  // `undefined` for a real-customer interaction, same as
+                  // every OTHER consumer of this component always passes.
                   matchState={
-                    activeInteractionIsRealCustomer
-                      ? undefined
-                      : {
+                    !activeInteractionIsRealCustomer && linkCustomerPanelOpen
+                      ? {
                           step: customerMatchStep,
                           query: customerMatchQuery,
                           onQueryChange: setCustomerMatchQuery,
@@ -9995,7 +11046,17 @@ export function AgentWorkspaceAdvancedPage({
                           onBackToSearch: handleBackToCustomerSearch,
                           onSaveNewCustomer: handleSaveNewCustomer,
                         }
+                      : undefined
                   }
+                  // Back arrow for the match flow's "search" step (the
+                  // "create" step already gets one via `matchState.onBackToSearch`
+                  // regardless) — closes this on-demand overlay back to the
+                  // normal `bodyOverride` content, same button-driven
+                  // open/close pair `skipGroupPicker`'s own opt-in pattern
+                  // (create-new.tsx, lyra-ui) already established this
+                  // session for a similarly scoped, single-consumer tweak
+                  // to a shared component.
+                  matchStateOnBack={() => setLinkCustomerPanelOpen(false)}
                   // Per explicit request ("swap the actual content
                   // rendered inside each panel", then later "put the
                   // transcript and session tabs into the new customer
@@ -10018,36 +11079,93 @@ export function AgentWorkspaceAdvancedPage({
                   // this ONE panel is open and on its "Details" tab now
                   // (`focusCustomerPanelTab`, redesigned alongside this
                   // change) — there's no separate surface left to open.
-                  headerTitleOverride="Contact Details"
+                  // Per explicit follow-up request ("put the content of
+                  // the channels IN the side panel (where the contact
+                  // details content is now)" / "so a chat opens in that
+                  // side panel"): while `channelPreviewThread` is set, it
+                  // takes over the title, tabs, body, AND footer below —
+                  // this whole panel becomes that channel's preview
+                  // instead of Contact Details, exactly like switching
+                  // interactions/tabs already replaces this same panel's
+                  // content in place (no second panel).
+                  headerTitleOverride={channelPreviewThread ? channelPreviewMeta?.label : "Contact Details"}
                   headerTabsOverride={
-                    <TabList className="px-4">
-                      {(activeChannelType === "voice"
-                        ? (["Details", "Transcript", "Session Details"] as const)
-                        : (["Details", "Session Details"] as const)
-                      ).map((label) => (
-                        <Tab
-                          key={label}
-                          active={customerPanelActiveTab === label}
-                          onClick={() => setCustomerPanelActiveTab(label)}
-                        >
-                          {/* Displayed as "Overview"/"Session" — the
-                              underlying identifiers stay "Details"/"Session
-                              Details" (used throughout for state/
-                              comparisons). */}
-                          {label === "Session Details" ? "Session" : label === "Details" ? "Overview" : label}
-                        </Tab>
-                      ))}
-                    </TabList>
+                    channelPreviewThread ? undefined : (
+                      <TabList className="px-4">
+                        {(activeChannelType === "voice"
+                          ? (["Details", "Transcript", "Session Details"] as const)
+                          : (["Details", "Session Details"] as const)
+                        ).map((label) => (
+                          <Tab
+                            key={label}
+                            active={customerPanelActiveTab === label}
+                            onClick={() => setCustomerPanelActiveTab(label)}
+                          >
+                            {/* Displayed as "Overview"/"Session" — the
+                                underlying identifiers stay "Details"/"Session
+                                Details" (used throughout for state/
+                                comparisons). */}
+                            {label === "Session Details" ? "Session" : label === "Details" ? "Overview" : label}
+                          </Tab>
+                        ))}
+                      </TabList>
+                    )
                   }
-                  // Only while the Session tab is active — see
-                  // `sessionDetailsTabContent`'s own doc comment for the
-                  // fuller "why" (shared hook/state with the hover-preview
-                  // popover's own identical wiring further down).
+                  // A channel preview's own composer lives here, in
+                  // `footerOverride` — same "fixed footer outside the
+                  // scrollable body" treatment the Session tab's own
+                  // `sessionDetailsTabContent.footer` already gets just
+                  // below, rather than being hand-stacked inside
+                  // `bodyOverride` itself. No composer at all for email
+                  // (its body is just a "Coming soon" placeholder), for
+                  // voice (per explicit follow-up request — a voice
+                  // preview is just the transcript, same as the main
+                  // column's own voice view never gets a composer either
+                  // — see `activeChannelType !== "voice"` at that render
+                  // site), or once this specific thread has actually
+                  // closed.
                   footerOverride={
-                    customerPanelActiveTab === "Session Details" ? sessionDetailsTabContent.footer : undefined
+                    channelPreviewThread
+                      ? (channelPreviewThread.type !== "email" &&
+                          channelPreviewThread.type !== "voice" &&
+                          !activeInteraction.closed &&
+                          activeInteraction.threadStatuses?.[channelPreviewThreadStableKey!] !== "Closed" && (
+                            <InteractionComposer
+                              onSend={(text) =>
+                                handleSendMessage(activeInteraction.id, text, channelPreviewThreadStableKey!)
+                              }
+                            />
+                          )) || undefined
+                      : customerPanelActiveTab === "Session Details"
+                      ? sessionDetailsTabContent.footer
+                      : undefined
                   }
                   bodyOverride={
-                    customerPanelActiveTab === "Transcript" && activeChannelType === "voice" ? (
+                    channelPreviewThread ? (
+                      channelPreviewThread.type === "email" ? (
+                        <div className="flex h-full items-center justify-center px-6 text-center text-sm text-lyra-fg-secondary">
+                          Coming soon
+                        </div>
+                      ) : (
+                        <InteractionTranscript
+                          channelType={channelPreviewThread.type}
+                          direction={channelPreviewThread.direction}
+                          customerName={activeInteraction.customerName}
+                          contactId={channelPreviewThread.contactId ?? activeInteraction.customerId}
+                          // Per explicit request ("display the phone
+                          // number instead of the contact ID in the
+                          // session row") — see `InteractionTranscript`'s
+                          // own `channelAddressLabel` prop doc comment
+                          // (agent-next-gen-transcript.tsx).
+                          channelAddressLabel={channelPreviewThread.addressLabel}
+                          skillLabel={channelPreviewThread.preview}
+                          isFreshLaunch={!!channelPreviewThread.startedFresh}
+                          liveMessages={activeInteraction.liveMessages?.[channelPreviewThreadStableKey!] ?? []}
+                          showSessionActionCluster={false}
+                          showViewDetails={false}
+                        />
+                      )
+                    ) : customerPanelActiveTab === "Transcript" && activeChannelType === "voice" ? (
                       // A fresh `InteractionTranscript` instance, same as
                       // this tab always rendered back when it lived in the
                       // separate "Session Details" overlay — see that
@@ -10059,6 +11177,12 @@ export function AgentWorkspaceAdvancedPage({
                         direction={activeChannel?.direction}
                         customerName={activeInteraction.customerName}
                         contactId={activeChannel?.contactId ?? activeInteraction.customerId}
+                        // Per explicit request ("display the phone number
+                        // instead of the contact ID in the session row")
+                        // — see `InteractionTranscript`'s own
+                        // `channelAddressLabel` prop doc comment
+                        // (agent-next-gen-transcript.tsx).
+                        channelAddressLabel={activeChannel?.addressLabel}
                         skillLabel={activeChannel?.preview}
                         isFreshLaunch={!!activeChannel?.startedFresh}
                         liveMessages={activeInteraction.liveMessages?.[activeChannelKey] ?? []}
@@ -10080,8 +11204,35 @@ export function AgentWorkspaceAdvancedPage({
                       <DetailsPanelAccordions
                         customerName={activeInteraction.customerName}
                         customerContextOverview={customerContextOverviewInfo}
+                        // Per explicit request ("replace the autosummary
+                        // card in the contact details with the content
+                        // depicted in the screenshot of the real time
+                        // summary card ... ignore the edit/pin icons and
+                        // keep it as an accordion"), then a follow-up
+                        // clarification ("do not modify the autosummary
+                        // card that is inline with the conversation -
+                        // create a new card and call it 'Real-Time
+                        // Summary'") — this docked "Contact Details" panel
+                        // is the one place that opts in; the main
+                        // transcript column's own `customerContextOverview`
+                        // render (this page's other call site, further up)
+                        // is untouched, still the original "Autosummary".
+                        // `realTimeSummaryUpdatedLabel` — see that state's
+                        // own doc comment above (near `clockTick`) for how
+                        // it's derived.
+                        showRealTimeSummary
+                        realTimeSummaryUpdatedLabel={realTimeSummaryUpdatedLabel}
                         onViewCustomerInfo={
                           activeInteractionIsRealCustomer ? () => focusCustomerPanelTab("Overview") : undefined
+                        }
+                        // Opens the on-demand search/create-new overlay
+                        // above (`matchState`/`matchStateOnBack`) — see
+                        // `linkCustomerPanelOpen`'s own doc comment for the
+                        // fuller "why". `undefined` for a real-customer
+                        // interaction, same as `onViewCustomerInfo` right
+                        // above (there's nothing to link once matched).
+                        onLinkCustomer={
+                          activeInteractionIsRealCustomer ? undefined : () => setLinkCustomerPanelOpen(true)
                         }
                       />
                     )
@@ -10089,6 +11240,7 @@ export function AgentWorkspaceAdvancedPage({
                 />
                 </div>
               )}
+
             </div>
 
             {/* "View customer info" overlay — per explicit follow-up
@@ -10373,6 +11525,46 @@ export function AgentWorkspaceAdvancedPage({
               // mounts fresh (a real call starting, or `marcusWebbReviewing`
               // switching back to `false`) without needing a `key`.
               className="bg-transparent px-0 pt-2 pb-0 animate-in slide-in-from-bottom-4 fade-in-0 duration-200"
+              // Per explicit request ("hide the video button in v3 for now
+              // - keep it in phase 2"): re-using the same `showAddVideo`
+              // flag Agent Workspace 2.0 Phase 1 already established (see
+              // that prop's own doc comment, agent-next-gen-voice-call-
+              // controls.tsx) rather than a new one, since it's the exact
+              // same "not ready yet, coming back later" gate.
+              showAddVideo={false}
+              // Per explicit request ("when a call is placed on hold, add
+              // an on hold timer below the call timer in the call controls
+              // and in the interaction nav item") — same `Thread.
+              // heldByAgent`/`onHoldChange` wiring Agent Workspace 2.0's
+              // own identical call site already established (see that
+              // field's own doc comment, agent-next-gen-interaction-
+              // dashboard.tsx), plus the new `heldSinceTick` companion
+              // field (same file) this request adds, set/cleared in
+              // lockstep with `heldByAgent` right here so
+              // `onHoldElapsedSeconds` below always has a real start point
+              // to diff `clockTick` against whenever `onHold` is true.
+              onHold={liveVoiceCallThread.heldByAgent}
+              onHoldChange={(next) => {
+                setInteractions((prev) =>
+                  prev.map((interaction) =>
+                    interaction.id === liveVoiceCallInteraction.id
+                      ? {
+                          ...interaction,
+                          threads: interaction.threads.map((c) =>
+                            c.id === liveVoiceCallThread.id
+                              ? { ...c, heldByAgent: next, heldSinceTick: next ? clockTick : undefined }
+                              : c
+                          ),
+                        }
+                      : interaction
+                  )
+                );
+              }}
+              onHoldElapsedSeconds={
+                liveVoiceCallThread.heldSinceTick !== undefined
+                  ? clockTick - liveVoiceCallThread.heldSinceTick
+                  : undefined
+              }
               onHangUp={() => {
                 setInteractions((prev) =>
                   prev.map((i) =>
@@ -10423,14 +11615,30 @@ export function AgentWorkspaceAdvancedPage({
               // here — deriving real initials would duplicate lyra-ui's own
               // unexported `getInitials` (interaction-nav-item.tsx) rather
               // than reuse it, so for now every live call shows the generic
-              // white `Plus` fallback glyph the component already falls
+              // white `User` fallback glyph the component already falls
               // back to without it, matching the reference screenshot's own
-              // unmatched-quickdial-number example.
+              // unmatched-quickdial-number example. Per explicit follow-up
+              // request ("avatars within the contact and call details
+              // should be the initials of the customer OR a customer
+              // avatar if no customer name is known"): now reuses this
+              // file's own `initialsFor` (already imported for the current
+              // agent's own avatar, above) the same way
+              // `buildCustomerContextOverviewInfo` derives
+              // `customerCard.avatarInitials` — gated on
+              // `liveVoiceCallInteractionIsRealCustomer` (just above) so an
+              // unidentified/ad-hoc caller's raw dialed number still falls
+              // back to the generic glyph instead of nonsense initials
+              // derived from digits.
               customerLabel={
                 liveVoiceCallInteraction.customerName ??
                 liveVoiceCallThread.addressLabel ??
                 liveVoiceCallThread.value ??
                 liveVoiceCallInteraction.id
+              }
+              customerInitials={
+                liveVoiceCallInteractionIsRealCustomer && liveVoiceCallInteraction.customerName
+                  ? initialsFor(liveVoiceCallInteraction.customerName)
+                  : undefined
               }
             />
           ) : null}
