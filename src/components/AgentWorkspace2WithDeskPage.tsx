@@ -35,7 +35,7 @@ import {
   LeftNav,
   NavRail,
   CreateNew,
-  useOutboundAddButton,
+  useAddChannelButton,
   InteractionNavItem,
   type InteractionNavItemProps,
   Icon,
@@ -2016,6 +2016,32 @@ export function AgentWorkspace2WithDeskPage({
     setOutcomeDraftKey(null);
     setOutcomeDraftSource(null);
   };
+  // "Save & Redial"/"Save & Dismiss" — the Outcome popover's own footer
+  // once `callEnded` is true (`ChannelOutcomeConfig`, outcome-panel.tsx).
+  // Per explicit request: ending a call folds "wrap this call up" entirely
+  // into this popover instead of leaving it split across a separate
+  // standalone Unassign & Dismiss icon (now hidden once a call ends — see
+  // `onDismissChannel` below). "Save & Dismiss" is a FULL dismiss — same as
+  // clicking that icon used to be (removes the card, logs Contact History
+  // via the existing `handleDismissInteraction`). Mirrors
+  // AgentWorkspaceAdvancedPage.tsx's own identical handlers.
+  const handleOutcomeSaveAndDismiss = (interactionId: string) => {
+    setOutcomeDraftKey(null);
+    setOutcomeDraftSource(null);
+    handleDismissInteraction(interactionId);
+  };
+  // "Save & Redial" opens the exact same "Redial Contact" dial-pad popover
+  // Contact History's own Redial button uses (`handleRedialButtonClick`) —
+  // reusing the same `dialpadRequest` mechanism rather than a second,
+  // hand-rolled popover. `redialActiveInteraction` (below) is what lets
+  // `handleDialpadSubmit` recognize a matching submission as "finish
+  // redialing THIS interaction" rather than an unrelated new quick dial.
+  const handleOutcomeSaveAndRedial = (interactionId: string, phoneNumber: string, anchorEl: HTMLElement | null) => {
+    setOutcomeDraftKey(null);
+    setOutcomeDraftSource(null);
+    setRedialActiveInteraction({ interactionId, phoneNumber });
+    setDialpadRequest({ phoneNumber, anchorEl });
+  };
   // Formerly drove the record header's own icon-button-cluster Outcome
   // popover and status chip (Consult/Transfer, Outcome, kebab, status
   // chip) — that header cluster no longer exists (see the channel-
@@ -3663,6 +3689,13 @@ export function AgentWorkspace2WithDeskPage({
     phoneOptions?: { value: string; label: string }[];
   } | null>(null);
   const [redialEntry, setRedialEntry] = useState<ContactHistoryEntry | null>(null);
+  // Pending "Save & Redial" from the Outcome popover (see
+  // `handleOutcomeSaveAndRedial`) — a plain `{interactionId, phoneNumber}`
+  // pair rather than a full `ContactHistoryEntry` like `redialEntry` above,
+  // since this interaction is already known directly (no entry/customerId
+  // lookup needed) — see `handleRedialActiveInteraction`'s own doc comment.
+  // Mirrors AgentWorkspaceAdvancedPage.tsx's own identical state.
+  const [redialActiveInteraction, setRedialActiveInteraction] = useState<{ interactionId: string; phoneNumber: string } | null>(null);
 
   /* ── Live queue simulation ──
      The home tab's queue widgets should look "live" — wait time ticks up
@@ -4669,7 +4702,7 @@ export function AgentWorkspace2WithDeskPage({
 
      Prefers `entry.customerId` (the real `CREATE_NEW_CUSTOMERS` id) over the
      synthetic `history:` one whenever it's on hand — this was a real, shipped
-     bug: `useOutboundAddButton`'s `getHeaderAction` looks up an interaction's
+     bug: `useAddChannelButton`'s `getHeaderAction` looks up an interaction's
      own id in `outboundConfig.groups` to build its "+" (Add Channel) button.
      A synthetic `history:CST-30164`-style id never matches any real contact,
      so `getHeaderAction` now returns `null` for it (no button at all) rather
@@ -4785,6 +4818,50 @@ export function AgentWorkspace2WithDeskPage({
     if (isNewInteraction) setSidePanelOpen(false);
   };
 
+  // "Save & Redial" (Outcome popover, once a voice call has ended — see
+  // `handleOutcomeSaveAndRedial`) finishing via `handleDialpadSubmit` below.
+  // Unlike `handleRedial` above, this is keyed DIRECTLY by the already-known
+  // `interactionId` (the interaction whose call just ended) rather than
+  // resolved from a `ContactHistoryEntry`'s own `customerId` — there's no
+  // ambiguity to resolve here, and keying directly avoids any risk of
+  // accidentally landing on a DIFFERENT interaction that happens to share
+  // that customerId. Same fresh-outbound-voice-`Thread` shape `handleRedial`
+  // builds. Also clears `closed` (not just `voiceCallEnded`) — a redial
+  // restarting a previously-closed/reopened-from-history voice interaction
+  // should go fully live again, not stay stuck read-only/dimmed (several
+  // render sites check `interaction.closed` directly). Mirrors
+  // AgentWorkspaceAdvancedPage.tsx's own identical handler.
+  const handleRedialActiveInteraction = (interactionId: string, phoneNumber: string, skillId: string) => {
+    const skillLabel = OUTBOUND_CONFIG.skillOptions.find((s) => s.value === skillId)?.label ?? OUTBOUND_CONFIG.skillOptions[0]?.label;
+    const newChannel: Thread = {
+      id: "voice",
+      type: "voice",
+      startTick: clockTick,
+      preview: skillLabel,
+      value: phoneNumber,
+      addressLabel: phoneNumber,
+      contactId: generateContactId(),
+      startedFresh: true,
+      direction: "outbound",
+    };
+    setInteractions((prev) =>
+      prev.map((i) =>
+        i.id === interactionId
+          ? {
+              ...i,
+              threads: [newChannel],
+              currentThreadId: newChannel.id,
+              threadStatuses: undefined,
+              liveMessages: undefined,
+              voiceCallEnded: undefined,
+              closed: undefined,
+            }
+          : i
+      )
+    );
+    switchActiveInteraction(interactionId);
+  };
+
   // Redial button's own onClick (Contact History summary panel's footer,
   // below) — per the explicit request quoted on `dialpadRequest`'s own doc
   // comment above, this no longer calls `handleRedial` directly. It instead
@@ -4843,6 +4920,12 @@ export function AgentWorkspace2WithDeskPage({
   const handleDialpadSubmit = (phoneNumber: string, skillId: string) => {
     const pendingEntry = redialEntry;
     setRedialEntry(null);
+    // Same "read AND clear regardless of which branch runs" reasoning as
+    // `pendingEntry` above, for the "Save & Redial" pending state — see
+    // `handleOutcomeSaveAndRedial`/`redialActiveInteraction`'s own doc
+    // comments.
+    const pendingActiveInteraction = redialActiveInteraction;
+    setRedialActiveInteraction(null);
     const normalize = (raw: string) => {
       const digits = raw.replace(/\D/g, "");
       return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
@@ -4858,6 +4941,14 @@ export function AgentWorkspace2WithDeskPage({
         handleRedial(pendingEntry, skillId);
         return;
       }
+    }
+    // Checked before falling through to `handleQuickDial` — if the agent
+    // edited the pre-filled number before dialing, this intentionally does
+    // NOT match, and falls through to a normal new quick-dial card instead
+    // of reusing the ended interaction.
+    if (pendingActiveInteraction && normalize(pendingActiveInteraction.phoneNumber) === normalize(phoneNumber)) {
+      handleRedialActiveInteraction(pendingActiveInteraction.interactionId, phoneNumber, skillId);
+      return;
     }
     handleQuickDial(phoneNumber, skillId);
   };
@@ -5702,11 +5793,11 @@ export function AgentWorkspace2WithDeskPage({
   // InteractionNavItem.stories.tsx) wants the exact same "+" behavior on
   // each InteractionNavItem card — look up that interaction's underlying
   // outbound contact and scope the flyout to whatever channels it actually
-  // supports. That's `useOutboundAddButton` (lyra-ui) — a single shared
+  // supports. That's `useAddChannelButton` (lyra-ui) — a single shared
   // implementation instead of hand-copied ones that could (and did) quietly
   // drift out of sync.
   //
-  // No more `launchRequest`/`onLaunchRequestHandled` here — `OutboundAddButton`
+  // No more `launchRequest`/`onLaunchRequestHandled` here — `AddChannelButton`
   // is fully self-contained now (per explicit request: adding a channel from
   // an already-open interaction's own "+" was popping the detail form up
   // next to the LeftNav's separate "New Outbound" trigger instead of right
@@ -5722,7 +5813,7 @@ export function AgentWorkspace2WithDeskPage({
   // console.log, see its own definition), not the real handler. Passing
   // the bare `outboundConfig` here was a real, shipped bug: pressing
   // "Start Interaction" from this button silently logged instead of
-  // actually opening a card, since `useOutboundAddButton`'s `getHeaderAction`
+  // actually opening a card, since `useAddChannelButton`'s `getHeaderAction`
   // calls `outboundConfig.onStartCall?.(selection)` directly (create-new.tsx).
   //
   // `CONTACT_HISTORY_OUTBOUND_CONTACTS` (the 5 hand-authored rows) PLUS a
@@ -5757,7 +5848,7 @@ export function AgentWorkspace2WithDeskPage({
   // back to for the 5 hand-authored `CONTACT_HISTORY` rows with no real
   // `CREATE_NEW_CUSTOMERS` record behind them. Per explicit request:
   // reopening/redialing one of those rows used to leave the record header's
-  // own "+" (Add Channel) row completely empty — `useOutboundAddButton`'s
+  // own "+" (Add Channel) row completely empty — `useAddChannelButton`'s
   // `contactsById` had nothing to find under either synthetic id, so
   // `getAvailableChannels` always came back `[]` even for a customer with
   // other channels genuinely on file (`ContactHistoryEntry.channels`).
@@ -5779,7 +5870,7 @@ export function AgentWorkspace2WithDeskPage({
   // (run through `buildOpenChannelTagger`, same as `outboundConfig`'s own
   // groups above) is used here instead of the raw, untagged
   // `CONTACT_HISTORY_OUTBOUND_CONTACTS` constant.
-  const { getHeaderAction } = useOutboundAddButton({
+  const { getHeaderAction } = useAddChannelButton({
     ...outboundConfig,
     groups: [
       ...outboundConfig.groups,
@@ -5980,7 +6071,7 @@ export function AgentWorkspace2WithDeskPage({
      not random, so re-clicking the same notification always resolves to the
      same card) — rather than a synthetic `notif:${id}` one. This is the
      exact same case `handleRedial`'s own doc comment above describes:
-     `useOutboundAddButton`'s `getHeaderAction` looks up an interaction's id
+     `useAddChannelButton`'s `getHeaderAction` looks up an interaction's id
      in `outboundConfig.groups` to resolve its "+" Add Channel button — a
      synthetic id never matches, so `getHeaderAction` returns no button at
      all for it. Using a real customer id here means notification-opened
@@ -7275,7 +7366,7 @@ export function AgentWorkspace2WithDeskPage({
                 // `outboundConfig` itself keeps "customers" (see
                 // `HIDDEN_OUTBOUND_GROUP_IDS`'s own doc comment,
                 // agent-next-gen-outbound-data.tsx, for why: this app's
-                // `useOutboundAddButton` call further down needs that
+                // `useAddChannelButton` call further down needs that
                 // group to resolve a known customer's own "+" button) —
                 // this picker's own browsable "Choose group" list is the
                 // one place that still shouldn't show it, per the
@@ -7617,6 +7708,10 @@ export function AgentWorkspace2WithDeskPage({
                       resolution: interaction.threadStatuses?.[c.id] ?? "Open",
                       onResolutionChange: (value: string) =>
                         handleInteractionStatusChange(interaction.id, c.id, value),
+                      // Voice has no real Open/Pending/Resolved/Closed
+                      // disposition to log — hide the Status field in the
+                      // Log Outcome popover for voice channels.
+                      voice: c.type === "voice",
                       tagOptions: OUTCOME_TAG_OPTIONS,
                       selectedTags: outcomeDraft.tags,
                       onTagsChange: (tags: string[]) => setOutcomeDraft((d) => ({ ...d, tags })),
@@ -7627,6 +7722,24 @@ export function AgentWorkspace2WithDeskPage({
                       onSummaryChange: (value: string) => setOutcomeDraft((d) => ({ ...d, summary: value })),
                       onSave: handleOutcomeSave,
                       onCancel: handleOutcomeCancel,
+                      // Per explicit request: once this voice channel's call
+                      // has ended, the footer becomes "Save & Redial"/
+                      // "Save & Dismiss" instead — see `ChannelOutcomeConfig`'s
+                      // own doc comment (outcome-panel.tsx). `anchorEl` here
+                      // is the Outcome trigger's OWN DOM node (threaded
+                      // through by `buildOutcomePopoverSlots`'s `triggerRef`
+                      // param, channel-row.tsx) — anchors the resulting
+                      // "Redial Contact" popover right on this row's own
+                      // Outcome button. Mirrors AgentWorkspaceAdvancedPage.tsx's
+                      // own identical wiring.
+                      callEnded: c.type === "voice" && !!(interaction.closed || interaction.voiceCallEnded),
+                      onSaveAndRedial: (anchorEl) =>
+                        handleOutcomeSaveAndRedial(
+                          interaction.id,
+                          c.value ?? c.addressLabel ?? synthesizeChannelAddress("voice", interaction.customerId ?? interaction.id, interaction.customerName),
+                          anchorEl
+                        ),
+                      onSaveAndDismiss: () => handleOutcomeSaveAndDismiss(interaction.id),
                     } satisfies ChannelOutcomeConfig,
                   };
                 });
@@ -8223,7 +8336,7 @@ export function AgentWorkspace2WithDeskPage({
                         icon button PER channel this contact can still add
                         (Call/Email/SMS/…, via `getAvailableChannels` below)
                         instead of a single combined "Add Channel" trigger —
-                        each one is still the exact same `OutboundAddButton`
+                        each one is still the exact same `AddChannelButton`
                         every other "+" in this app uses (`getHeaderAction`,
                         create-new.tsx), just locked to one channel via its
                         new `initialChannel` option (skips straight to the
@@ -8394,6 +8507,20 @@ export function AgentWorkspace2WithDeskPage({
                       }
                       iconDivider={false}
                       title={interactionDisplayName(activeInteraction)}
+                      // Per explicit request ("a badge to the left of the
+                      // customer name ... that says 'Active Call' for
+                      // active call contacts so people don't get lost
+                      // visually"): `PageHeader`'s own built-in `badge`
+                      // prop (see `PageHeader.stories.tsx`'s "With Badge"
+                      // story) — no new prop needed, this one was just
+                      // unused at this call site since the "Online"/
+                      // "Closed" presence pill moved onto the avatar's own
+                      // corner (see that badge's own doc comment above).
+                      // `activeInteractionVoiceThread` is already derived
+                      // straight from `activeInteraction` (this header only
+                      // ever renders for it), so its presence alone means
+                      // this interaction has a live voice call.
+                      badge={activeInteractionVoiceThread ? "Active Call" : undefined}
                       // Per explicit follow-up request (mockup's own 4
                       // states — even State 2/4, with the full tab row
                       // showing, still read the ACTIVE tab's own "{icon}
@@ -8783,6 +8910,7 @@ export function AgentWorkspace2WithDeskPage({
                                                   resolution: activeInteraction.threadStatuses?.[key] ?? "Open",
                                                   onResolutionChange: (value) =>
                                                     handleInteractionStatusChange(activeInteraction.id, key, value),
+                                                  voice: c.type === "voice",
                                                   tagOptions: OUTCOME_TAG_OPTIONS,
                                                   selectedTags: outcomeDraft.tags,
                                                   onTagsChange: (tags) => setOutcomeDraft((d) => ({ ...d, tags })),
@@ -9043,6 +9171,7 @@ export function AgentWorkspace2WithDeskPage({
                                       resolution: activeInteraction.threadStatuses?.[c.id] ?? "Open",
                                       onResolutionChange: (value) =>
                                         handleInteractionStatusChange(activeInteraction.id, c.id, value),
+                                      voice: c.type === "voice",
                                       tagOptions: OUTCOME_TAG_OPTIONS,
                                       selectedTags: outcomeDraft.tags,
                                       onTagsChange: (tags) => setOutcomeDraft((d) => ({ ...d, tags })),
@@ -9706,6 +9835,29 @@ export function AgentWorkspace2WithDeskPage({
                           onOutcomeSummaryChange={(value) => setOutcomeDraft((d) => ({ ...d, summary: value }))}
                           onOutcomeSave={handleOutcomeSave}
                           onOutcomeCancel={handleOutcomeCancel}
+                          // Per explicit request: once this voice channel's
+                          // call has ended, the Outcome popover's footer
+                          // becomes "Save & Redial"/"Save & Dismiss" instead
+                          // — same condition as the LeftNav `ChannelRow`
+                          // config's own `callEnded` above. `anchorEl` here
+                          // is the Outcome trigger's OWN DOM node
+                          // (`OutcomePanel` threads it through automatically
+                          // — see its own doc comment, outcome-panel.tsx),
+                          // so the resulting "Redial Contact" popover
+                          // anchors right on this session row's Outcome
+                          // button. Mirrors AgentWorkspaceAdvancedPage.tsx's
+                          // own identical wiring.
+                          outcomeCallEnded={activeChannelType === "voice" && !!(activeInteraction.closed || activeInteraction.voiceCallEnded)}
+                          onOutcomeSaveAndRedial={(anchorEl) =>
+                            handleOutcomeSaveAndRedial(
+                              activeInteraction.id,
+                              activeChannel?.value ??
+                                activeChannel?.addressLabel ??
+                                synthesizeChannelAddress("voice", activeInteraction.customerId ?? activeInteraction.id, activeInteraction.customerName),
+                              anchorEl
+                            )
+                          }
+                          onOutcomeSaveAndDismiss={() => handleOutcomeSaveAndDismiss(activeInteraction.id)}
                           // Same dismiss logic `ChannelTab`'s own kebab
                           // "Unassign & Dismiss" entry uses for this exact
                           // channel — dismiss just the channel while others
@@ -9725,9 +9877,16 @@ export function AgentWorkspace2WithDeskPage({
                           // `onDismiss` (agent-next-gen-transcript.tsx) — the
                           // record header's own copy of this button — which
                           // previously stayed visible during a live call.
+                          // Per a later explicit follow-up request: once the
+                          // call has actually ended, "Save & Dismiss" in the
+                          // Outcome popover replaces this icon entirely — so
+                          // unlike before, this no longer shows again once
+                          // `voiceCallEnded` is true (the `closed`-reopened-
+                          // from-history branch, i.e. "Remove from Queue",
+                          // is preserved unchanged).
                           onDismissChannel={
                             activeChannel &&
-                            !(activeChannelType === "voice" && !activeInteraction.closed && !activeInteraction.voiceCallEnded)
+                            (activeChannelType !== "voice" || activeInteraction.closed)
                               ? () => {
                                   if (activeInteraction.threads.length > 1) {
                                     handleDismissChannel(activeInteraction.id, activeChannel);

@@ -6,8 +6,8 @@ import { InteriorPanel } from "@nicecxone/lyra-ui";
  *  non-full-screen pattern — see `../../../lyra-ui/src/components/
  *  interior-panel.tsx`'s own doc comment: `InteriorPanel` is a bare,
  *  general-purpose primitive with no enforced "standard" configuration,
- *  so every consumer has always had to set `allowFullScreen`/
- *  `absoluteBreakpoint`/`maxWidth`/`className` for itself).
+ *  so every consumer has always had to set its own overlay/sizing/layering
+ *  props for itself).
  *
  *  Per an explicit audit request ("check if this is a standard component
  *  and let me know if there is drift"), two call sites in
@@ -23,7 +23,19 @@ import { InteriorPanel } from "@nicecxone/lyra-ui";
  *  opened it. This wrapper hardcodes that shared configuration once, so
  *  every "in-contact" panel that uses it can't drift again — only the
  *  props that legitimately vary per usage (open/close, header content,
- *  footer, children) are exposed. */
+ *  footer, children) are exposed.
+ *
+ *  `absoluteBreakpoint={Infinity}` + `maxWidth={Infinity}` used to be
+ *  hand-rolled here — per a later explicit request ("this is desired
+ *  behavior but a control that should be written into lyra-ui interior
+ *  panel component"), lyra-ui's `InteriorPanel` now has that exact
+ *  combination built in as `overlayHeader` (see its own doc comment for
+ *  why covering the record header above this panel is a byproduct of
+ *  WHERE it's mounted, not something the prop repositions on its own),
+ *  so this wrapper sets that one prop instead of the two it stood in
+ *  for. This wrapper still exists — `overlayHeader` only covers the
+ *  overlay/sizing behavior, not the `z-[5]` layering or the shared
+ *  header/footer/children prop surface this file bundles. */
 export function InContactInteriorPanel({
   open,
   onClose,
@@ -48,8 +60,7 @@ export function InContactInteriorPanel({
       open={open}
       onClose={onClose}
       allowFullScreen
-      absoluteBreakpoint={Infinity}
-      maxWidth={Infinity}
+      overlayHeader
       // Per explicit bug report ("it is above the search panel and
       // chevron toggle in the left nav"): dropped from `z-[500]` to
       // `z-[5]` (explicit follow-up request, "make it 5") — low enough

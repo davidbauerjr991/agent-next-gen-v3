@@ -268,7 +268,7 @@ function contactHistoryOutboundContact(entry: ContactHistoryEntry, id: string): 
 }
 
 /** Registers a `CreateNewOutboundContact` for every entry in `entries`, so
- *  `useOutboundAddButton`'s `contactsById` lookup (create-new.tsx) has
+ *  `useAddChannelButton`'s `contactsById` lookup (create-new.tsx) has
  *  something to find once one of them is reopened/redialed into a real
  *  assignment card — per explicit request: a `ContactHistoryEntry` with no
  *  real backing `CREATE_NEW_CUSTOMERS` record (the 5 hand-authored
@@ -447,7 +447,7 @@ export const OUTBOUND_GROUPS: CreateNewOutboundConfig["groups"] = [
 // confirmed bug this used to have): `OUTBOUND_CONFIG` is the single
 // shared object every tier page spreads into its own `outboundConfig`,
 // which feeds BOTH the New Outbound picker's own browsable group list
-// AND `useOutboundAddButton`'s `contactsById` lookup (lyra-ui,
+// AND `useAddChannelButton`'s `contactsById` lookup (lyra-ui,
 // create-new.tsx) — the map `getHeaderAction` uses to resolve an
 // already-known customer's "+" (Add Channel) button on the record
 // header/`InteractionNavItem`. Filtering "customers" out of
@@ -456,7 +456,7 @@ export const OUTBOUND_GROUPS: CreateNewOutboundConfig["groups"] = [
 // desk-tab table or the Search panel's Customers sub-tab — Advanced/
 // Premium tiers, which are supposed to keep the full group list, per
 // each tier's own `outboundConfig` memo doc comment) silently fell back
-// to the plain `AddChannelAdHocButton` instead of `OutboundAddButton`,
+// to the plain `AddChannelAdHocButton` instead of `AddChannelButton`,
 // since `contactsById.get(interaction.id)` could never find a match:
 // the confirmed root cause of "both the InteractionNavItem and the
 // header toggle group show the custom [ad-hoc] input" for a known
@@ -464,7 +464,7 @@ export const OUTBOUND_GROUPS: CreateNewOutboundConfig["groups"] = [
 // outbound={{...}}>` render call site now applies this exclusion itself
 // (filtering `outboundConfig.groups`, not `OUTBOUND_CONFIG.groups`) so
 // only that picker's own browsable list loses "customers" — the lookup
-// map every tier's `useOutboundAddButton` builds from `outboundConfig`
+// map every tier's `useAddChannelButton` builds from `outboundConfig`
 // keeps it.
 export const HIDDEN_OUTBOUND_GROUP_IDS: string[] = ["customers"];
 

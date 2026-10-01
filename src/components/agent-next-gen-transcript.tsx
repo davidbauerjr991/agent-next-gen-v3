@@ -22,13 +22,12 @@ import {
   WarningIconSolid,
   Menu,
   KebabMenuButton,
-  Select,
-  DispositionSelect,
   Textarea,
   Badge,
   QuickReplyVariableForm,
   QuickReplyMenu,
   SuccessIconSolid,
+  OutcomePanel,
   type TagVariant,
   type TagPickerOption,
   type DispositionOption,
@@ -1519,13 +1518,6 @@ showViewDetails?: boolean;
   portalTarget?: HTMLElement | null;
 }) {
   const isClosed = !isCurrentSession || !!channelClosed;
-  // Local to the Outcome popover's own "Status" field — same "one popover
-  // instance, two possible bodies (list vs. Closed confirm)" pattern this
-  // component's own session-status pill dropdown already uses above
-  // (`statusMenuView`), and the exact same shape `ChannelRow`'s Outcome
-  // popover uses for its identical field (channel-row.tsx).
-  const [outcomeResolutionMenuOpen, setOutcomeResolutionMenuOpen] = useState(false);
-  const [outcomeResolutionMenuView, setOutcomeResolutionMenuView] = useState<"menu" | "confirm">("menu");
   // Per explicit follow-up request ("also in the interaction more options 3
   // dots add a tooltip that says more options (like in the
   // interactionNavItem)"): mirrors `ChannelRow`'s own `menuOpen` state
@@ -1721,20 +1713,34 @@ showViewDetails?: boolean;
                       channel with nothing stored) — see `Contact.
                       addressLabel`'s own doc comment. */}
                   {session.addressLabel ? (
-                    // `formatPhoneForDisplay` normalizes this regardless of
-                    // whether the raw `Thread.addressLabel` this came from
-                    // was ever actually formatted upstream — a no-op for a
-                    // non-phone-shaped address (email/WhatsApp handle), see
-                    // that function's own doc comment.
-                    <span>{formatPhoneForDisplay(session.addressLabel)}</span>
+                    <>
+                      {/* `formatPhoneForDisplay` normalizes this regardless
+                          of whether the raw `Thread.addressLabel` this came
+                          from was ever actually formatted upstream — a
+                          no-op for a non-phone-shaped address
+                          (email/WhatsApp handle), see that function's own
+                          doc comment. */}
+                      <span>{formatPhoneForDisplay(session.addressLabel)}</span>
+                      {/* Per explicit request: the trailing slot after the
+                          address now shows the Contact ID instead of the
+                          date — the date no longer appears in this summary
+                          row at all (it's still shown in the expanded
+                          Session Details panel, see
+                          `TranscriptSessionDetails` below). Only rendered
+                          here when `addressLabel` is set — when it isn't,
+                          the contactId is already the leading slot (else
+                          branch below), so repeating it here would just
+                          duplicate it. */}
+                      <span aria-hidden="true">·</span>
+                      <span aria-hidden="true">#</span>
+                      <span>{session.contactId}</span>
+                    </>
                   ) : (
                     <>
                       <span aria-hidden="true">#</span>
                       <span>{session.contactId}</span>
                     </>
                   )}
-                  <span aria-hidden="true">·</span>
-                  <span>{session.date}</span>
                 </span>
               );
               return showViewDetails ? (
@@ -1846,204 +1852,49 @@ showViewDetails?: boolean;
               </Button>
             )}
             {!isNewThread && (outcome && !isClosed ? (
-              <Popover
-                open={outcome.open}
-                onOpenChange={outcome.onOpenChange}
-                placement="bottom"
-                align="end"
-                className="w-80"
-                onCloseAutoFocus={(e: Event) => e.preventDefault()}
-                header={
-                  <PanelHeader
-                    title={outcome.title ?? "Log Outcome"}
-                    bordered={false}
-                    className="px-5 pb-0"
-                    onClose={() => outcome.onOpenChange(false)}
-                  />
-                }
-                footer={
-                  <div className="flex items-center justify-end gap-2 px-5 pb-4 pt-1">
-                    <Button variant="outline" size="md" onClick={outcome.onCancel}>
-                      Cancel
+              // Shared with the LeftNav's own `ChannelRow` Outcome button —
+              // lyra-ui's `OutcomePanel` owns the Status/Tags/Disposition/
+              // Summary form (and the Resolution dropdown's own local
+              // open/view state) so this session row can't drift into a
+              // second, hand-kept-in-sync copy of the same popover again.
+              // Tooltip wraps `OutcomePanel` from the OUTSIDE (a plain
+              // `<span className="inline-flex">` for Radix's `asChild` to
+              // clone onto), with `disabled={outcome.open}` — same fix,
+              // same reasoning, as `ChannelRow`'s own Outcome button
+              // (channel-row.tsx): a plain `title`-driven `Button` tooltip
+              // has no way to suppress itself once the popover it sits on
+              // is open, so the "Outcome" hover label could still be
+              // showing (the pointer is still resting on this same button
+              // right after the click that opened it) at the same time as
+              // the popover card, visibly bleeding out from behind/beside
+              // it.
+              <Tooltip content="Outcome" placement="bottom" className="z-[10020]">
+                <span className="inline-flex">
+                  <OutcomePanel outcome={outcome} alignOffset={-20}>
+                    <Button
+                      variant="icon"
+                      size="icon-sm"
+                      aria-label="Outcome"
+                      disabled={controlsReadOnly}
+                      className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2", statusAndKebabBeforeOutcome && "order-3")}
+                      onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                    >
+                      {/* Per explicit request ("make the outcome check button
+                          a solid blue circle"): swaps the outline `CircleCheck`
+                          lucide icon for lyra-ui's own `SuccessIconSolid` (a
+                          filled circle + white checkmark, recolorable via
+                          `text-*` since its circle is `fill="currentColor"`)
+                          — same component `WarningIconSolid` a few hundred
+                          lines up already uses for its own solid badge. Kept
+                          the existing `text-lyra-status-info-strong` blue tint
+                          rather than switching to the icon's "success" green
+                          default, matching the blue this Outcome icon has
+                          always used. */}
+                      <SuccessIconSolid className="h-4 w-4 text-lyra-status-info-strong" />
                     </Button>
-                    <Button variant="default" size="md" onClick={outcome.onSave}>
-                      Approve &amp; Save
-                    </Button>
-                  </div>
-                }
-                content={
-                  <div className="flex flex-col gap-4 pb-2 pt-1">
-                    <div>
-                      <Label label="Status" className="mb-1.5" />
-                      <Popover
-                        open={outcomeResolutionMenuOpen}
-                        onOpenChange={(nextOpen: boolean) => {
-                          setOutcomeResolutionMenuOpen(nextOpen);
-                          setOutcomeResolutionMenuView("menu");
-                        }}
-                        placement="bottom"
-                        align="start"
-                        className="w-[var(--radix-popover-trigger-width)]"
-                        bodyPadding={outcomeResolutionMenuView === "confirm"}
-                        header={
-                          outcomeResolutionMenuView === "confirm" ? (
-                            <PanelHeader
-                              title="Close Contact?"
-                              icon={
-                                <WarningIconSolid
-                                  className="h-5 w-5 text-lyra-status-critical-strong"
-                                  aria-hidden="true"
-                                />
-                              }
-                              bordered={false}
-                              className="px-5 pb-0"
-                            />
-                          ) : undefined
-                        }
-                        footer={
-                          outcomeResolutionMenuView === "confirm" ? (
-                            <div className="flex items-center justify-end gap-2 px-5 pb-4 pt-1">
-                              <Button
-                                variant="destructive"
-                                size="md"
-                                onClick={() => {
-                                  outcome.onResolutionChange("Closed");
-                                  setOutcomeResolutionMenuOpen(false);
-                                  setOutcomeResolutionMenuView("menu");
-                                }}
-                              >
-                                Close
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="md"
-                                onClick={() => {
-                                  setOutcomeResolutionMenuOpen(false);
-                                  setOutcomeResolutionMenuView("menu");
-                                }}
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          ) : undefined
-                        }
-                        content={
-                          outcomeResolutionMenuView === "confirm" ? (
-                            <p className="pb-2 pt-1 lyra-body-md text-lyra-fg-secondary">
-                              Closing a contact cannot be undone. Are you sure you want to close this contact?
-                            </p>
-                          ) : (
-                            <Menu
-                              bare
-                              items={outcome.resolutionOptions.map((option: { label: string; dotColor: string }) => ({
-                                id: option.label,
-                                label: option.label,
-                                active: option.label === outcome.resolution,
-                                icon: (
-                                  <span
-                                    aria-hidden="true"
-                                    className="block h-2 w-2 rounded-full"
-                                    style={{ backgroundColor: option.dotColor }}
-                                  />
-                                ),
-                                onClick: () => {
-                                  if (option.label === "Closed") {
-                                    setOutcomeResolutionMenuView("confirm");
-                                    return;
-                                  }
-                                  outcome.onResolutionChange(option.label);
-                                  setOutcomeResolutionMenuOpen(false);
-                                },
-                              }))}
-                            />
-                          )
-                        }
-                      >
-                        <Button
-                          variant="outline"
-                          aria-haspopup="menu"
-                          aria-expanded={outcomeResolutionMenuOpen}
-                          disabled={outcome.resolution === "Closed"}
-                          className="h-9 w-full justify-between border-lyra-border-strong bg-lyra-bg-field font-normal text-lyra-fg-default hover:bg-lyra-bg-field hover:border-lyra-state-border-hover-neutral"
-                        >
-                          <span className="truncate">{outcome.resolution}</span>
-                          {outcome.resolution !== "Closed" && (
-                            <ChevronDown
-                              className={cn(
-                                "h-4 w-4 shrink-0 text-lyra-fg-secondary transition-transform",
-                                outcomeResolutionMenuOpen && "rotate-180"
-                              )}
-                              strokeWidth={1.5}
-                              aria-hidden="true"
-                            />
-                          )}
-                        </Button>
-                      </Popover>
-                    </div>
-                    <div>
-                      <Label label="Tags" className="mb-1.5" />
-                      <Select
-                        multiple
-                        placeholder="Select tags"
-                        options={outcome.tagOptions.map((option: TagPickerOption) => ({ value: option.label, label: option.label }))}
-                        values={outcome.selectedTags}
-                        onValuesChange={outcome.onTagsChange}
-                      />
-                      {outcome.selectedTags.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-1.5">
-                          {outcome.selectedTags.map((tagLabel: string) => {
-                            const option = outcome.tagOptions.find((o: TagPickerOption) => o.label === tagLabel);
-                            return (
-                              <Tag
-                                key={tagLabel}
-                                label={tagLabel}
-                                variant={option?.variant ?? "neutral"}
-                                onRemove={() =>
-                                  outcome.onTagsChange(outcome.selectedTags.filter((t: string) => t !== tagLabel))
-                                }
-                              />
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    <DispositionSelect
-                      label="Disposition code"
-                      options={outcome.dispositionOptions}
-                      value={outcome.dispositionCode}
-                      onValueChange={outcome.onDispositionChange}
-                    />
-                    <Textarea
-                      label="Summary"
-                      rows={5}
-                      value={outcome.summary}
-                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => outcome.onSummaryChange(e.target.value)}
-                    />
-                  </div>
-                }
-              >
-                <Button
-                  variant="icon"
-                  size="icon-sm"
-                  title="Outcome"
-                  disabled={controlsReadOnly}
-                  className={cn("text-lyra-fg-secondary", outcomeAfterStatus && "order-2", statusAndKebabBeforeOutcome && "order-3")}
-                  onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                >
-                  {/* Per explicit request ("make the outcome check button
-                      a solid blue circle"): swaps the outline `CircleCheck`
-                      lucide icon for lyra-ui's own `SuccessIconSolid` (a
-                      filled circle + white checkmark, recolorable via
-                      `text-*` since its circle is `fill="currentColor"`)
-                      — same component `WarningIconSolid` a few hundred
-                      lines up already uses for its own solid badge. Kept
-                      the existing `text-lyra-status-info-strong` blue tint
-                      rather than switching to the icon's "success" green
-                      default, matching the blue this Outcome icon has
-                      always used. */}
-                  <SuccessIconSolid className="h-4 w-4 text-lyra-status-info-strong" />
-                </Button>
-              </Popover>
+                  </OutcomePanel>
+                </span>
+              </Tooltip>
             ) : (
               // Also covers the `outcome && isClosed` case now (the real
               // popover above is gated on `!isClosed` too) — a historical
@@ -2153,7 +2004,7 @@ showViewDetails?: boolean;
                 the one piece of the cluster that stayed visible regardless
                 of `isNewThread` — a real, confirmed bug fixed here
                 alongside the header's own identical fix. */}
-            {!isNewThread && (
+            {!isNewThread && channelType !== "voice" && (
               <ChannelStatusTag
                 status={session.status}
                 menuOpen={statusMenuOpen}
@@ -2431,6 +2282,9 @@ export function InteractionTranscript({
   onOutcomeSummaryChange,
   onOutcomeSave,
   onOutcomeCancel,
+  outcomeCallEnded,
+  onOutcomeSaveAndRedial,
+  onOutcomeSaveAndDismiss,
   onDismissChannel,
   dimmed,
   showSessionActionCluster = true,
@@ -2711,6 +2565,20 @@ export function InteractionTranscript({
   onOutcomeSummaryChange?: (value: string) => void;
   onOutcomeSave?: () => void;
   onOutcomeCancel?: () => void;
+  /** True once this channel's call has ended (voice only) — swaps the
+   *  Outcome popover's footer to "Save & Redial"/"Save & Dismiss" instead
+   *  of "Cancel"/"Save & Close" (`ChannelOutcomeConfig.callEnded`,
+   *  outcome-panel.tsx). Unset/false leaves it exactly as today. */
+  outcomeCallEnded?: boolean;
+  /** "Save & Redial" clicked — only meaningful while `outcomeCallEnded` is
+   *  true. Called with the Outcome trigger's own DOM node (`OutcomePanel`
+   *  threads this through automatically — see its own doc comment,
+   *  outcome-panel.tsx) so the caller can anchor the resulting redial
+   *  popover right on this row's Outcome button. */
+  onOutcomeSaveAndRedial?: (anchorEl: HTMLElement | null) => void;
+  /** "Save & Dismiss" clicked — only meaningful while `outcomeCallEnded`
+   *  is true. */
+  onOutcomeSaveAndDismiss?: () => void;
   /**
    * Real "Unassign & Dismiss" button on the CURRENT session's own separator
    * bar, immediately right of the status tag — per explicit request. Same
@@ -3764,6 +3632,7 @@ export function InteractionTranscript({
                           // list's own first entry (`TRANSCRIPT_SESSION_STATUS_OPTIONS`).
                           resolution: currentStatus ?? "Open",
                           onResolutionChange: (value: string) => onCurrentStatusChange(value),
+                          voice: channelType === "voice",
                           tagOptions: OUTCOME_TAG_OPTIONS,
                           selectedTags: outcomeTags ?? [],
                           onTagsChange: onOutcomeTagsChange!,
@@ -3774,6 +3643,9 @@ export function InteractionTranscript({
                           onSummaryChange: onOutcomeSummaryChange!,
                           onSave: onOutcomeSave!,
                           onCancel: onOutcomeCancel!,
+                          callEnded: outcomeCallEnded,
+                          onSaveAndRedial: onOutcomeSaveAndRedial,
+                          onSaveAndDismiss: onOutcomeSaveAndDismiss,
                         }
                       : undefined
                   }

@@ -3,7 +3,7 @@
 //
 // Restored per explicit follow-up request after being deleted during the
 // Premium/Advanced "Phase D" simplification (which swapped THEIR "+" trigger
-// over to lyra-ui's own stock `OutboundAddButton`/`getHeaderAction` picker —
+// over to lyra-ui's own stock `AddChannelButton`/`getHeaderAction` picker —
 // see BEHAVIOR.md §23). That swap doesn't work for 2.0: `getHeaderAction`
 // looks up the interaction's own id in `outboundConfig.groups` (the real
 // customer/agent directory) to build its button, and returns `null` — no
@@ -14,7 +14,7 @@
 // contact with no backing directory record), that lookup fails often enough
 // that the standard picker silently disappears for exactly the customers who
 // need it most. This ad-hoc-only popup sidesteps the directory lookup
-// entirely — it never calls `getHeaderAction`/`useOutboundAddButton` at all,
+// entirely — it never calls `getHeaderAction`/`useAddChannelButton` at all,
 // so it always renders and always works, regardless of whether the active
 // interaction has a real contact record behind it.
 //
@@ -63,7 +63,7 @@ export interface AddChannelAdHocButtonProps {
    *  value — per explicit follow-up request ("make sure to include a
    *  skill when adding a new channel to non-connected customers"), this
    *  ad-hoc flow now always resolves one before launching, same as the
-   *  known-contact `OutboundAddButton` flow's own "Outbound Skill" field,
+   *  known-contact `AddChannelButton` flow's own "Outbound Skill" field,
    *  just defaulted to the FIRST option (see `skillId`'s own state
    *  initializer below) so picking one is never a required extra step
    *  unless the agent wants to change it. The popover closes and its
@@ -72,7 +72,7 @@ export interface AddChannelAdHocButtonProps {
   onLaunch: (query: string, channel: ChannelType, skillId: string) => void;
   /** Options for this popup's own "Outbound Skill" dropdown — same
    *  `{value, label}` shape (and, for any caller that also renders the
-   *  known-contact `OutboundAddButton` flow, the literal same list)
+   *  known-contact `AddChannelButton` flow, the literal same list)
    *  `CreateNewOutboundConfig.skillOptions` already uses, reused here (not
    *  redefined) so both add-channel flows offer the exact same skill
    *  vocabulary. An empty array is a valid (if degenerate) input — same

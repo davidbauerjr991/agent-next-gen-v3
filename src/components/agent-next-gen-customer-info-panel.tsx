@@ -46,6 +46,7 @@ import {
   formatPhoneForDisplay,
   CustomerContextOverview,
   type CustomerContextOverviewInfo,
+  Tooltip,
 } from "@nicecxone/lyra-ui";
 import { CREATE_NEW_CUSTOMERS, type CreateNewCustomerRecord } from "@nicecxone/lyra-ui/customers-data";
 import { type Thread } from "@/components/agent-next-gen-interaction-dashboard";
@@ -4131,6 +4132,9 @@ export function CustomerInformationSidePanel({
   footerOverride,
   headerTitleOverride,
   headerTabsOverride,
+  headerIconOverride,
+  headerSubheadOverride,
+  onViewCustomerInfo,
 }: {
   open: boolean;
   pinned: boolean;
@@ -4328,6 +4332,45 @@ export function CustomerInformationSidePanel({
    */
   headerTabsOverride?: React.ReactNode;
   /**
+   * Replaces the normal back-arrow-or-nothing `headerIcon` (only ever
+   * rendered today during the `matchState` search/create flow) — lets a
+   * caller show its own back arrow for a DIFFERENT drill-in view that
+   * isn't `matchState` (e.g. the "Customer Info" view `bodyOverride`/
+   * `headerTabsOverride`/`headerTitleOverride`/`headerSubheadOverride`
+   * switch this panel into — see `AgentWorkspaceAdvancedPage.tsx`'s own
+   * call site). Checked AFTER `matchState`'s own back arrow (unaffected,
+   * still takes priority), so the two can never collide — an agent is
+   * never in both flows on the same panel instance at once. `undefined`
+   * for every other consumer, unaffected.
+   */
+  headerIconOverride?: React.ReactNode;
+  /**
+   * Replaces the normal `headerSubhead` (the customer's name, or the
+   * clickable-name link below once `onViewCustomerInfo` is passed — see
+   * that prop's own doc comment) — same "override" idea as
+   * `headerTitleOverride` just above, for the SAME "Customer Info"
+   * drill-in view (shows the record id there instead of the name).
+   * `undefined` leaves the normal name/link subhead untouched.
+   */
+  headerSubheadOverride?: string;
+  /**
+   * Per explicit request ("the view customer info button can be the
+   * customer name in the Contact Details subhead as a link with a
+   * tooltip"): while set (and neither `matchState` nor
+   * `headerSubheadOverride` is in play), the normal `headerSubhead` is no
+   * longer plain text — it becomes the customer's name rendered as a
+   * clickable link, wrapped in a "View Customer Info" `Tooltip`, calling
+   * this. Reuses the exact link styling (`text-lyra-fg-link hover:underline
+   * focus-visible:outline-none`) Marcus Webb's own clickable-name link
+   * already uses (agent-next-gen-marcus-webb-next-best-action-card.tsx) for
+   * visual consistency, rather than adding a new, separate button. The
+   * caller is expected to open its own "Customer Info" drill-in view (same
+   * one `headerIconOverride`'s back arrow returns out of) — `undefined`
+   * (every other consumer) leaves `headerSubhead` as plain, non-interactive
+   * text exactly as before.
+   */
+  onViewCustomerInfo?: () => void;
+  /**
    * Per explicit request ("add a button above auto summary that says link
    * to existing customer and then when that is clicked slide in a panel
    * with the search customer / create new customer panel content") — when
@@ -4487,7 +4530,21 @@ export function CustomerInformationSidePanel({
           ? matchSubhead
           : matchState?.step === "create"
             ? undefined
-            : customerName
+            : headerSubheadOverride !== undefined
+              ? headerSubheadOverride
+              : onViewCustomerInfo && customerName
+                ? (
+                  <Tooltip content="View Customer Info" placement="bottom">
+                    <button
+                      type="button"
+                      onClick={onViewCustomerInfo}
+                      className="lyra-body-sm text-lyra-fg-link hover:underline focus-visible:outline-none"
+                    >
+                      {customerName}
+                    </button>
+                  </Tooltip>
+                )
+                : customerName
       }
       headerIcon={
         matchState?.step === "create" ? (
@@ -4498,7 +4555,7 @@ export function CustomerInformationSidePanel({
           <ActionIconButton aria-label="Back" title="Back" onClick={matchStateOnBack}>
             <ArrowLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
           </ActionIconButton>
-        ) : undefined
+        ) : headerIconOverride
       }
       // `PanelLeftClose`-iconed `PanelPinButton`, standing in for
       // `SidePanel`'s own default `Pin`-iconed one (suppressed by leaving

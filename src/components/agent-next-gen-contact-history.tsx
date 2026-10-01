@@ -180,7 +180,7 @@ export interface ContactHistoryEntry {
    *  which have no real customer record behind their invented names/case
    *  IDs. `handleRedial` uses this (when present) as the redialed
    *  interaction's own id instead of a synthetic `redial:` one, so the
-   *  resulting card's id resolves in `useOutboundAddButton`'s contact
+   *  resulting card's id resolves in `useAddChannelButton`'s contact
    *  lookup the exact same way a card started from the Outbound picker
    *  does — see `handleRedial`'s own doc comment for why a synthetic id
    *  silently broke that card's "+" (Add Channel) button. */
@@ -193,14 +193,14 @@ export interface ContactHistoryEntry {
    *  see `buildContactHistoryOutboundContacts`, agent-next-gen-outbound-
    *  data.tsx, which is what actually reads this). Per explicit request:
    *  reopening/redialing one of these 5 rows used to leave the record
-   *  header's "+" (Add Channel) row completely empty — `useOutboundAddButton`
+   *  header's "+" (Add Channel) row completely empty — `useAddChannelButton`
    *  had no contact record to look up under `history:${id}`/`redial:${id}`
    *  (the synthetic ids these rows fall back to with no `customerId`), so
    *  `getAvailableChannels` always came back `[]` even for a customer who
    *  plainly has other channels on file. Voice/Chat/Email aren't
    *  necessarily included even when `channelType` is one of them — Chat in
    *  particular never is, since a website chat widget has no "start one
-   *  outbound" concept for `useOutboundAddButton` to offer regardless of
+   *  outbound" concept for `useAddChannelButton` to offer regardless of
    *  who the customer is (same reason `CUSTOMER_CHANNEL_ORDER`, agent-
    *  next-gen-customers-table.tsx, never includes "chat" either). */
   channels?: ChannelType[];

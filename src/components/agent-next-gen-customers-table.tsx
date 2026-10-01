@@ -218,9 +218,9 @@ export function addressOptionsForChannel(row: CustomerListRecord, channel: Chann
 
 /** Shared "Select Channel / Select Phone (or Email) / Outbound Skill /
  *  Start Interaction" popover body — same shape as lyra-ui's own
- *  `OutboundAddButton` (create-new.tsx), composed here from the same
+ *  `AddChannelButton` (create-new.tsx), composed here from the same
  *  primitives (`Popover`/`RadioButtonGroup`/`Select`/`Button`) rather than
- *  imported directly, since `OutboundAddButton`'s own trigger is a fixed
+ *  imported directly, since `AddChannelButton`'s own trigger is a fixed
  *  "+" icon it can't swap out. Extracted into its own component (rather
  *  than living inline in `CustomerChannelPopoverButton`) so both that
  *  per-channel-icon trigger AND `CustomerAddChannelButton`'s single
@@ -268,7 +268,7 @@ export function CustomerChannelPicker({
   // Defaults to the FIRST skill in `OUTBOUND_CONFIG.skillOptions`, not `""`
   // — same "default to the first skill so the agent can immediately start
   // the interaction without having to choose" fix already applied to
-  // `OutboundAddButton`/`CreateNew` (create-new.tsx) for the New Outbound
+  // `AddChannelButton`/`CreateNew` (create-new.tsx) for the New Outbound
   // flow, extended here to this Customers-table channel picker per explicit
   // follow-up request. `?? ""` only matters if `skillOptions` were ever
   // empty, which preserves the existing disabled-button guard below.
@@ -283,7 +283,7 @@ export function CustomerChannelPicker({
     addressOptionsForChannel(row, channel).filter((o) => !(openAddresses[channel] ?? []).includes(o.value));
 
   // Re-derive every time this popover opens (not just on first mount) —
-  // same "only once actually open" timing `OutboundAddButton` uses (see its
+  // same "only once actually open" timing `AddChannelButton` uses (see its
   // own effect comments), and for the same reason: this popover instance is
   // reused across every open of its trigger, so a stale channel/skill from
   // a previous open needs to be overwritten before the fields render again.
