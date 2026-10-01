@@ -2,7 +2,7 @@
 // agent-next-gen-shared-utils.ts and sibling agent-next-gen-*.ts(x) files
 // for everything AgentNextGenPage.tsx itself no longer declares — split out
 // once that file crossed Babel's 500KB code-generator threshold.
-import { useState, useMemo, useEffect, type ComponentType } from "react";
+import { useState, useMemo, useEffect, type ComponentType, type ReactNode } from "react";
 import {
   type TagVariant,
   type ChannelType,
@@ -28,6 +28,7 @@ import {
 import { CREATE_NEW_CUSTOMERS } from "@nicecxone/lyra-ui/customers-data";
 import { type Interaction } from "@/components/agent-next-gen-interaction-dashboard";
 import { formatElapsedTime, CURRENT_AGENT_NAME, initialsFor } from "@/components/agent-next-gen-shared-utils";
+import { OUTCOME_DISPOSITION_OPTIONS } from "@/components/agent-next-gen-transcript";
 import { cn } from "@/lib/utils";
 import {
   type LucideIcon,
@@ -40,6 +41,18 @@ import {
   History,
   Inbox,
 } from "lucide-react";
+
+// Per explicit request ("for phase 1 we will not have the transcript
+// available"), then an explicit follow-up ("don't entirely remove
+// transcript, just hide it") — same "hide, don't destroy" pattern this
+// app already uses elsewhere (`SHOW_CHANNEL_TOGGLE_GROUP`/
+// `SHOW_END_CALL_IN_INTERACTION_NAV_ROWS`, AgentWorkspaceAdvancedPage.tsx):
+// `ContactHistoryEntryDetail`'s own synthesized "Transcript" section
+// (`buildContactHistoryMessages` — there's no REAL recorded transcript for
+// a voice call in this app) stays fully implemented, just gated off by
+// this flag for voice specifically. Restoring it is a one-line flip, not
+// re-authoring.
+const SHOW_VOICE_TRANSCRIPT_IN_CONTACT_HISTORY = false;
 
 /* ── Contact History card (home tab, below Performance/Productivity) ──
    A recent-customer-contacts summary — name, resolution status, a one-line
@@ -174,6 +187,15 @@ export interface ContactHistoryEntry {
   channelLabel: string;
   timeAgo: string;
   duration: string;
+  /** Resolved disposition label (e.g. "Issue Resolved") and tag labels the
+   *  agent picked in the Outcome popover before dismissing — see
+   *  `buildDismissedContactHistoryEntry`'s own `channelOutcomeSelections`
+   *  parameter. `undefined` for every entry that didn't come from that
+   *  flow (hand-authored rows, `buildContactHistoryFromCustomers`, or a
+   *  dismissal where the agent never opened Outcome) — the gray card
+   *  simply doesn't show these rows then. */
+  dispositionLabel?: string;
+  tags?: string[];
   /** The real `CREATE_NEW_CUSTOMERS` record id backing this row, when this
    *  entry was built from that fixture (see `buildContactHistoryFromCustomers`
    *  below) — undefined for the hand-authored `CONTACT_HISTORY` rows above,
@@ -806,7 +828,23 @@ export function buildContactHistoryFromCustomers(
   });
 }
 
-export function buildDismissedContactHistoryEntry(interaction: Interaction, clockTick: number): ContactHistoryEntry {
+export function buildDismissedContactHistoryEntry(
+  interaction: Interaction,
+  clockTick: number,
+  // Per explicit request ("add disposition to the gray box... add tags
+  // below call notes"): whatever the agent picked in the Outcome popover
+  // for this interaction's channels before dismissing (`AgentWorkspace
+  // AdvancedPage.tsx`'s own `channelOutcomeSelections` state) — keyed the
+  // same `${interactionId}:${channelKey}` way that state already is, so
+  // this just looks up the one entry matching whichever thread
+  // `primaryChannel` below resolves to, rather than duplicating that
+  // "which channel is primary" logic at the call site. Optional/defaulted
+  // to `{}` — Phase 1 only for now (`AgentWorkspaceAdvancedPage.tsx`);
+  // `AgentWorkspace2WithDeskPage.tsx`'s own call site doesn't pass this
+  // yet, and an empty object here just means every lookup misses, same
+  // as today (no `dispositionLabel`/`tags` on the resulting entry).
+  channelOutcomeSelections: Record<string, { tags: string[]; dispositionCode: string }> = {}
+): ContactHistoryEntry {
   // Voice takes priority (it's what "Redial" needs — see `redial` below)
   // when this interaction has a voice thread among its (rare, multi-
   // channel) open threads; otherwise whichever thread is actually current
@@ -822,6 +860,15 @@ export function buildDismissedContactHistoryEntry(interaction: Interaction, cloc
     interaction.threads.find((c) => c.id === interaction.currentThreadId) ??
     interaction.threads[0];
   const channelType = primaryChannel?.type ?? "chat";
+  // Same `${interactionId}:${channelKey}` scheme `channelOutcomeSelections`
+  // is already keyed by (AgentWorkspaceAdvancedPage.tsx's own `outcomeKey`/
+  // `activeChannelOutcomeKey`) — `undefined` whenever the agent dismissed
+  // without ever opening the Outcome popover for this channel.
+  const primaryChannelOutcome =
+    channelOutcomeSelections[`${interaction.id}:${primaryChannel?.id ?? primaryChannel?.type ?? ""}`];
+  const dispositionLabel = primaryChannelOutcome?.dispositionCode
+    ? OUTCOME_DISPOSITION_OPTIONS.find((o) => o.value === primaryChannelOutcome.dispositionCode)?.label
+    : undefined;
   const earliestStart =
     interaction.threads.length > 0 ? Math.min(...interaction.threads.map((c) => c.startTick)) : clockTick;
   const statusLabel = interaction.threadStatuses?.[primaryChannel?.id ?? ""] ?? "Resolved";
@@ -924,6 +971,8 @@ export function buildDismissedContactHistoryEntry(interaction: Interaction, cloc
             (m): ContactHistoryMessage => ({ sender: m.sender, text: m.text, timestampDisplay: m.timestamp })
           )
         : undefined,
+    dispositionLabel,
+    tags: primaryChannelOutcome?.tags && primaryChannelOutcome.tags.length > 0 ? primaryChannelOutcome.tags : undefined,
   };
 }
 
@@ -1430,11 +1479,19 @@ export function ContactHistoryCard({
                         plain text, no pill background) rather than Tag's
                         bordered/tinted pill: critical=red (Escalated),
                         info=blue (In Progress), success=green (Resolved),
-                        neutral=gray (New). */}
-                    <span className="inline-flex items-center gap-1.5">
-                      <Badge shape="circle" dot size="sm" variant={entry.statusVariant} aria-hidden="true" />
-                      <span className="lyra-body-sm-emphasis text-lyra-fg-default">{entry.statusLabel}</span>
-                    </span>
+                        neutral=gray (New). Per explicit follow-up request
+                        ("hide the status in the contact history row
+                        itself") — voice has no real status concept, only
+                        a disposition (shown in the detail panel's own gray
+                        card instead), so this whole badge is hidden for
+                        voice rows, same reasoning as the detail panel's
+                        own status line. */}
+                    {entry.channelType !== "voice" && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Badge shape="circle" dot size="sm" variant={entry.statusVariant} aria-hidden="true" />
+                        <span className="lyra-body-sm-emphasis text-lyra-fg-default">{entry.statusLabel}</span>
+                      </span>
+                    )}
                   </div>
                   <span className="lyra-body-md text-lyra-fg-secondary">{entry.description}</span>
                   {/* Per explicit follow-up, with a screenshot: this row
@@ -1535,9 +1592,21 @@ export function ContactHistoryEntryDetail({
   // prop — see that line's own doc comment for why), which already reads
   // correctly either way.
   hideCustomerNames,
+  // Per explicit request ("move the redial button up directly below the
+  // gray box"): the Redial/Takeover-Assignment button used to live in the
+  // caller's own `InteriorPanel`'s separate `footer` slot, which pins to
+  // the bottom of the panel — leaving a big gap below this component's
+  // own content for a channel (voice) with nothing else rendered beneath
+  // the gray card. Rendered here instead, immediately after the gray
+  // card, so it's always directly below it regardless of panel height.
+  // Optional — the OTHER consumer of this component (the "All Contacts"
+  // row detail, AgentWorkspaceAdvancedPage.tsx) doesn't pass this and
+  // keeps using its own `footer` slot exactly as before.
+  actionButton,
 }: {
   entry: ContactHistoryEntry;
   hideCustomerNames?: boolean;
+  actionButton?: ReactNode;
 }) {
   const notesLabel =
     entry.channelType === "voice" ? "Call Notes" : entry.channelType === "email" ? "Email Summary" : "Chat Summary";
@@ -1551,7 +1620,10 @@ export function ContactHistoryEntryDetail({
   const transcriptCustomerName = hideCustomerNames ? displayIdentity : entry.name;
   const isVoice = entry.channelType === "voice";
   const isMessageChannel =
-    isVoice || entry.channelType === "chat" || entry.channelType === "sms" || entry.channelType === "whatsapp";
+    (isVoice && SHOW_VOICE_TRANSCRIPT_IN_CONTACT_HISTORY) ||
+    entry.channelType === "chat" ||
+    entry.channelType === "sms" ||
+    entry.channelType === "whatsapp";
   // Per explicit bug report, with a screenshot of a Marcus Webb Contact
   // History row's own detail panel showing generic wrap-up chatter that
   // never actually happened in his real chat: "contact history of Marcus
@@ -1577,7 +1649,10 @@ export function ContactHistoryEntryDetail({
           against. */}
       <div className="flex items-center justify-between gap-2">
         <span className="lyra-body-sm text-lyra-fg-secondary">
-          {[entry.statusLabel, displayIdentity, entry.timeAgo].filter(Boolean).join(" · ")}
+          {/* Per explicit request ("hide resolved as there is no status
+              for a voice call") — voice has no real status concept, only
+              a disposition (shown in the gray card below instead). */}
+          {[isVoice ? null : entry.statusLabel, displayIdentity, entry.timeAgo].filter(Boolean).join(" · ")}
         </span>
         <Tooltip content={contactHistoryChannelTooltipLabel(entry)} placement="top">
           <Tag
@@ -1593,11 +1668,35 @@ export function ContactHistoryEntryDetail({
           <Label label="Duration" />
           <span className="lyra-body-md text-lyra-fg-default break-words">{entry.duration}</span>
         </div>
+        {/* Per explicit request ("add disposition to the gray box ...
+            below Duration") — only shown when the agent actually logged
+            one via the Outcome popover before dismissing (see
+            `ContactHistoryEntry.dispositionLabel`'s own doc comment). */}
+        {entry.dispositionLabel && (
+          <div className="flex flex-col gap-1 min-w-0">
+            <Label label="Disposition" />
+            <span className="lyra-body-md text-lyra-fg-default break-words">{entry.dispositionLabel}</span>
+          </div>
+        )}
         <div className="flex flex-col gap-1">
           <Label label={notesLabel} />
           <p className="lyra-body-md text-lyra-fg-default">{entry.description}</p>
         </div>
+        {/* Per explicit request ("add tags below call notes in the gray
+            box") — same conditional-on-populated treatment as Disposition
+            above. */}
+        {entry.tags && entry.tags.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <Label label="Tags" />
+            <div className="flex flex-wrap gap-1.5">
+              {entry.tags.map((tag) => (
+                <Tag key={tag} label={tag} shape="pill" />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+      {actionButton}
       {isMessageChannel ? (
         <div className="flex flex-col gap-2">
           <Label label={isVoice ? "Transcript" : "Conversation"} />

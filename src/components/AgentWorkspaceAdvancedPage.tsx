@@ -1477,19 +1477,44 @@ export function AgentWorkspaceAdvancedPage({
   // interaction (see that const's own doc comment). Mirrors Agent Workspace
   // 2.0's identical `outcomeDraftSource` union (AgentNextGenPage.tsx).
   const [outcomeDraftSource, setOutcomeDraftSource] = useState<"leftnav" | "transcript" | "tab" | "header" | null>(null);
-  // Per explicit request ("never populate the disposition until an agent
-  // selects one"): `dispositionCode` no longer defaults to
-  // `OUTCOME_DISPOSITION_OPTIONS[0].value` — it starts empty, which
-  // `DispositionSelect`'s own `error` prop (outcome-panel.tsx) renders as
-  // a required-field error state until the agent actually picks one.
-  // `summary` is unchanged/out of scope for this request — still the same
-  // pre-written example every popover open.
-  const buildDefaultOutcomeDraft = () => ({
-    tags: ["Technical", "Account"],
-    dispositionCode: "",
-    summary: OUTCOME_DEFAULT_SUMMARY,
-  });
-  const [outcomeDraft, setOutcomeDraft] = useState(buildDefaultOutcomeDraft);
+  // Per explicit request ("tags should also persist if selected, just
+  // don't have tags selected when the outcome is first opened on a new
+  // contact" / "if the agent selects a disposition code that code should
+  // be populated if they click end call or if they go back to the
+  // outcome"): neither Tags nor Disposition code auto-select anymore
+  // (`OUTCOME_DISPOSITION_OPTIONS[0].value`/`["Technical", "Account"]` are
+  // gone), but once the agent actually picks either for a given channel,
+  // that pick now survives reopening the popover (from either the LeftNav
+  // `ChannelRow` or the transcript's own session row — see `outcomeKey`/
+  // `activeChannelOutcomeKey`'s shared `${interactionId}:${channelKey}`
+  // scheme) or ending the call (`onHangUp`'s own
+  // `handleOutcomeOpenChange(..., "transcript")` reopen, below). Keyed the
+  // same way those two already are, so `buildDefaultOutcomeDraft` just
+  // looks up whatever's already there for this exact channel instead of
+  // starting fresh every time. One combined entry per channel (not two
+  // separate maps) since both fields are "what's been decided so far for
+  // this channel's outcome" — `summary` stays OUT of this; it's still
+  // unconditionally reset to `OUTCOME_DEFAULT_SUMMARY` below, unaffected
+  // by this. Same never-cleaned-up, "no real backend" convention this
+  // file already uses for other ephemeral per-channel maps
+  // (`threadLaunchTimestamps`, `customerTyping`) — EXCEPT a fresh redial
+  // (`handleQuickDial`/`handleRedial`/`handleRedialActiveInteraction`)
+  // explicitly clears this channel's own entry, per explicit follow-up
+  // request — a brand-new call to the same contact shouldn't inherit the
+  // previous call's already-decided tags/disposition just because voice
+  // threads all reuse the same literal `"voice"` channel id.
+  const [channelOutcomeSelections, setChannelOutcomeSelections] = useState<
+    Record<string, { tags: string[]; dispositionCode: string }>
+  >({});
+  const buildDefaultOutcomeDraft = (key: string = "") => {
+    const persisted = channelOutcomeSelections[key];
+    return {
+      tags: persisted?.tags ?? [],
+      dispositionCode: persisted?.dispositionCode ?? "",
+      summary: OUTCOME_DEFAULT_SUMMARY,
+    };
+  };
+  const [outcomeDraft, setOutcomeDraft] = useState(() => buildDefaultOutcomeDraft());
   // Duplicated verbatim from AgentNextGenPage.tsx (Agent Workspace 2.0) per
   // this codebase's "no shared sync" convention — records, per
   // `${interactionId}:${channelKey}`, the real wall-clock moment a
@@ -1540,16 +1565,47 @@ export function AgentWorkspaceAdvancedPage({
   const [createdCustomerRecords, setCreatedCustomerRecords] = useState<CreateNewCustomerRecord[]>([]);
   const handleOutcomeOpenChange = (key: string, open: boolean, source: "leftnav" | "transcript" | "tab" | "header") => {
     if (open) {
-      // Reset to a fresh draft every time a (possibly different) channel's
-      // popover opens — no real backend here to load a previously-saved
-      // outcome from, so every open starts from the same plausible example
-      // rather than carrying over whatever the last channel's draft had.
-      setOutcomeDraft(buildDefaultOutcomeDraft());
+      // Per explicit request: no longer a flat reset to the same example
+      // every time — `buildDefaultOutcomeDraft(key)` looks up whatever
+      // tags/disposition were already picked for THIS channel
+      // (`channelOutcomeSelections`, its own doc comment above), falling
+      // back to empty only the first time this channel's popover is ever
+      // opened. `summary` still has no real backend to load from, so it
+      // stays the same plausible example every time, unaffected.
+      setOutcomeDraft(buildDefaultOutcomeDraft(key));
       setOutcomeDraftKey(key);
       setOutcomeDraftSource(source);
     } else if (outcomeDraftKey === key && outcomeDraftSource === source) {
       setOutcomeDraftKey(null);
       setOutcomeDraftSource(null);
+    }
+  };
+  // Shared `onTagsChange`/`onDispositionChange` handlers — replaces what
+  // used to be a near-identical inline closure duplicated at each of the
+  // two live Outcome triggers (LeftNav `ChannelRow`, the transcript's own
+  // session row). Each updates the live `outcomeDraft` (so the popover
+  // reflects the change immediately) AND persists the FULL pair into
+  // `channelOutcomeSelections` under whichever channel's popover is
+  // currently open (`outcomeDraftKey`, guaranteed to already equal it
+  // while either of these can fire) — reading the OTHER, unchanged field
+  // off the current `outcomeDraft` so neither handler clobbers what the
+  // other already persisted.
+  const handleOutcomeTagsChange = (tags: string[]) => {
+    setOutcomeDraft((d) => ({ ...d, tags }));
+    if (outcomeDraftKey) {
+      setChannelOutcomeSelections((prev) => ({
+        ...prev,
+        [outcomeDraftKey]: { tags, dispositionCode: outcomeDraft.dispositionCode },
+      }));
+    }
+  };
+  const handleOutcomeDispositionChange = (value: string) => {
+    setOutcomeDraft((d) => ({ ...d, dispositionCode: value }));
+    if (outcomeDraftKey) {
+      setChannelOutcomeSelections((prev) => ({
+        ...prev,
+        [outcomeDraftKey]: { tags: outcomeDraft.tags, dispositionCode: value },
+      }));
     }
   };
   // "Approve & Save"/"Cancel" both just close the popover — there's no real
@@ -4570,6 +4626,19 @@ export function AgentWorkspaceAdvancedPage({
           : interaction
       );
     });
+    // Same "don't carry over the previous call" reasoning as the
+    // `threadStatuses`/`liveMessages`/`voiceCallEnded` resets just above,
+    // per explicit follow-up request — a brand-new call to this number
+    // shouldn't start already pre-filled with whatever tags/disposition
+    // were picked for the call that just ended, since `newChannel.id` is
+    // always the same literal `"voice"` (see `channelOutcomeSelections`'s
+    // own doc comment for the full "why").
+    setChannelOutcomeSelections((prev) => {
+      if (!(`${id}:voice` in prev)) return prev;
+      const next = { ...prev };
+      delete next[`${id}:voice`];
+      return next;
+    });
     switchActiveInteraction(id);
     if (isNewInteraction) setSidePanelOpen(false);
   };
@@ -4682,6 +4751,15 @@ export function AgentWorkspaceAdvancedPage({
           : interaction
       );
     });
+    // See `handleQuickDial`'s own identical cleanup for the full "why" —
+    // a brand-new call to this contact shouldn't inherit the previous
+    // call's already-decided tags/disposition.
+    setChannelOutcomeSelections((prev) => {
+      if (!(`${id}:voice` in prev)) return prev;
+      const next = { ...prev };
+      delete next[`${id}:voice`];
+      return next;
+    });
     switchActiveInteraction(id);
     if (isNewInteraction) setSidePanelOpen(false);
     // Per explicit request ("after a contact is redialed from the contact
@@ -4738,6 +4816,15 @@ export function AgentWorkspaceAdvancedPage({
           : i
       )
     );
+    // See `handleQuickDial`'s own identical cleanup for the full "why" —
+    // a brand-new call on this interaction shouldn't inherit the previous
+    // call's already-decided tags/disposition.
+    setChannelOutcomeSelections((prev) => {
+      if (!(`${interactionId}:voice` in prev)) return prev;
+      const next = { ...prev };
+      delete next[`${interactionId}:voice`];
+      return next;
+    });
     switchActiveInteraction(interactionId);
   };
 
@@ -5236,7 +5323,7 @@ export function AgentWorkspaceAdvancedPage({
         // — see that effect's own doc comment in AgentNextGenPage.tsx for why
         // this exact moment can't rely on the effect alone.
         saveCaseRecord(dismissed);
-        const entry = buildDismissedContactHistoryEntry(dismissed, clockTick);
+        const entry = buildDismissedContactHistoryEntry(dismissed, clockTick, channelOutcomeSelections);
         // Upsert by `caseId`, not a plain prepend — per explicit bug report:
         // reopening a dismissed case (from Contact History or otherwise),
         // touching it, and dismissing it again used to log a SECOND row for
@@ -8012,10 +8099,10 @@ export function AgentWorkspaceAdvancedPage({
                       voice: c.type === "voice",
                       tagOptions: OUTCOME_TAG_OPTIONS,
                       selectedTags: outcomeDraft.tags,
-                      onTagsChange: (tags: string[]) => setOutcomeDraft((d) => ({ ...d, tags })),
+                      onTagsChange: handleOutcomeTagsChange,
                       dispositionOptions: OUTCOME_DISPOSITION_OPTIONS,
                       dispositionCode: outcomeDraft.dispositionCode,
-                      onDispositionChange: (value: string) => setOutcomeDraft((d) => ({ ...d, dispositionCode: value })),
+                      onDispositionChange: handleOutcomeDispositionChange,
                       summary: outcomeDraft.summary,
                       onSummaryChange: (value: string) => setOutcomeDraft((d) => ({ ...d, summary: value })),
                       onSave: handleOutcomeSave,
@@ -10128,9 +10215,9 @@ export function AgentWorkspaceAdvancedPage({
                           outcomeOpen={outcomeDraftKey === activeChannelOutcomeKey && outcomeDraftSource === "transcript"}
                           onOutcomeOpenChange={(open) => handleOutcomeOpenChange(activeChannelOutcomeKey!, open, "transcript")}
                           outcomeTags={outcomeDraft.tags}
-                          onOutcomeTagsChange={(tags) => setOutcomeDraft((d) => ({ ...d, tags }))}
+                          onOutcomeTagsChange={handleOutcomeTagsChange}
                           outcomeDispositionCode={outcomeDraft.dispositionCode}
-                          onOutcomeDispositionChange={(value) => setOutcomeDraft((d) => ({ ...d, dispositionCode: value }))}
+                          onOutcomeDispositionChange={handleOutcomeDispositionChange}
                           outcomeSummary={outcomeDraft.summary}
                           onOutcomeSummaryChange={(value) => setOutcomeDraft((d) => ({ ...d, summary: value }))}
                           onOutcomeSave={handleOutcomeSave}
@@ -10886,77 +10973,17 @@ export function AgentWorkspaceAdvancedPage({
                     // `PanelRightClose` — same "closing a docked right-side
                     // panel" glyph as this panel's sibling instance above,
                     // instead of `ContainerHeader`'s generic default `X`.
-                    // Redial/Re-open — per explicit request, these now live
-                    // here (the summary panel) instead of directly on the
-                    // Contact History row. Mutually exclusive by channel
-                    // type, per explicit request — a voice contact
-                    // (`entry.redial`) only ever gets "Redial" (starting a
-                    // literal fresh call is the only thing "reopening" a
-                    // call can mean), never "Re-open" alongside it; every
-                    // other channel type only ever gets "Re-open" (nothing
-                    // to "redial" on a chat/SMS/email/WhatsApp contact).
-                    //
-                    // Re-open still reopens the contact as a live assignment
-                    // in the left nav (`handleReopenContactHistoryEntry`'s
-                    // own doc comment) and closes this panel immediately,
-                    // since there's nothing left here to look at once that's
-                    // happened. Redial no longer does either of those things
-                    // directly — per explicit follow-up request ("add the
-                    // number / skill selection popover to the click of a
-                    // redial to phase 1B - same functionality as in Phase
-                    // 1"), `handleRedialButtonClick` only opens the Dial Pad
-                    // popover (anchored on this very button — its own
-                    // `e.currentTarget`, passed through as `anchorEl`, see
-                    // `dialpadRequest`'s own doc comment above) and leaves
-                    // this panel open; the actual redial only happens once
-                    // the agent picks a skill and submits there
-                    // (`handleDialpadSubmit`/`handleRedial`). Mirrors
-                    // AgentNextGenPage.tsx's own identical treatment.
-                    footer={
-                      selectedContactHistoryEntry ? (
-                        selectedContactHistoryEntry.redial ? (
-                          <Button
-                            variant="outline"
-                            // Per explicit request ("in phase 1, we cannot
-                            // have 2 or more calls at the same time, so if
-                            // an agent is on an active call then disable
-                            // the ... redial buttons in the contact
-                            // history"), then a follow-up bug report ("only
-                            // disable when the agent is on an active
-                            // call") — same `agentOnActiveVoiceCall` signal
-                            // the "New Outbound" trigger's own identical
-                            // `disabled` wiring uses (see that render
-                            // site's own doc comment, and
-                            // `agentOnActiveVoiceCall`'s own doc comment,
-                            // for why this isn't the plain
-                            // `liveVoiceCallInteraction` it originally
-                            // read). `title` (native `Button` prop,
-                            // button.tsx) renders as a plain browser
-                            // tooltip on this non-icon variant, same as
-                            // every other `title` this file already passes
-                            // to a non-icon `Button`.
-                            disabled={agentOnActiveVoiceCall}
-                            title={agentOnActiveVoiceCall ? "A call is already in progress" : undefined}
-                            onClick={(e) => {
-                              handleRedialButtonClick(selectedContactHistoryEntry, e.currentTarget);
-                            }}
-                          >
-                            <PhoneOutgoing className="h-3.5 w-3.5" strokeWidth={1.5} />
-                            Redial
-                          </Button>
-                        ) : (
-                          <Button
-                            onClick={() => {
-                              handleReopenContactHistoryEntry(selectedContactHistoryEntry);
-                              setSelectedContactHistoryEntry(null);
-                            }}
-                          >
-                            <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} />
-                            Takeover Assignment
-                          </Button>
-                        )
-                      ) : undefined
-                    }
+                    // Redial/Re-open — per explicit request, these used to
+                    // render here (this `InteriorPanel`'s own `footer`
+                    // slot, which pins to the bottom of the panel). Per a
+                    // later explicit follow-up request ("move the redial
+                    // button up directly below the gray box"), this is now
+                    // the `actionButton` prop on `ContactHistoryEntryDetail`
+                    // below instead — see that call site's own doc comment
+                    // for the exact same button JSX/handlers, just
+                    // relocated so it sits immediately after the gray card
+                    // regardless of panel height, instead of anchored to
+                    // the panel's own bottom edge.
                   >
                     {selectedQueueId ? (
                       <div className="flex flex-col">
@@ -11012,7 +11039,87 @@ export function AgentWorkspaceAdvancedPage({
                         ))}
                       </div>
                     ) : selectedContactHistoryEntry ? (
-                      <ContactHistoryEntryDetail entry={selectedContactHistoryEntry} />
+                      <ContactHistoryEntryDetail
+                        entry={selectedContactHistoryEntry}
+                        // Redial/Re-open — per explicit request, these used
+                        // to render in this `InteriorPanel`'s own separate
+                        // `footer` slot (which pins to the bottom of the
+                        // panel); per a later explicit follow-up request
+                        // ("move the redial button up directly below the
+                        // gray box"), passed in here instead so
+                        // `ContactHistoryEntryDetail` renders it immediately
+                        // after its own gray card. Mutually exclusive by
+                        // channel type, per explicit request — a voice
+                        // contact (`entry.redial`) only ever gets "Redial"
+                        // (starting a literal fresh call is the only thing
+                        // "reopening" a call can mean), never "Re-open"
+                        // alongside it; every other channel type only ever
+                        // gets "Re-open" (nothing to "redial" on a
+                        // chat/SMS/email/WhatsApp contact).
+                        //
+                        // Re-open still reopens the contact as a live
+                        // assignment in the left nav
+                        // (`handleReopenContactHistoryEntry`'s own doc
+                        // comment) and closes this panel immediately, since
+                        // there's nothing left here to look at once that's
+                        // happened. Redial no longer does either of those
+                        // things directly — per explicit follow-up request
+                        // ("add the number / skill selection popover to the
+                        // click of a redial to phase 1B - same
+                        // functionality as in Phase 1"),
+                        // `handleRedialButtonClick` only opens the Dial Pad
+                        // popover (anchored on this very button — its own
+                        // `e.currentTarget`, passed through as `anchorEl`,
+                        // see `dialpadRequest`'s own doc comment above) and
+                        // leaves this panel open; the actual redial only
+                        // happens once the agent picks a skill and submits
+                        // there (`handleDialpadSubmit`/`handleRedial`).
+                        // Mirrors AgentNextGenPage.tsx's own identical
+                        // treatment.
+                        actionButton={
+                          selectedContactHistoryEntry.redial ? (
+                            <Button
+                              variant="outline"
+                              // Per explicit request ("in phase 1, we cannot
+                              // have 2 or more calls at the same time, so if
+                              // an agent is on an active call then disable
+                              // the ... redial buttons in the contact
+                              // history"), then a follow-up bug report ("only
+                              // disable when the agent is on an active
+                              // call") — same `agentOnActiveVoiceCall` signal
+                              // the "New Outbound" trigger's own identical
+                              // `disabled` wiring uses (see that render
+                              // site's own doc comment, and
+                              // `agentOnActiveVoiceCall`'s own doc comment,
+                              // for why this isn't the plain
+                              // `liveVoiceCallInteraction` it originally
+                              // read). `title` (native `Button` prop,
+                              // button.tsx) renders as a plain browser
+                              // tooltip on this non-icon variant, same as
+                              // every other `title` this file already passes
+                              // to a non-icon `Button`.
+                              disabled={agentOnActiveVoiceCall}
+                              title={agentOnActiveVoiceCall ? "A call is already in progress" : undefined}
+                              onClick={(e) => {
+                                handleRedialButtonClick(selectedContactHistoryEntry, e.currentTarget);
+                              }}
+                            >
+                              <PhoneOutgoing className="h-3.5 w-3.5" strokeWidth={1.5} />
+                              Redial
+                            </Button>
+                          ) : (
+                            <Button
+                              onClick={() => {
+                                handleReopenContactHistoryEntry(selectedContactHistoryEntry);
+                                setSelectedContactHistoryEntry(null);
+                              }}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} />
+                              Takeover Assignment
+                            </Button>
+                          )
+                        }
+                      />
                     ) : (
                       <div className="flex flex-col gap-4 px-4 py-4">
                         <Input label="Subject" placeholder="Enter subject" />
@@ -11397,7 +11504,20 @@ export function AgentWorkspaceAdvancedPage({
                     channelPreviewThread
                       ? undefined
                       : customerPanelActiveTab === "Customer Info"
-                      ? customerInfoOverlayContent.headerTabs
+                      ? (
+                        // Per explicit request: fade in the drill-in's own
+                        // content (not the panel itself) each time it's
+                        // entered — this branch swap already causes a real
+                        // unmount/remount (a different JSX tree than the
+                        // normal tab row), so a plain `animate-in` wrapper
+                        // replays once per entry with no `key` needed, and
+                        // doesn't re-trigger while just browsing the
+                        // drill-in's own internal Overview/Detail/Notes
+                        // tabs (unrelated state).
+                        <div className="animate-in fade-in-0 duration-200">
+                          {customerInfoOverlayContent.headerTabs}
+                        </div>
+                      )
                       : (
                         <TabList className="px-4">
                           {(activeChannelType === "voice"
@@ -11476,7 +11596,11 @@ export function AgentWorkspaceAdvancedPage({
                         />
                       )
                     ) : customerPanelActiveTab === "Customer Info" ? (
-                      customerInfoOverlayContent.body
+                      // Same fade-in reasoning as `headerTabsOverride`'s
+                      // own identical wrapper just above.
+                      <div className="animate-in fade-in-0 duration-200">
+                        {customerInfoOverlayContent.body}
+                      </div>
                     ) : customerPanelActiveTab === "Transcript" && activeChannelType === "voice" ? (
                       // A fresh `InteractionTranscript` instance, same as
                       // this tab always rendered back when it lived in the
