@@ -1229,15 +1229,14 @@ export function AgentWorkspaceAdvancedPage({
    */
   sidePanelToggleLabel?: string;
 }) {
-  // Closed by default on load again — per a LATER explicit request
-  // ("default the assignment panel closed when the app launches"),
-  // reverting the earlier "when phase 1b advanced starts - default the
-  // assignment panel to open" request above. Not gated on
+  // Open by default on load again — per yet another explicit follow-up
+  // request, reverting the previous "default the assignment panel closed
+  // when the app launches" change back to open. Not gated on
   // `initialInteraction` either way — the rail's initial state is the same
   // regardless of whether the agent is seeded mid-call. `handleResize`'s
   // narrow-viewport auto-collapse (a few lines down) still applies after
   // that first paint.
-  const [navOpen, setNavOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(true);
   // No interactions exist until the agent launches one from the CreateNew
   // menu (Start Interaction / quick dial) — see handleStartCall/handleQuick
   // Dial below. Click any resulting InteractionNavItem card to make it the

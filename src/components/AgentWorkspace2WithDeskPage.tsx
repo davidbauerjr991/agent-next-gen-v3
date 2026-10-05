@@ -1537,20 +1537,21 @@ export function AgentWorkspace2WithDeskPage({
    */
   sidePanelToggleLabel?: string;
 }) {
-  // Closed by default on load — per a later explicit follow-up request
-  // ("default the left nav closed on app load"), reversing this state's
-  // own original "open by default" doc comment/request below. Same change
-  // as AgentNextGenPage.tsx's identical copy of this state. Still not
-  // gated on `initialInteraction` (closed the first time this page renders
-  // regardless of whether the agent is seeded mid-call) — this is a fixed
-  // starting value, not conditional logic. From here on it only ever
-  // changes via the agent's own toggle (`onToggle` below) or
+  // Open by default on load again — per yet another explicit follow-up
+  // request ("update phase 1 and 2 so the assignment panel is open when
+  // the app loads"), reversing the previous "default the left nav closed
+  // on app load" change back to open. Same change as
+  // AgentWorkspaceAdvancedPage.tsx's identical copy of this state. Still
+  // not gated on `initialInteraction` (open the first time this page
+  // renders regardless of whether the agent is seeded mid-call) — this is
+  // a fixed starting value, not conditional logic. From here on it only
+  // ever changes via the agent's own toggle (`onToggle` below) or
   // `handleResize`'s narrow-viewport auto-collapse (a few lines down) —
   // nothing else (including a new inbound assignment arriving) is allowed
   // to open or close it on the agent's behalf; see the "when a new
   // interaction comes in" doc comments further down for the auto-open that
   // used to do that and was explicitly dropped.
-  const [navOpen, setNavOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(true);
   // No interactions exist until the agent launches one from the CreateNew
   // menu (Start Interaction / quick dial) — see handleStartCall/handleQuick
   // Dial below. Click any resulting InteractionNavItem card to make it the
