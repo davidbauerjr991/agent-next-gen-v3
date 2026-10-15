@@ -360,6 +360,7 @@ import {
   Phone,
   PhoneOff,
   ChevronDown,
+  ChevronUp,
   type LucideIcon,
   ArrowLeft,
 } from "lucide-react";
@@ -729,6 +730,14 @@ const SEARCH_PANEL_TABS: SearchPanelTabKey[] = ["interactions", "customers", "me
 // comment for the fuller "why" this filters the shared list rather than
 // touching `ASSIGNMENT_SORT_OPTIONS` itself). Named for this tier rather
 // than reusing Phase 1's own constant since it isn't exported.
+type HomeSectionId = "queue" | "contactHistory" | "performance" | "productivity";
+const HOME_SECTION_IDS: HomeSectionId[] = ["queue", "contactHistory", "performance", "productivity"];
+const HOME_SECTION_LABELS: Record<HomeSectionId, string> = {
+  queue: "Queue",
+  contactHistory: "Contact history",
+  performance: "Performance",
+  productivity: "Productivity",
+};
 const AI_PLACEMENT_OPTIONS = [
   { value: "inline", label: "Inline in the transcript (default)" },
   { value: "panel", label: "In the Contact Details panel" },
@@ -752,7 +761,7 @@ const PANEL_DISPLAY_OPTIONS = [
 ];
 
 /** Apps whose display location is configurable in Settings: a tab on Home, the left nav, or the app-header panel. */
-const DISPLAYABLE_KEYS = ["customers", "schedule", "accounts", "tickets", "wem"] as const;
+const DISPLAYABLE_KEYS = ["customers", "contacts", "conversations", "schedule", "accounts", "tickets", "wem"] as const;
 type DisplayableKey = (typeof DISPLAYABLE_KEYS)[number];
 type PanelDisplay = "tab" | "leftnav" | "header";
 
@@ -2803,6 +2812,8 @@ export function AgentWorkspaceAdvancedPage({
   // table in the main area), or the app-header draggable panel (the default, same as the header Customers icon).
   const [panelDisplay, setPanelDisplay] = useState<Record<DisplayableKey, PanelDisplay>>({
     customers: "header",
+    contacts: "header",
+    conversations: "header",
     schedule: "header",
     accounts: "header",
     tickets: "header",
@@ -2818,6 +2829,23 @@ export function AgentWorkspaceAdvancedPage({
   // (all of that moves to the Contact Details panel; the main area shows just the voice transcript / chat).
   const [aiPlacement, setAiPlacement] = useState<"inline" | "panel">("inline");
   const aiInPanel = aiPlacement === "panel";
+  // Home config (Settings → Home): which sections show, in what order, and which queue widgets appear.
+  const [homeSections, setHomeSections] = useState<{ id: HomeSectionId; visible: boolean }[]>(
+    HOME_SECTION_IDS.map((id) => ({ id, visible: true }))
+  );
+  const [showHomeHeader, setShowHomeHeader] = useState(showPageHeader);
+  const [showHomeAgentName, setShowHomeAgentName] = useState(true);
+  const [homeGreeting, setHomeGreeting] = useState("Hello");
+  // All five queues are available in Settings → Home; Digital ("1") and Work Item ("4") start hidden (3 shown by default).
+  const [hiddenQueueIds, setHiddenQueueIds] = useState<string[]>(["1", "4"]);
+  const moveHomeSection = (index: number, delta: -1 | 1) =>
+    setHomeSections((prev) => {
+      const j = index + delta;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[j]] = [next[j], next[index]];
+      return next;
+    });
   // Left nav config (Settings → Left nav).
   const [newOutboundAtBottom, setNewOutboundAtBottom] = useState(false);
   const [navItemsAtTop, setNavItemsAtTop] = useState(false);
@@ -3585,6 +3613,7 @@ export function AgentWorkspaceAdvancedPage({
     | "schedule"
     | "screenpop"
     | "customers"
+    | "contacts"
     | "accounts"
     | "tickets"
     | "wem"
@@ -4113,6 +4142,7 @@ export function AgentWorkspaceAdvancedPage({
     schedule: true,
     screenpop: false,
     customers: false,
+    contacts: false,
     accounts: false,
     tickets: false,
     wem: false,
@@ -4227,7 +4257,7 @@ export function AgentWorkspaceAdvancedPage({
   // still keyed by the full original id set) — only the rendered widget
   // row itself shrinks.
   const latestContacts = useMemo<LatestContact[]>(() => {
-    return LATEST_CONTACTS_STATIC.filter((base) => base.name !== "Digital" && base.name !== "Work Item").map((base) => {
+    return LATEST_CONTACTS_STATIC.map((base) => {
       const contactsCount = sumInQueue(queueSubItems[base.id]);
       return {
         ...base,
@@ -7654,12 +7684,209 @@ export function AgentWorkspaceAdvancedPage({
             />
   );
 
+  const renderHomeSections = () => {
+    const visible = homeSections.filter((sec) => sec.visible);
+    const out: React.ReactNode[] = [];
+    let i = 0;
+    while (i < visible.length) {
+      const wrap = out.length === 0 ? "" : "mt-6";
+      const id = visible[i].id;
+      if (id === "performance" || id === "productivity") {
+        const run: HomeSectionId[] = [];
+        while (i < visible.length && (visible[i].id === "performance" || visible[i].id === "productivity")) {
+          run.push(visible[i].id);
+          i++;
+        }
+        out.push(
+          <div key={run.join("-")} className={cn(wrap, "lyra-container-grid")}>
+            {run.map((r) => (r === "performance" ? <PerformanceSummaryCard key={r} /> : <PerformanceBreakdownCard key={r} />))}
+          </div>
+        );
+        continue;
+      }
+      i++;
+      if (id === "queue") {
+        if (latestContacts.every((contact) => hiddenQueueIds.includes(contact.id))) continue;
+        out.push(
+          <div key="queue" className={wrap || undefined}>
+                    <DashboardQueue
+                      items={latestContacts.filter((contact) => !hiddenQueueIds.includes(contact.id)).map((contact) => ({
+                        id: contact.id,
+                        name: contact.name,
+                        icon: contact.icon,
+                        wait: contact.wait,
+                        skillsCount: contact.skillsCount,
+                        contactsCount: contact.contactsCount,
+                        agentsCount: contact.agentsCount,
+                      }))}
+                      selectedId={selectedQueueId}
+                      onSelect={(id) => {
+                        // Same "only one job in this shared docked slot at a
+                        // time" rule as the Contact History row's own
+                        // `onSelectEntry` above, the other direction — a
+                        // queue widget click while a Contact History entry's
+                        // summary is showing needs to actually swap the
+                        // panel over, not leave the old entry's content
+                        // sitting underneath a now-mismatched queue header.
+                        setSelectedContactHistoryEntry(null);
+                        setSelectedQueueId(id);
+                      }}
+                    />
+          </div>
+        );
+      } else {
+        out.push(
+          <div key="history" className={wrap || undefined}>
+                      <ContactHistoryCard
+                        onSelectEntry={(entry) => {
+                          // Clicking the row that's ALREADY selected closes
+                          // the panel instead of re-opening it on itself —
+                          // same "click the already-selected one to toggle
+                          // it off" behavior `DashboardQueue`'s own
+                          // `selectedId`/`onSelect` pair documents for the
+                          // queue widgets above.
+                          if (entry.id === selectedContactHistoryEntry?.id) {
+                            setSelectedContactHistoryEntry(null);
+                            return;
+                          }
+                          // Deselect the OTHER two jobs this shared interior
+                          // panel slot can show — only one is ever relevant
+                          // at a time, same "selectedQueueId set takes
+                          // priority" convention that panel's own doc
+                          // comment already documents.
+                          setSelectedQueueId(null);
+                          setInteriorPanelOpen(false);
+                          setSelectedContactHistoryEntry(entry);
+                        }}
+                        selectedEntryId={selectedContactHistoryEntry?.id ?? null}
+                        historyByRange={contactHistoryByRange}
+                        // Per explicit request ("default the phase 1
+                        // contact history filter to last 72 hours") — see
+                        // `ContactHistoryCard`'s own `defaultDateFilter`
+                        // doc comment (agent-next-gen-contact-history.tsx)
+                        // for why this tier alone passes it.
+                        defaultDateFilter="last72h"
+                        // `onOpenAllContacts` intentionally omitted — per
+                        // explicit request ("remove all contacts button from
+                        // the contact history in the home dashboard"). This
+                        // card's own `headerTitleBadge` only renders its
+                        // "All Contacts" button when this prop is passed
+                        // (agent-next-gen-contact-history.tsx's own
+                        // `onOpenAllContacts && (...)` check), so leaving it
+                        // out removes the button with no changes needed to
+                        // that shared component. `handleOpenAllContacts`
+                        // itself (below) and the standalone "All Contacts"
+                        // view it opens (`showAllContacts`, this file's own
+                        // `key="all-contacts"` branch) are left in place
+                        // rather than deleted, same "may come back later"
+                        // treatment this dashboard's own removed "Latest
+                        // Cases" section gets (its own doc comment, just
+                        // above) — only this one entry point into it is
+                        // gone now.
+                      />
+          </div>
+        );
+      }
+    }
+    return <>{out}</>;
+  };
+
+  const renderAllContactsBody = () => (
+                  <div className="relative flex flex-1 min-h-0 overflow-hidden">
+                    <InteractionsListView
+                      onAddToast={addToast}
+                      // Per explicit follow-up request ("when the contact
+                      // row is selected show it as active and allow it to
+                      // close the panel on toggle") — clicking the row
+                      // that's ALREADY selected now closes the panel
+                      // instead of just reopening the same one; clicking
+                      // any other row still swaps to it as before.
+                      // `activeRecordId` (below) is what makes that row
+                      // render as active in the table itself — see its own
+                      // doc comment (agent-next-gen-interactions-table.tsx).
+                      onOpenInteraction={(record) =>
+                        setSelectedAllContactsRecord((prev) => (prev?.id === record.id ? null : record))
+                      }
+                      activeRecordId={selectedAllContactsRecord?.id ?? null}
+                    />
+                    {showInteriorPanel && (
+                      <InteriorPanel
+                        side="right"
+                        // Sits above the table's header resize handles (the column separators), which otherwise
+                        // paint over the slide-out.
+                        className="z-30"
+                        open={Boolean(selectedAllContactsRecord)}
+                        headerTitle={selectedAllContactsRecord?.customerName}
+                        headerSubhead={selectedAllContactsRecord?.skill}
+                        onClose={() => setSelectedAllContactsRecord(null)}
+                        // Per explicit follow-up request ("update the
+                        // toggle close icon for interior panels to be an
+                        // 'x' icon") — reverts the `PanelRightClose`
+                        // override an earlier request introduced here,
+                        // back to `ContainerHeader`'s own generic default
+                        // `X` (simply omitting `closeIcon` entirely now
+                        // gets that default). Applies everywhere this
+                        // pattern was used, not just Phase 1 — see the
+                        // other 5 identical reverts (this file's own
+                        // second `InteriorPanel`, `AgentWorkspace2WithDesk
+                        // Page.tsx`'s two, `agent-next-gen-customer-info-
+                        // panel.tsx`'s two, `agent-next-gen-in-contact-
+                        // panel.tsx`'s one).
+                        // Same mutually-exclusive Redial/Re-open convention
+                        // `selectedContactHistoryEntry`'s own footer already
+                        // uses (voice-only gets "Redial") — both just call
+                        // `handleOpenInteractionRow`, the one handler this
+                        // table's rows have always used to actually open a
+                        // live assignment, then close this summary panel.
+                        footer={
+                          selectedAllContactsRecord ? (
+                            selectedAllContactsRecord.type === "voice" ? (
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  handleOpenInteractionRow(selectedAllContactsRecord);
+                                  setSelectedAllContactsRecord(null);
+                                }}
+                              >
+                                <PhoneOutgoing className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                Redial
+                              </Button>
+                            ) : (
+                              <Button
+                                onClick={() => {
+                                  handleOpenInteractionRow(selectedAllContactsRecord);
+                                  setSelectedAllContactsRecord(null);
+                                }}
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                Takeover Assignment
+                              </Button>
+                            )
+                          ) : undefined
+                        }
+                      >
+                        {selectedAllContactsRecord && (
+                          <ContactHistoryEntryDetail
+                            entry={buildContactHistoryEntryFromInteractionRecord(selectedAllContactsRecord)}
+                          />
+                        )}
+                      </InteriorPanel>
+                    )}
+                  </div>
+  );
+
+  const contactsPanelContent: EmbeddablePanelContent = {
+    title: "Contacts",
+    body: renderAllContactsBody(),
+  };
+
   const contentByPanelKey: Record<PanelKey, EmbeddablePanelContent> = {
     notif: notifContent,
     conversations: blankPanelContent("Agent Chat"),
     schedule: scheduleContent,
     screenpop: screenPopContent,
     customers: customersPanelContent,
+    contacts: contactsPanelContent,
     accounts: blankPanelContent("Accounts"),
     tickets: blankPanelContent("Tickets"),
     // WEM = Workforce Engagement Management
@@ -7744,13 +7971,14 @@ export function AgentWorkspaceAdvancedPage({
     schedule: { label: "Schedule", icon: CalendarDays },
     screenpop: { label: "Screen Pop", icon: MonitorUp },
     customers: { label: "Customers", icon: Users },
+    contacts: { label: "Contacts", icon: Inbox },
     accounts: { label: "Accounts", icon: Building2 },
     tickets: { label: "Tickets", icon: Ticket },
     wem: { label: "WEM", icon: UserCog },
     search: { label: "Search", icon: Search },
   };
   const PANEL_KEY_INITIAL_ORDER: PanelKey[] = [
-    "search", "customers", "accounts", "tickets", "wem",
+    "search", "customers", "contacts", "accounts", "tickets", "wem",
     "screenpop", "conversations", "schedule", "notif",
   ];
   // Live, user-reorderable order for both the header icon row AND the "View
@@ -9740,6 +9968,35 @@ export function AgentWorkspaceAdvancedPage({
                       checked={showAppIcons}
                       onCheckedChange={setShowAppIcons}
                     />
+                    {showAppIcons && (
+                      <fieldset className="mt-4 flex flex-col gap-3">
+                        <legend className="mb-1 lyra-body-md-emphasis text-lyra-fg-default">Apps to show</legend>
+                        {panelOrder.map((key: PanelKey) => (
+                          <React.Fragment key={key}>
+                            <Checkbox
+                              label={PANEL_KEY_METADATA[key].label}
+                              checked={pinnedKeys[key]}
+                              onCheckedChange={(checked) => setPinnedKeys((prev) => ({ ...prev, [key]: checked === true }))}
+                            />
+                            {(DISPLAYABLE_KEYS as readonly string[]).includes(key) && pinnedKeys[key] && (
+                              <div className="ml-7 max-w-xs">
+                                <Select
+                                  label={`${PANEL_KEY_METADATA[key].label} display`}
+                                  // Agent Chat can show in the left nav or header, but not as a Home tab.
+                                  options={key === "conversations" ? PANEL_DISPLAY_OPTIONS.filter((opt) => opt.value !== "tab") : PANEL_DISPLAY_OPTIONS}
+                                  value={panelDisplay[key as DisplayableKey]}
+                                  onValueChange={(v) => {
+                                    setPanelDisplay((prev) => ({ ...prev, [key as DisplayableKey]: v as PanelDisplay }));
+                                    setLeftNavView(null);
+                                    setActiveDeskTab("home");
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </fieldset>
+                    )}
                     <div className="mt-4 max-w-xs">
                       <Select
                         label="AI display"
@@ -9762,34 +10019,63 @@ export function AgentWorkspaceAdvancedPage({
                       <Switch size="sm" label="Home / Settings at the top" checked={navItemsAtTop} onCheckedChange={setNavItemsAtTop} />
                       <Switch size="sm" label="Don't allow interactions to collapse" checked={noInteractionCollapse} onCheckedChange={setNoInteractionCollapse} />
                     </fieldset>
-                    {showAppIcons && (
-                      <fieldset className="mt-4 flex flex-col gap-3">
-                        <legend className="mb-1 lyra-body-md-emphasis text-lyra-fg-default">Apps to show</legend>
-                        {panelOrder.map((key: PanelKey) => (
-                          <React.Fragment key={key}>
-                            <Checkbox
-                              label={PANEL_KEY_METADATA[key].label}
-                              checked={pinnedKeys[key]}
-                              onCheckedChange={(checked) => setPinnedKeys((prev) => ({ ...prev, [key]: checked === true }))}
+                    <fieldset className="mt-4 flex max-w-sm flex-col gap-3">
+                      <legend className="mb-1 lyra-body-md-emphasis text-lyra-fg-default">Home</legend>
+                      <Switch size="sm" label="Show header" checked={showHomeHeader} onCheckedChange={setShowHomeHeader} />
+                      {showHomeHeader && (
+                        <Input
+                          label="Greeting"
+                          value={homeGreeting}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setHomeGreeting(e.target.value)}
+                          placeholder="Hello"
+                        />
+                      )}
+                      {showHomeHeader && (
+                        <Checkbox
+                          label="Display agent first name"
+                          checked={showHomeAgentName}
+                          onCheckedChange={(checked) => setShowHomeAgentName(checked === true)}
+                        />
+                      )}
+                      {homeSections.map((sec, idx) => (
+                        <React.Fragment key={sec.id}>
+                          <div className="flex items-center justify-between gap-2">
+                            <Switch
+                              size="sm"
+                              label={HOME_SECTION_LABELS[sec.id]}
+                              checked={sec.visible}
+                              onCheckedChange={(checked) =>
+                                setHomeSections((prev) => prev.map((x) => (x.id === sec.id ? { ...x, visible: checked } : x)))
+                              }
                             />
-                            {(DISPLAYABLE_KEYS as readonly string[]).includes(key) && pinnedKeys[key] && (
-                              <div className="ml-7 max-w-xs">
-                                <Select
-                                  label={`${PANEL_KEY_METADATA[key].label} display`}
-                                  options={PANEL_DISPLAY_OPTIONS}
-                                  value={panelDisplay[key as DisplayableKey]}
-                                  onValueChange={(v) => {
-                                    setPanelDisplay((prev) => ({ ...prev, [key as DisplayableKey]: v as PanelDisplay }));
-                                    setLeftNavView(null);
-                                    setActiveDeskTab("home");
-                                  }}
+                            <div className="flex items-center gap-0.5">
+                              <ActionIconButton size="sm" title={`Move ${HOME_SECTION_LABELS[sec.id]} up`} disabled={idx === 0} onClick={() => moveHomeSection(idx, -1)}>
+                                <ChevronUp className="h-4 w-4" strokeWidth={1.5} />
+                              </ActionIconButton>
+                              <ActionIconButton size="sm" title={`Move ${HOME_SECTION_LABELS[sec.id]} down`} disabled={idx === homeSections.length - 1} onClick={() => moveHomeSection(idx, 1)}>
+                                <ChevronDown className="h-4 w-4" strokeWidth={1.5} />
+                              </ActionIconButton>
+                            </div>
+                          </div>
+                          {sec.id === "queue" && sec.visible && (
+                            <div className="ml-7 flex flex-col gap-2">
+                              {latestContacts.map((contact) => (
+                                <Checkbox
+                                  key={contact.id}
+                                  label={contact.name}
+                                  checked={!hiddenQueueIds.includes(contact.id)}
+                                  onCheckedChange={(checked) =>
+                                    setHiddenQueueIds((prev) =>
+                                      checked === true ? prev.filter((x) => x !== contact.id) : [...prev, contact.id]
+                                    )
+                                  }
                                 />
-                              </div>
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </fieldset>
-                    )}
+                              ))}
+                            </div>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </fieldset>
                   </div>
                 </div>
               ) : showAllContacts && !activeInteraction ? (
@@ -9863,84 +10149,7 @@ export function AgentWorkspaceAdvancedPage({
                       up, and `buildContactHistoryEntryFromInteractionRecord`,
                       agent-next-gen-interactions-table.tsx, for how a table
                       row is adapted into that same shape). */
-                  <div className="relative flex flex-1 min-h-0 overflow-hidden">
-                    <InteractionsListView
-                      onAddToast={addToast}
-                      // Per explicit follow-up request ("when the contact
-                      // row is selected show it as active and allow it to
-                      // close the panel on toggle") — clicking the row
-                      // that's ALREADY selected now closes the panel
-                      // instead of just reopening the same one; clicking
-                      // any other row still swaps to it as before.
-                      // `activeRecordId` (below) is what makes that row
-                      // render as active in the table itself — see its own
-                      // doc comment (agent-next-gen-interactions-table.tsx).
-                      onOpenInteraction={(record) =>
-                        setSelectedAllContactsRecord((prev) => (prev?.id === record.id ? null : record))
-                      }
-                      activeRecordId={selectedAllContactsRecord?.id ?? null}
-                    />
-                    {showInteriorPanel && (
-                      <InteriorPanel
-                        side="right"
-                        open={Boolean(selectedAllContactsRecord)}
-                        headerTitle={selectedAllContactsRecord?.customerName}
-                        headerSubhead={selectedAllContactsRecord?.skill}
-                        onClose={() => setSelectedAllContactsRecord(null)}
-                        // Per explicit follow-up request ("update the
-                        // toggle close icon for interior panels to be an
-                        // 'x' icon") — reverts the `PanelRightClose`
-                        // override an earlier request introduced here,
-                        // back to `ContainerHeader`'s own generic default
-                        // `X` (simply omitting `closeIcon` entirely now
-                        // gets that default). Applies everywhere this
-                        // pattern was used, not just Phase 1 — see the
-                        // other 5 identical reverts (this file's own
-                        // second `InteriorPanel`, `AgentWorkspace2WithDesk
-                        // Page.tsx`'s two, `agent-next-gen-customer-info-
-                        // panel.tsx`'s two, `agent-next-gen-in-contact-
-                        // panel.tsx`'s one).
-                        // Same mutually-exclusive Redial/Re-open convention
-                        // `selectedContactHistoryEntry`'s own footer already
-                        // uses (voice-only gets "Redial") — both just call
-                        // `handleOpenInteractionRow`, the one handler this
-                        // table's rows have always used to actually open a
-                        // live assignment, then close this summary panel.
-                        footer={
-                          selectedAllContactsRecord ? (
-                            selectedAllContactsRecord.type === "voice" ? (
-                              <Button
-                                variant="outline"
-                                onClick={() => {
-                                  handleOpenInteractionRow(selectedAllContactsRecord);
-                                  setSelectedAllContactsRecord(null);
-                                }}
-                              >
-                                <PhoneOutgoing className="h-3.5 w-3.5" strokeWidth={1.5} />
-                                Redial
-                              </Button>
-                            ) : (
-                              <Button
-                                onClick={() => {
-                                  handleOpenInteractionRow(selectedAllContactsRecord);
-                                  setSelectedAllContactsRecord(null);
-                                }}
-                              >
-                                <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} />
-                                Takeover Assignment
-                              </Button>
-                            )
-                          ) : undefined
-                        }
-                      >
-                        {selectedAllContactsRecord && (
-                          <ContactHistoryEntryDetail
-                            entry={buildContactHistoryEntryFromInteractionRecord(selectedAllContactsRecord)}
-                          />
-                        )}
-                      </InteriorPanel>
-                    )}
-                  </div>
+                  renderAllContactsBody()
                   )}
                 </div>
               ) : activeInteraction ? (
@@ -12008,7 +12217,7 @@ export function AgentWorkspaceAdvancedPage({
                 <>
                 <div key={activeDeskTab} className="flex flex-1 flex-col min-w-0 overflow-y-auto px-6 py-6 animate-in fade-in-0 duration-200">
                   <div className="w-full max-w-[1024px] mx-auto lyra-container-grid-wrap">
-                    {showPageHeader && (
+                    {showHomeHeader && (
                       // Dashboard header — per explicit request ("go back
                       // to the version of the home page that does NOT
                       // have a home page header"), moved back OUT of the
@@ -12030,7 +12239,7 @@ export function AgentWorkspaceAdvancedPage({
                       // `actions` now holds only the chip.
                       <div className="-mx-6 mb-6">
                         <PageHeader
-                          title={`Hello ${CURRENT_AGENT_FIRST_NAME}`}
+                          title={`${homeGreeting.trim() || "Hello"}${showHomeAgentName ? ` ${CURRENT_AGENT_FIRST_NAME}` : ""}`}
                           subtitle={`User Name: ${CURRENT_AGENT_ID}`}
                           bordered={false}
                           titleSize="2xl"
@@ -12060,125 +12269,7 @@ export function AgentWorkspaceAdvancedPage({
                         />
                       </div>
                     )}
-                    {/* ── Queue widgets ──
-                        `DashboardQueue` ("cards" variant, its default) —
-                        the numbers come straight from `latestContacts`
-                        (see the "Live queue simulation" state above), so
-                        they'd stay in sync with the accordion presentation
-                        of the same data if that's ever turned back on (see
-                        the note below) — and Contacts/Wait Time visibly
-                        tick/fluctuate in real time rather than sitting
-                        frozen at the same numbers forever. Clicking a
-                        widget opens the interior panel with that queue's
-                        sub-queue breakdown; the selected widget gets the
-                        "info-strong" (blue) treatment `DashboardQueue`
-                        applies on selection, driven by the controlled
-                        `selectedId`/`onSelect` pair kept in sync with the
-                        panel state. */}
-                    {/* No `mt-6` here — this is the first row in the
-                        dashboard body, and the scroll wrapper around
-                        `.lyra-container-grid-wrap` already supplies its
-                        own top spacing (`py-6` a few lines up), so an
-                        extra `mt-6` on top of that just doubled the gap
-                        between the tab bar and this row. The rows below
-                        (`ContactHistoryCard`, the summary cards) keep
-                        their own `mt-6` — they still need spacing from
-                        whatever row sits above THEM. */}
-                    <DashboardQueue
-                      items={latestContacts.map((contact) => ({
-                        id: contact.id,
-                        name: contact.name,
-                        icon: contact.icon,
-                        wait: contact.wait,
-                        skillsCount: contact.skillsCount,
-                        contactsCount: contact.contactsCount,
-                        agentsCount: contact.agentsCount,
-                      }))}
-                      selectedId={selectedQueueId}
-                      onSelect={(id) => {
-                        // Same "only one job in this shared docked slot at a
-                        // time" rule as the Contact History row's own
-                        // `onSelectEntry` above, the other direction — a
-                        // queue widget click while a Contact History entry's
-                        // summary is showing needs to actually swap the
-                        // panel over, not leave the old entry's content
-                        // sitting underneath a now-mismatched queue header.
-                        setSelectedContactHistoryEntry(null);
-                        setSelectedQueueId(id);
-                      }}
-                    />
-
-                    {/* ── Latest Cases ──
-                        Removed for now (was `DashboardQueue`'s "accordion"
-                        variant, showing the same data as expandable rows
-                        with each queue's `InteractionsTable` as content) —
-                        may come back later, so `latestContacts`,
-                        `InteractionsTable`, and the rest of the data/markup
-                        it depended on are left in place rather than deleted. */}
-
-                    <div className="mt-6">
-                      <ContactHistoryCard
-                        onSelectEntry={(entry) => {
-                          // Clicking the row that's ALREADY selected closes
-                          // the panel instead of re-opening it on itself —
-                          // same "click the already-selected one to toggle
-                          // it off" behavior `DashboardQueue`'s own
-                          // `selectedId`/`onSelect` pair documents for the
-                          // queue widgets above.
-                          if (entry.id === selectedContactHistoryEntry?.id) {
-                            setSelectedContactHistoryEntry(null);
-                            return;
-                          }
-                          // Deselect the OTHER two jobs this shared interior
-                          // panel slot can show — only one is ever relevant
-                          // at a time, same "selectedQueueId set takes
-                          // priority" convention that panel's own doc
-                          // comment already documents.
-                          setSelectedQueueId(null);
-                          setInteriorPanelOpen(false);
-                          setSelectedContactHistoryEntry(entry);
-                        }}
-                        selectedEntryId={selectedContactHistoryEntry?.id ?? null}
-                        historyByRange={contactHistoryByRange}
-                        // Per explicit request ("default the phase 1
-                        // contact history filter to last 72 hours") — see
-                        // `ContactHistoryCard`'s own `defaultDateFilter`
-                        // doc comment (agent-next-gen-contact-history.tsx)
-                        // for why this tier alone passes it.
-                        defaultDateFilter="last72h"
-                        // `onOpenAllContacts` intentionally omitted — per
-                        // explicit request ("remove all contacts button from
-                        // the contact history in the home dashboard"). This
-                        // card's own `headerTitleBadge` only renders its
-                        // "All Contacts" button when this prop is passed
-                        // (agent-next-gen-contact-history.tsx's own
-                        // `onOpenAllContacts && (...)` check), so leaving it
-                        // out removes the button with no changes needed to
-                        // that shared component. `handleOpenAllContacts`
-                        // itself (below) and the standalone "All Contacts"
-                        // view it opens (`showAllContacts`, this file's own
-                        // `key="all-contacts"` branch) are left in place
-                        // rather than deleted, same "may come back later"
-                        // treatment this dashboard's own removed "Latest
-                        // Cases" section gets (its own doc comment, just
-                        // above) — only this one entry point into it is
-                        // gone now.
-                      />
-                    </div>
-
-                    {/* ── Summary cards ──
-                        Was three cards (Activity/Performance/Productivity);
-                        Activity's ring chart moved into the bottom of
-                        PerformanceBreakdownCard (Productivity) and the
-                        standalone Activity card was removed, since the ring
-                        visualized the exact same Available/Working/
-                        Unavailable data Productivity's own rows already
-                        list — one card showing it twice added nothing a
-                        single card + ring didn't already cover. */}
-                    <div className="mt-6 lyra-container-grid">
-                      <PerformanceSummaryCard />
-                      <PerformanceBreakdownCard />
-                    </div>
+                    {renderHomeSections()}
                   </div>
                 </div>
                 {showInteriorPanel && (
