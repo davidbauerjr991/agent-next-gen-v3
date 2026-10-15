@@ -23,6 +23,8 @@ import {
   WarningIconSolid,
   Menu,
   KebabMenuButton,
+  AICard,
+  Link,
   Textarea,
   ToggleGroup,
   AIInput,
@@ -76,6 +78,7 @@ import {
   CheckCircle2,
   AlertCircle,
   History,
+  RefreshCw,
 } from "lucide-react";
 import {
   CURRENT_AGENT_FIRST_NAME,
@@ -444,50 +447,36 @@ function ApprovalSummaryAccordion({
   onLink?: (key: string) => void;
   onSuggestionAsk?: (text: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
   const [showMore, setShowMore] = useState(false);
   const summary = message.summary!;
   const hasDetails =
     !summary.hideDetails && (summary.checklist.length > 0 || summary.memory.length > 0 || !!summary.sentimentValue);
   return (
-    <div className="overflow-hidden rounded-lyra-md border border-lyra-border-subtle">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="group flex w-full cursor-pointer items-center gap-2 bg-lyra-status-info-subtle px-4 py-2.5 text-left transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-lyra-border-focus"
-      >
-        <Sparkles className="h-4 w-4 shrink-0 text-lyra-status-info-strong" strokeWidth={1.5} aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate lyra-body-md-emphasis text-lyra-fg-default">
+    <AICard
+      title={
+        <>
           {summary.title} <span className="lyra-body-md font-normal text-lyra-fg-secondary">{message.timestamp}</span>
-        </span>
-        <span className="shrink-0 lyra-body-sm text-lyra-fg-secondary">Copilot summary</span>
-        <ChevronDown
-          className={cn("h-5 w-5 shrink-0 text-lyra-fg-secondary transition-transform", open && "rotate-180")}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        />
-      </button>
-      <div
-        className={cn(
-          "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
-          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
-        )}
-        aria-hidden={!open}
-      >
-        <div className="min-h-0 overflow-hidden">
-        <div className="flex flex-col gap-3 bg-lyra-bg-surface-container-subtle px-4 py-4">
+        </>
+      }
+      color="blue"
+      icon={<Sparkles className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />}
+      headerEnd={<span className="lyra-body-sm font-normal text-lyra-fg-secondary">Copilot summary</span>}
+      defaultOpen
+      // The decision options stay visible when the card is collapsed (options still pending).
+      persistentFooter={
+        footer ??
+        (summary.decisions && summary.decisions.length > 0 ? (
+          <ApprovalDecision decisions={summary.decisions} onDecide={onDecide} onLink={onLink} onSuggestionAsk={onSuggestionAsk} onCallRequest={onCallRequest} takenOver={takenOver} />
+        ) : undefined)
+      }
+    >
+        <div className="flex flex-col gap-3">
           <p className="lyra-body-lg-emphasis text-lyra-fg-default">{summary.headline}</p>
           <p className="lyra-body-md text-lyra-fg-default">{summary.description}</p>
           {hasDetails && (
-            <button
-              type="button"
-              onClick={() => setShowMore((v) => !v)}
-              aria-expanded={showMore}
-              className="self-start lyra-body-md text-lyra-fg-link hover:underline focus-visible:outline-none focus-visible:underline"
-            >
+            <Link onClick={() => setShowMore((v) => !v)} aria-expanded={showMore} className="self-start">
               {showMore ? "Show less" : "Show more"}
-            </button>
+            </Link>
           )}
           {hasDetails && (
           <div
@@ -511,13 +500,7 @@ function ApprovalSummaryAccordion({
                   <div className="flex min-w-0 flex-col">
                     <span className="flex flex-wrap items-center gap-2 lyra-body-md-emphasis text-lyra-fg-default">
                       {item.link && onLink ? (
-                        <button
-                          type="button"
-                          onClick={() => onLink(item.link!)}
-                          className="text-left text-lyra-fg-link hover:underline focus-visible:outline-none focus-visible:underline"
-                        >
-                          {item.label}
-                        </button>
+                        <Link onClick={() => onLink(item.link!)}>{item.label}</Link>
                       ) : (
                         item.label
                       )}
@@ -569,16 +552,7 @@ function ApprovalSummaryAccordion({
           </div>
           )}
         </div>
-        </div>
-      </div>
-      {/* The decision footer sits outside the collapsing region, so it stays visible (options pending) when the summary is collapsed. */}
-      {footer && <div className={cn("bg-lyra-bg-surface-container-subtle px-4 pb-4", !open && "pt-3")}>{footer}</div>}
-      {!footer && summary.decisions && summary.decisions.length > 0 && (
-        <div className={cn("bg-lyra-bg-surface-container-subtle px-4 pb-4", !open && "pt-3")}>
-          <ApprovalDecision decisions={summary.decisions} onDecide={onDecide} onLink={onLink} onSuggestionAsk={onSuggestionAsk} onCallRequest={onCallRequest} takenOver={takenOver} />
-        </div>
-      )}
-    </div>
+    </AICard>
   );
 }
 
@@ -619,6 +593,76 @@ export function ApprovalRequestAccordion({
       className={animate ? "animate-in fade-in-0 slide-in-from-bottom-2 duration-300" : undefined}
     >
       <ApprovalSummaryAccordion message={message} onLink={onLink} footer={footer} />
+    </div>
+  );
+}
+
+/** True for messages that are AI content (interstitial, approval summary, wrap-up, event line) rather than conversation. */
+export const isAiActionMessage = (m: TranscriptMessage) => !!(m.instruction || m.wrapUp || m.summary || m.event);
+
+/**
+ * "AI in panel" mode: the AI content that normally sits inline in the transcript (instruction interstitials, approval
+ * request summaries, wrap-up cards, event lines) rendered as a stacked feed for the Contact Details panel instead.
+ * `overview` is the (already built) autosummary/next-best-action block shown first. Same components and handlers the
+ * inline transcript uses, so behavior matches.
+ */
+export function AiActionsFeed({
+  messages,
+  overview,
+  onApprovalDecision,
+  onApprovalCallRequest,
+  onApprovalSuggestionAsk,
+  approvalTakenOver,
+  onWrapUpComplete,
+  onSnapshotLink,
+  activeSnapshotLink,
+}: {
+  messages: TranscriptMessage[];
+  overview?: React.ReactNode;
+  onApprovalDecision?: (value: string, note: string) => void;
+  onApprovalCallRequest?: (req: { value: string; anchorEl: HTMLElement; confirm: () => void }) => void;
+  onApprovalSuggestionAsk?: (text: string) => void;
+  approvalTakenOver?: boolean;
+  onWrapUpComplete?: () => void;
+  onSnapshotLink?: (key: string) => void;
+  activeSnapshotLink?: string;
+}) {
+  const aiMessages = messages.filter(isAiActionMessage);
+  if (!overview && aiMessages.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-3">
+      {overview}
+      {aiMessages.map((message) =>
+        message.instruction ? (
+          <InstructionInterstitial
+            key={message.id}
+            id={message.id}
+            instruction={message.instruction}
+            timestamp={message.timestamp}
+            onOpen={(link) => onSnapshotLink?.(link)}
+            active={activeSnapshotLink === message.instruction.link}
+          />
+        ) : message.wrapUp ? (
+          <WrapUpAccordion key={message.id} message={message} onComplete={onWrapUpComplete} />
+        ) : message.summary ? (
+          <ApprovalSummaryAccordion
+            key={message.id}
+            message={message}
+            onDecide={onApprovalDecision}
+            onCallRequest={onApprovalCallRequest}
+            onLink={onSnapshotLink}
+            onSuggestionAsk={onApprovalSuggestionAsk}
+            takenOver={approvalTakenOver}
+          />
+        ) : (
+          <div key={message.id} className="flex flex-col gap-0.5">
+            <span className="lyra-body-sm text-lyra-fg-secondary">
+              {message.timestamp} · {message.name}
+            </span>
+            <span className="lyra-body-md-emphasis text-lyra-fg-default">{message.text}</span>
+          </div>
+        )
+      )}
     </div>
   );
 }
@@ -4995,6 +5039,14 @@ export function fillQuickReplyTemplate(
    simulated customer reply. This component still owns nothing but the
    input's own text (and now the quick-reply picker's transient state);
    it doesn't know or care what happens to a message once sent. */
+const EXTRA_COPILOT_SUGGESTIONS = [
+  "Summarize this conversation",
+  "Suggest a reply",
+  "What is the customer's history?",
+  "Show recent orders",
+  "Check refund eligibility",
+  "Find related knowledge articles",
+];
 export const QUICK_REPLY_TRIGGER_CHAR = "/";
 export const QUICK_REPLY_TRIGGER_PATTERN = /\/(\w*)$/;
 export function InteractionComposer({
@@ -5013,7 +5065,10 @@ export function InteractionComposer({
   takeoverDisabledReason,
   hideAiActions,
   onHideAiActionsChange,
+  copilotMount,
 }: {
+  /** "AI in panel": portal the Ask Copilot pane into this element (the Contact Details panel). Null/undefined → inline. */
+  copilotMount?: HTMLElement | null;
   /** Shows a "Hide AI Actions" switch at the right of the mode toggle row. */
   hideAiActions?: boolean;
   onHideAiActionsChange?: (hide: boolean) => void;
@@ -5059,7 +5114,20 @@ export function InteractionComposer({
   onPrefillConsumed?: () => void;
 }) {
   const [composerTabState, setComposerTab] = useState<"chat" | "copilot">("chat");
-  const composerTab = copilotOnly ? "copilot" : composerTabState;
+  const copilotDocked = !!copilotMount;
+  // Docked panel: the refresh button cycles through a larger pool of suggestions.
+  const [chipPage, setChipPage] = useState(0);
+  // Docked panel narrower than 425px: the Takeover button stacks above the chips.
+  const [copilotNarrow, setCopilotNarrow] = useState(false);
+  useEffect(() => {
+    if (!copilotMount) return;
+    const measure = () => setCopilotNarrow(copilotMount.clientWidth <= 425);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(copilotMount);
+    return () => ro.disconnect();
+  }, [copilotMount]);
+  const composerTab = copilotDocked ? "chat" : copilotOnly ? "copilot" : composerTabState;
   const [copilotQuestion, setCopilotQuestion] = useState("");
   const [copilotLoading, setCopilotLoading] = useState<string | null>(null);
   // Switching modes puts the caret straight into that mode's input so the agent can just start typing
@@ -5309,8 +5377,84 @@ export function InteractionComposer({
     setMessage("");
   };
 
+  const copilotPaneEl = (
+        <div
+          ref={copilotPaneRef}
+          className={`col-start-1 row-start-1 ${copilotDocked ? (copilotNarrow ? "flex flex-col gap-3" : "flex flex-col-reverse gap-3") : ""} ${copilotDocked || composerTab === "copilot" ? "animate-in fade-in-0 duration-200" : "invisible pointer-events-none"}`}
+          aria-hidden={!copilotDocked && composerTab !== "copilot"}
+        >
+            <AIInput
+              value={copilotQuestion}
+              onChange={setCopilotQuestion}
+              onSubmit={(text: string) => {
+                const q = (text ?? copilotQuestion).trim();
+                if (q) onCopilotAsk?.(q);
+                setCopilotQuestion("");
+              }}
+              placeholder="Ask Copilot about this customer or conversation..."
+              helperText=""
+              className={`w-full ${copilotDocked && copilotNarrow ? "order-2" : ""}`}
+            />
+            <div className={`${copilotDocked ? "" : "mt-3"} ${copilotDocked && copilotNarrow ? "contents" : "flex items-start justify-between gap-3"}`}>
+            {copilotSuggestions && copilotSuggestions.length > 0 ? (
+              <div className={`flex flex-wrap items-center gap-2 ${copilotDocked && copilotNarrow ? "order-1" : ""}`}>
+                {(() => {
+                  const pool = copilotDocked
+                    ? [...copilotSuggestions, ...EXTRA_COPILOT_SUGGESTIONS.filter((x) => !copilotSuggestions.includes(x))]
+                    : copilotSuggestions;
+                  const available = pool
+                    .map((sg) => (copilotUsed.includes(sg) ? copilotSuggestionReplacements?.[sg] : sg))
+                    .filter((sg): sg is string => !!sg && !copilotUsed.includes(sg));
+                  const size = copilotDocked && copilotNarrow ? 1 : 3;
+                  const canRefresh = copilotDocked && available.length > size;
+                  const start = canRefresh ? (chipPage * size) % available.length : 0;
+                  const visible = copilotDocked
+                    ? Array.from({ length: Math.min(size, available.length) }, (_, i) => available[(start + i) % available.length])
+                    : available;
+                  return (
+                    <>
+                      {visible.map((suggestion) => (
+                        <Tag
+                          key={suggestion}
+                          label={suggestion}
+                          variant="purple"
+                          icon={<Sparkles className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />}
+                          shape="pill"
+                          role="button"
+                          tabIndex={copilotDocked || composerTab === "copilot" ? 0 : -1}
+                          className="cursor-pointer"
+                          onClick={() => activateCopilotSuggestion(suggestion)}
+                          onKeyDown={(e: React.KeyboardEvent<HTMLSpanElement>) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              activateCopilotSuggestion(suggestion);
+                            }
+                          }}
+                        />
+                      ))}
+                      {canRefresh && (
+                        <ActionIconButton size="sm" title="Show different suggestions" onClick={() => setChipPage((n) => n + 1)}>
+                          <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        </ActionIconButton>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            ) : <span />}
+            {copilotOnly && onTakeover && (
+              <Button variant="destructive" size="md" className={`shrink-0 ${copilotDocked && copilotNarrow ? "order-3 w-full" : ""}`} onClick={onTakeover} disabled={takeoverDisabled} title={takeoverDisabled ? takeoverDisabledReason : undefined} tabIndex={copilotDocked || composerTab === "copilot" ? 0 : -1}>
+                {takeoverLabel}
+              </Button>
+            )}
+            </div>
+        </div>
+  );
+  if (copilotDocked && copilotOnly) return createPortal(copilotPaneEl, copilotMount as HTMLElement);
+
   return (
     <div className="relative shrink-0 bg-lyra-bg-surface-base px-6 py-4">
+      {copilotDocked && createPortal(copilotPaneEl, copilotMount as HTMLElement)}
       {/* Soft fade instead of a hard border-top — reads as the transcript
           scrolling *under* the composer rather than stopping at a line.
           Positioned outside this div's own box (negative top), so it
@@ -5379,7 +5523,7 @@ export function InteractionComposer({
           </div>
         )}
         {/* "Chat with Customer" / "Ask Copilot" tabs: the chat input stays mounted (just hidden) while Copilot is showing so a draft is kept. */}
-        {copilotOnly ? (
+        {copilotDocked ? null : copilotOnly ? (
           // Copilot-only (agent reviewing an AI-led chat): no mode toggle, just the switch at the right.
           onHideAiActionsChange && (
             <div className="mb-3 flex justify-end">
@@ -5413,57 +5557,7 @@ export function InteractionComposer({
         )}
         {/* Both panes share one grid cell so the area keeps the taller (chat) height on either tab. */}
         <div className="grid">
-        <div
-          ref={copilotPaneRef}
-          className={`col-start-1 row-start-1 ${composerTab === "copilot" ? "animate-in fade-in-0 duration-200" : "invisible pointer-events-none"}`}
-          aria-hidden={composerTab !== "copilot"}
-        >
-            <AIInput
-              value={copilotQuestion}
-              onChange={setCopilotQuestion}
-              onSubmit={(text: string) => {
-                const q = (text ?? copilotQuestion).trim();
-                if (q) onCopilotAsk?.(q);
-                setCopilotQuestion("");
-              }}
-              placeholder="Ask Copilot about this customer or conversation..."
-              helperText=""
-              className="w-full"
-            />
-            <div className="mt-3 flex items-start justify-between gap-3">
-            {copilotSuggestions && copilotSuggestions.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {copilotSuggestions
-                  .map((sg) => (copilotUsed.includes(sg) ? copilotSuggestionReplacements?.[sg] : sg))
-                  .filter((sg): sg is string => !!sg && !copilotUsed.includes(sg))
-                  .map((suggestion) => (
-                  <Tag
-                    key={suggestion}
-                    label={suggestion}
-                    variant="purple"
-                    icon={<Sparkles className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />}
-                    shape="pill"
-                    role="button"
-                    tabIndex={composerTab === "copilot" ? 0 : -1}
-                    className="cursor-pointer"
-                    onClick={() => activateCopilotSuggestion(suggestion)}
-                    onKeyDown={(e: React.KeyboardEvent<HTMLSpanElement>) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        activateCopilotSuggestion(suggestion);
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-            ) : <span />}
-            {copilotOnly && onTakeover && (
-              <Button variant="destructive" size="md" className="shrink-0" onClick={onTakeover} disabled={takeoverDisabled} title={takeoverDisabled ? takeoverDisabledReason : undefined} tabIndex={composerTab === "copilot" ? 0 : -1}>
-                {takeoverLabel}
-              </Button>
-            )}
-            </div>
-        </div>
+        {!copilotDocked && copilotPaneEl}
         <div className={`col-start-1 row-start-1 ${composerTab === "chat" ? "" : "invisible pointer-events-none"}`} aria-hidden={composerTab !== "chat"}>
         <Textarea
           ref={textareaRef}

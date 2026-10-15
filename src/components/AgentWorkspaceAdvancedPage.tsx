@@ -49,6 +49,9 @@ import {
   Icon,
   Badge,
   Separator,
+  Switch,
+  Checkbox,
+  CustomerContextOverview,
   DashboardQueue,
   AgentWelcomeMessage,
   TabList,
@@ -119,6 +122,8 @@ import {
   resolveCustomerAutoReply,
   InteractionTranscript,
   InteractionComposer,
+  AiActionsFeed,
+  isAiActionMessage,
   type Contact,
   TRANSCRIPT_SESSIONS,
   TRANSCRIPT_SESSIONS_VOICE,
@@ -724,6 +729,33 @@ const SEARCH_PANEL_TABS: SearchPanelTabKey[] = ["interactions", "customers", "me
 // comment for the fuller "why" this filters the shared list rather than
 // touching `ASSIGNMENT_SORT_OPTIONS` itself). Named for this tier rather
 // than reusing Phase 1's own constant since it isn't exported.
+const AI_PLACEMENT_OPTIONS = [
+  { value: "inline", label: "Inline in the transcript (default)" },
+  { value: "panel", label: "In the Contact Details panel" },
+];
+
+const VOICE_CONTROLS_PLACEMENT_OPTIONS = [
+  { value: "bottom", label: "Bottom (default)" },
+  { value: "top", label: "Top of left nav" },
+];
+
+/** Left-nav slot the active call's controls are portaled into (see `voiceControlsPlacement`). Renders nothing while the
+ *  nav is collapsed; `LeftNav` injects `expanded` into its sticky caption's children in overlay mode. */
+function LeftNavVoiceSlot({ expanded, slotRef }: { expanded?: boolean; slotRef: (el: HTMLDivElement | null) => void }) {
+  return expanded ? <div ref={slotRef} className="empty:hidden pt-2" /> : null;
+}
+
+const PANEL_DISPLAY_OPTIONS = [
+  { value: "tab", label: "Display in tab" },
+  { value: "leftnav", label: "Display in Left Nav" },
+  { value: "header", label: "Display in App Header" },
+];
+
+/** Apps whose display location is configurable in Settings: a tab on Home, the left nav, or the app-header panel. */
+const DISPLAYABLE_KEYS = ["customers", "schedule", "accounts", "tickets", "wem"] as const;
+type DisplayableKey = (typeof DISPLAYABLE_KEYS)[number];
+type PanelDisplay = "tab" | "leftnav" | "header";
+
 const ADVANCED_ASSIGNMENT_SORT_OPTIONS = ASSIGNMENT_SORT_OPTIONS.filter((o) => o.value !== "awaitingLongest");
 
 // Builds a `tagOpenChannels` closure off of the given `interactions` — reads
@@ -1770,14 +1802,6 @@ export function AgentWorkspaceAdvancedPage({
   // itself — that function (and its mock fixtures) is reused elsewhere
   // (Agent Workspace 2.0/Phase 2), neither of which this voice-only
   // request applies to.
-  const contactHistoryByRange = useMemo(() => {
-    const byRange = buildContactHistoryByRange(dismissedContactHistory);
-    return {
-      today: byRange.today.filter((entry) => entry.channelType === "voice"),
-      last48h: byRange.last48h.filter((entry) => entry.channelType === "voice"),
-      last72h: byRange.last72h.filter((entry) => entry.channelType === "voice"),
-    };
-  }, [dismissedContactHistory]);
   // Drives `AssignmentsSortButton`'s `RadioGroup` — "Last Updated" (default,
   // matching a typical inbox's own default order) or "Create Date". Actual
   // ordering happens where the cards render (`sortAssignments`), leaving
@@ -2760,7 +2784,7 @@ export function AgentWorkspaceAdvancedPage({
   // `initial`'s own literal type, which is what keeps those comparisons
   // (and the "orphaned but not deleted" branches they gate) type-checking
   // correctly with no runtime behavior change.
-  const [activeDeskTab] = useState<"home" | "customers" | "accounts" | "tickets" | "wem">("home");
+  const [activeDeskTab, setActiveDeskTab] = useState<"home" | DisplayableKey>("home");
   /* Settings — a third top-level view alongside Desk/interaction-record,
      shown in place of both in the content column when the Settings rail
      item is clicked. Mutually exclusive with an active interaction: opening
@@ -2772,6 +2796,34 @@ export function AgentWorkspaceAdvancedPage({
      `onSettingsClick` handler, since there's only that one call site
      (unlike `setActiveInteractionId`, which has several). */
   const [showSettings, setShowSettings] = useState(false);
+  // Settings → "Show app icons" switch: brings back the header app icons (Search / Customers / Accounts / ...
+  // and the "View All Apps" picker) that Phase 1 hides by default.
+  const [showAppIcons, setShowAppIcons] = useState(false);
+  // Settings → Customers → where the Customers table is shown: a tab on Home, an icon in the left nav (opens the
+  // table in the main area), or the app-header draggable panel (the default, same as the header Customers icon).
+  const [panelDisplay, setPanelDisplay] = useState<Record<DisplayableKey, PanelDisplay>>({
+    customers: "header",
+    schedule: "header",
+    accounts: "header",
+    tickets: "header",
+    wem: "header",
+  });
+  // Which left-nav app (if any) is open in the main area.
+  const [leftNavView, setLeftNavView] = useState<DisplayableKey | null>(null);
+  // Settings → "Voice controls location": "bottom" (default, bar under the main container) or "top" (stacked
+  // controls pinned at the top of the left nav while a call is active; falls back to the bottom bar while the left
+  // nav is collapsed/hidden since the slot isn't mounted then).
+  const [voiceControlsPlacement, setVoiceControlsPlacement] = useState<"bottom" | "top">("bottom");
+  // Settings → "AI display": "inline" (default: AI cards, interstitials and approvals sit in the transcript) or "panel"
+  // (all of that moves to the Contact Details panel; the main area shows just the voice transcript / chat).
+  const [aiPlacement, setAiPlacement] = useState<"inline" | "panel">("inline");
+  const aiInPanel = aiPlacement === "panel";
+  const [copilotSlotEl, setCopilotSlotEl] = useState<HTMLDivElement | null>(null);
+  const stripAi = (msgs: TranscriptMessage[]) => (aiInPanel ? msgs.filter((m) => !isAiActionMessage(m)) : msgs);
+  const [voiceSlotEl, setVoiceSlotEl] = useState<HTMLDivElement | null>(null);
+  const voiceControlsAtTop = voiceControlsPlacement === "top" && voiceSlotEl !== null;
+  // Row selected in the App Header Customers panel (its own slide-out, separate from the main-area table's).
+  const [headerCustomerRow, setHeaderCustomerRow] = useState<CustomerListRecord | null>(null);
 
   // Per explicit follow-up request ("detach the contacts table from the
   // search panel and have it exist on its own") — a fourth top-level view
@@ -2846,6 +2898,7 @@ export function AgentWorkspaceAdvancedPage({
   useEffect(() => {
     if (activeInteractionId) {
       setShowSettings(false);
+      setLeftNavView(null);
     }
   }, [activeInteractionId]);
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
@@ -4061,6 +4114,17 @@ export function AgentWorkspaceAdvancedPage({
     wem: false,
     search: true,
   });
+  // Contact History stays voice-only (this deployment is voice-only) unless Customers is an active (checked) app in
+  // Settings, in which case every channel is listed. Declared after `pinnedKeys` since it reads it.
+  const contactHistoryByRange = useMemo(() => {
+    const byRange = buildContactHistoryByRange(dismissedContactHistory);
+    if (pinnedKeys.customers) return byRange;
+    return {
+      today: byRange.today.filter((entry) => entry.channelType === "voice"),
+      last48h: byRange.last48h.filter((entry) => entry.channelType === "voice"),
+      last72h: byRange.last72h.filter((entry) => entry.channelType === "voice"),
+    };
+  }, [dismissedContactHistory, pinnedKeys.customers]);
   const [appsMenuOpen, setAppsMenuOpen] = useState(false);
 
   /* Interior panel (right) */
@@ -7335,12 +7399,158 @@ export function AgentWorkspaceAdvancedPage({
       panelTabs: AGENT_WORKSPACE_CUSTOMER_PANEL_TABS,
     },
   });
+  const customersPanelContent: EmbeddablePanelContent = {
+    title: "Customers",
+    body: (
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-auto">
+        <CustomersListView
+          onStartInteraction={(contact, channel, phone, skillId) => handleStartCall({ contact, channel, phone, skillId })}
+          addedFilterKeys={customerAddedFilterKeys}
+          onAddedFilterKeysChange={setCustomerAddedFilterKeys}
+          filterValues={customerFilterValues}
+          onFilterValuesChange={setCustomerFilterValues}
+          onRowClick={(row) =>
+            setHeaderCustomerRow((prev) => (prev?.contactNumber === row.contactNumber ? null : row))
+          }
+          searchQuery={customerSearchQuery}
+          onSearchChange={setCustomerSearchQuery}
+          sortKey={customerSortKey}
+          sortDir={customerSortDir}
+          onSort={handleCustomerSort}
+          sortedRows={customerSortedRows}
+          openRowId={headerCustomerRow?.contactNumber ?? null}
+          leadingChannelStack
+          isRowOpen={(row) => interactions.some((i) => i.customerId === row.contactNumber)}
+        />
+        </div>
+        <CustomerRowInfoPanel
+          row={headerCustomerRow}
+          onClose={() => setHeaderCustomerRow(null)}
+          onPrevious={() => {}}
+          onNext={() => {}}
+          hasPrevious={false}
+          hasNext={false}
+          onStartInteraction={(contact, channel, phone, skillId) => handleStartCall({ contact, channel, phone, skillId })}
+          tabs={AGENT_WORKSPACE_CUSTOMER_PANEL_TABS}
+          onAddToast={addToast}
+          hidePrevNext
+        />
+      </div>
+    ),
+  };
+  // Opens the right side panel for a link in the autosummary/interstitials/approval cards (shared by the inline
+  // transcript and the "AI in panel" feed).
+  const getSnapshotLinkHandler = (): ((key: string) => void) | undefined => {
+    if (!activeInteraction) return undefined;
+    return (
+                            isColdCallId(activeInteraction.id)
+      ? (key) => {
+          if (key === "order" || key === "card" || key === "void-steps" || key === "maya-order" || key === "maya-card" || key === "maya-refund-steps") {
+            openDetailPanelContent({ kind: "tom-call", panel: key });
+          } else if (key.startsWith("instruction:")) {
+            const [, decision, text, time] = key.split(":");
+            openDetailPanelContent({
+              kind: "lucas-instruction",
+              decision,
+              text: decodeURIComponent(text ?? ""),
+              time: decodeURIComponent(time ?? ""),
+            });
+          }
+        }
+      : activeInteraction.id === MARCUS_WEBB_ID
+      ? (key) => {
+          if (key === "order") openDetailPanelContent({ kind: "order", order: MARCUS_WEBB_ORDER });
+        }
+      : activeInteraction.id === LUCAS_THOMAS_ID
+      ? (key) =>
+          key === lucasActiveLinkKey
+            // Clicking the row/link whose panel is already open closes it (toggle).
+            ? setSelectedDetailPanelContent(null)
+            : key.startsWith("instruction:")
+            ? (() => {
+                const [, decision, text, time] = key.split(":");
+                openDetailPanelContent({
+                  kind: "lucas-instruction",
+                  decision,
+                  text: decodeURIComponent(text ?? ""),
+                  time: decodeURIComponent(time ?? ""),
+                });
+              })()
+            : key.startsWith("memory:")
+            ? openExperienceMemoryInSidePanel(key.slice("memory:".length) as LucasThomasMemoryFocus)
+            : openDetailPanelContent({ kind: "lucas", panel: key as LucasThomasPanelKey })
+      : undefined
+    );
+  };
+  // "AI in panel" mode: the AI cards, interstitials and approvals for the Contact Details panel.
+  const renderAiPanelFeed = () => {
+    if (!activeInteraction) return null;
+    const snapshotLink = getSnapshotLinkHandler();
+    const isMarcus = activeInteraction.id === MARCUS_WEBB_ID;
+    const overview =
+      activeInteractionIsRealCustomer && customerContextOverviewInfo ? (
+        <CustomerContextOverview
+          customerName={activeInteraction.customerName ?? ""}
+          snapshot={customerContextOverviewInfo.snapshot}
+          onSnapshotLink={snapshotLink}
+          nextBestAction={customerContextOverviewInfo.nextBestAction}
+          nextBestActionContent={isMarcus ? <PersistentHostSlot host={marcusCardHost} /> : undefined}
+          nextBestActionBare={isMarcus ? true : undefined}
+          autosummaryBlue={activeInteraction.id === LUCAS_THOMAS_ID || isMarcus || isColdCallId(activeInteraction.id)}
+          showCustomerProfile={false}
+          showContactSnapshot
+          showNextBestAction={isMarcus}
+          onViewInteractionHistory={undefined}
+          aiCards
+          className="pt-0"
+        />
+      ) : undefined;
+    const aiMessages = Object.values(activeInteraction.liveMessages ?? {}).flat();
+    return (
+      <AiActionsFeed
+        messages={aiMessages}
+        overview={overview}
+        onApprovalDecision={activeInteraction.id === LUCAS_THOMAS_ID ? handleLucasApprovalDecision : undefined}
+        onApprovalCallRequest={activeInteraction.id === LUCAS_THOMAS_ID ? handleLucasCallRequest : undefined}
+        onApprovalSuggestionAsk={
+          activeInteraction.id === LUCAS_THOMAS_ID ? (text: string) => handleCopilotAsk(LUCAS_THOMAS_ID, "chat", text) : undefined
+        }
+        approvalTakenOver={activeInteraction.id === LUCAS_THOMAS_ID && !lucasThomasReviewing}
+        onWrapUpComplete={
+          activeInteraction.id === LUCAS_THOMAS_ID
+            ? () => {
+                handleLucasApprovalDecision("ship-wrapup", "");
+                setLucasThomasBannerExiting(true);
+                window.setTimeout(() => {
+                  setLucasThomasBannerHidden(true);
+                  setLucasThomasBannerExiting(false);
+                }, 220);
+              }
+            : undefined
+        }
+        onSnapshotLink={snapshotLink}
+        activeSnapshotLink={
+          activeInteraction.id === LUCAS_THOMAS_ID || isColdCallId(activeInteraction.id) ? lucasActiveLinkKey : undefined
+        }
+      />
+    );
+  };
+  // "AI in panel": the Contact Details panel defaults open (Details tab) whenever an interaction is active.
+  // Declared after the interaction-switch reset effects/handlers so it wins.
+  useEffect(() => {
+    if (aiInPanel && activeInteractionId) {
+      setCustomerPanelActiveTab("Details");
+      setSidePanelOpen(true);
+    }
+  }, [aiInPanel, activeInteractionId]);
+
   const contentByPanelKey: Record<PanelKey, EmbeddablePanelContent> = {
     notif: notifContent,
     conversations: blankPanelContent("Agent Chat"),
     schedule: scheduleContent,
     screenpop: screenPopContent,
-    customers: blankPanelContent("Customers"),
+    customers: customersPanelContent,
     accounts: blankPanelContent("Accounts"),
     tickets: blankPanelContent("Tickets"),
     // WEM = Workforce Engagement Management
@@ -7578,7 +7788,11 @@ export function AgentWorkspaceAdvancedPage({
   // flapping — hiding an icon frees up roughly one icon's width of gap,
   // which would otherwise immediately clear the "show one back" threshold
   // and re-show it next frame.
-  const pinnedKeysInHeaderOrder = panelOrder.filter((key) => pinnedKeys[key]);
+  const isHeaderKey = (key: PanelKey) =>
+    !(DISPLAYABLE_KEYS as readonly string[]).includes(key) || panelDisplay[key as DisplayableKey] === "header";
+  // The "View All Apps" menu only makes sense with 2+ apps in the header; with one or none it is removed.
+  const showAppsMenu = panelOrder.filter((key: PanelKey) => pinnedKeys[key] && isHeaderKey(key)).length > 1;
+  const pinnedKeysInHeaderOrder = panelOrder.filter((key) => pinnedKeys[key] && isHeaderKey(key));
   const appHeaderRef = useRef<HTMLElement>(null);
   const appNameMeasureRef = useRef<HTMLDivElement>(null);
   const headerIconsMeasureRef = useRef<HTMLDivElement>(null);
@@ -7628,7 +7842,16 @@ export function AgentWorkspaceAdvancedPage({
   const responsivelyHiddenKeys = new Set(
     pinnedKeysInHeaderOrder.slice(0, Math.min(autoHiddenCount, pinnedKeysInHeaderOrder.length))
   );
-  const showHeaderIcon = (key: PanelKey) => pinnedKeys[key] && !responsivelyHiddenKeys.has(key);
+  const showHeaderIcon = (key: PanelKey) =>
+    pinnedKeys[key] && isHeaderKey(key) && !responsivelyHiddenKeys.has(key);
+  // Apps shown as a Home tab / a left-nav main-area view (see `panelDisplay`).
+  const tabKeys = DISPLAYABLE_KEYS.filter((k) => pinnedKeys[k] && panelDisplay[k] === "tab");
+  const leftNavKeys = DISPLAYABLE_KEYS.filter((k) => pinnedKeys[k] && panelDisplay[k] === "leftnav");
+  const activeLeftNavKey = leftNavView && leftNavKeys.includes(leftNavView) ? leftNavView : null;
+  // The app currently filling the main area, from a Home tab or the left nav.
+  const mainAreaKey: DisplayableKey | null =
+    activeDeskTab !== "home" && tabKeys.includes(activeDeskTab) ? activeDeskTab : activeLeftNavKey;
+  const customersViewActive = mainAreaKey === "customers";
 
   // How much room the DOCKED shared panel can actually claim without
   // pushing `containerRef`'s own `min-w-[374px]` floor (and so the whole
@@ -8216,6 +8439,7 @@ export function AgentWorkspaceAdvancedPage({
                 `PANEL_BUTTON_SELECTED_CLASS` wiring the row uses per-icon,
                 so re-enabling this opens the real Search panel exactly like
                 it did before. */}
+            {/* Stays off: with "Show app icons" on, the icon row below already includes Search, so this standalone copy would show it twice. */}
             {false && (
               <ActionIconButton
                 size="xl"
@@ -8239,7 +8463,7 @@ export function AgentWorkspaceAdvancedPage({
                 case it needs to come back. Search itself is exempted above
                 per the follow-up request, so this map now effectively covers
                 only the remaining eight keys whenever it's re-enabled. */}
-            {false && (
+            {showAppIcons && (
               <>
             <div ref={headerIconsMeasureRef} className="flex items-center gap-0">
               {panelOrder.filter(showHeaderIcon).map((key) => {
@@ -8288,6 +8512,8 @@ export function AgentWorkspaceAdvancedPage({
                 divider) so it stretches to match the row's height inside
                 AppHeader's `flex items-center` actions container instead of
                 a hand-picked fixed height. */}
+            {showAppsMenu && (
+            <>
             <Separator orientation="vertical" className="h-auto self-stretch pl-lyra-1 pr-lyra-1" />
             <Tooltip content="View All Apps" placement="bottom" disabled={appsMenuOpen}>
               <span className="inline-flex">
@@ -8319,6 +8545,8 @@ export function AgentWorkspaceAdvancedPage({
                 />
               </span>
             </Tooltip>
+            </>
+            )}
               </>
             )}
             <AgentProfile
@@ -8396,6 +8624,7 @@ export function AgentWorkspaceAdvancedPage({
           // box as `items` (Home), so it stays pinned with Home instead of
           // scrolling away with the cards under it.
           stickyCaption={
+            <>
             <AssignmentsSectionCaption
               expanded={navOpen}
               count={interactions.length}
@@ -8412,6 +8641,8 @@ export function AgentWorkspaceAdvancedPage({
               // `compact` — see 2.0's own copy for the full reasoning.
               compact
             />
+            <LeftNavVoiceSlot expanded={navOpen} slotRef={setVoiceSlotEl} />
+            </>
           }
           // Home + Settings — per explicit request ("move the home button
           // above the settings like in phase 1 left nav (match to phase
@@ -8443,23 +8674,31 @@ export function AgentWorkspaceAdvancedPage({
               // just one element out of it, now that both live here
               // together — same shape `AgentNextGenPage.tsx`'s own `footer`
               // already passes.
-              items={buildNavItems(
-                Boolean(activeInteraction),
-                // Per explicit follow-up request, Home no longer resets
-                // `showAllContacts`/`selectedAllContactsRecord` — see that
-                // state's own doc comment for why "Home" now always resumes
-                // whatever was showing there before the agent navigated
-                // away (plain dashboard or All Contacts), instead of
-                // forcing back to the plain dashboard every time.
-                () => { switchActiveInteraction(null); setShowSettings(false); },
-                showSettings,
-                // Same follow-up — opening Settings no longer discards All
-                // Contacts' own state either; it just takes visual priority
-                // while showing (this ternary branch is checked first), and
-                // All Contacts reappears exactly as left once Settings
-                // closes.
-                () => { setShowSettings(true); switchActiveInteraction(null); }
-              )}
+              items={(() => {
+                // Home no longer resets All Contacts state (see `showAllContacts`); it only leaves Customers/Settings.
+                const navBase = buildNavItems(
+                  Boolean(activeInteraction) || activeLeftNavKey !== null,
+                  () => { switchActiveInteraction(null); setShowSettings(false); setLeftNavView(null); },
+                  showSettings,
+                  () => { setShowSettings(true); switchActiveInteraction(null); setLeftNavView(null); }
+                );
+                if (leftNavKeys.length === 0) return navBase;
+                const appItems = leftNavKeys.map((key) => {
+                  const { label, icon: KeyIcon } = PANEL_KEY_METADATA[key];
+                  return {
+                    icon: <KeyIcon className="h-4 w-4" strokeWidth={1.5} />,
+                    label,
+                    active: activeLeftNavKey === key && !activeInteraction && !showSettings,
+                    onClick: () => {
+                      switchActiveInteraction(null);
+                      setShowSettings(false);
+                      setShowAllContacts(false);
+                      setLeftNavView(key);
+                    },
+                  };
+                });
+                return [navBase[0], ...appItems, ...navBase.slice(1)];
+              })()}
             />
           }
           // "New Outbound" itself has moved several times now: started as
@@ -9496,7 +9735,58 @@ export function AgentWorkspaceAdvancedPage({
                 // this extra nesting level is layout-inert.
                 <div key="settings" className="flex flex-1 flex-col min-w-0 overflow-hidden animate-in fade-in-0 duration-200">
                   {showPageHeader && <PageHeader title="Settings" />}
-                  <div className="flex-1 overflow-y-auto" />
+                  <div className="flex-1 overflow-y-auto p-6">
+                    <Switch
+                      size="sm"
+                      label="Show app icons"
+                      checked={showAppIcons}
+                      onCheckedChange={setShowAppIcons}
+                    />
+                    <div className="mt-4 max-w-xs">
+                      <Select
+                        label="AI display"
+                        options={AI_PLACEMENT_OPTIONS}
+                        value={aiPlacement}
+                        onValueChange={(v) => setAiPlacement(v as "inline" | "panel")}
+                      />
+                    </div>
+                    <div className="mt-4 max-w-xs">
+                      <Select
+                        label="Voice controls location"
+                        options={VOICE_CONTROLS_PLACEMENT_OPTIONS}
+                        value={voiceControlsPlacement}
+                        onValueChange={(v) => setVoiceControlsPlacement(v as "bottom" | "top")}
+                      />
+                    </div>
+                    {showAppIcons && (
+                      <fieldset className="mt-4 flex flex-col gap-3">
+                        <legend className="mb-1 lyra-body-md-emphasis text-lyra-fg-default">Apps to show</legend>
+                        {panelOrder.map((key: PanelKey) => (
+                          <React.Fragment key={key}>
+                            <Checkbox
+                              label={PANEL_KEY_METADATA[key].label}
+                              checked={pinnedKeys[key]}
+                              onCheckedChange={(checked) => setPinnedKeys((prev) => ({ ...prev, [key]: checked === true }))}
+                            />
+                            {(DISPLAYABLE_KEYS as readonly string[]).includes(key) && pinnedKeys[key] && (
+                              <div className="ml-7 max-w-xs">
+                                <Select
+                                  label={`${PANEL_KEY_METADATA[key].label} display`}
+                                  options={PANEL_DISPLAY_OPTIONS}
+                                  value={panelDisplay[key as DisplayableKey]}
+                                  onValueChange={(v) => {
+                                    setPanelDisplay((prev) => ({ ...prev, [key as DisplayableKey]: v as PanelDisplay }));
+                                    setLeftNavView(null);
+                                    setActiveDeskTab("home");
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </fieldset>
+                    )}
+                  </div>
                 </div>
               ) : showAllContacts && !activeInteraction ? (
                 // ── All Contacts — standalone, detached view. Per explicit
@@ -10275,7 +10565,7 @@ export function AgentWorkspaceAdvancedPage({
                                           channelAddressLabel={c.addressLabel}
                                           skillLabel={c.preview}
                                           isFreshLaunch={!!c.startedFresh}
-                                          liveMessages={activeInteraction.liveMessages?.[key] ?? []}
+                                          liveMessages={stripAi(activeInteraction.liveMessages?.[key] ?? [])}
                                           showSessionActionCluster={false}
                                           showViewDetails={false}
                                         />
@@ -10286,6 +10576,7 @@ export function AgentWorkspaceAdvancedPage({
                                       !activeInteraction.closed &&
                                       activeInteraction.threadStatuses?.[key] !== "Closed" && (
                                         <InteractionComposer
+ copilotMount={aiInPanel ? copilotSlotEl : null}
                                           onSend={(text) => handleSendMessage(activeInteraction.id, text, key)}
                                           hideAiActions={hideAiActions}
                                           onHideAiActionsChange={setHideAiActions}
@@ -10566,7 +10857,7 @@ export function AgentWorkspaceAdvancedPage({
                                         channelAddressLabel={panelVoiceThread?.addressLabel}
                                         skillLabel={panelVoiceThread?.preview}
                                         isFreshLaunch={!!panelVoiceThread?.startedFresh}
-                                        liveMessages={activeInteraction.liveMessages?.[panelVoiceThread?.id ?? "voice"] ?? []}
+                                        liveMessages={stripAi(activeInteraction.liveMessages?.[panelVoiceThread?.id ?? "voice"] ?? [])}
                                         dimmed={!!activeInteraction.closed || activeChannelStatus === "Closed"}
                                         currentStatus={activeChannelStatus}
                                         onCurrentStatusChange={(status) =>
@@ -10585,6 +10876,7 @@ export function AgentWorkspaceAdvancedPage({
                                       sessionDetailsTabContent.body
                                     ) : (
                                       <DetailsPanelAccordions
+ aiFeed={aiInPanel ? renderAiPanelFeed() : undefined}
  artifacts={panelArtifacts}
  onOpenArtifact={(id: string) => {
  // Opening an artifact from the hover preview closes the popover to make room for the side panel.
@@ -10880,7 +11172,9 @@ export function AgentWorkspaceAdvancedPage({
                           // Phase 1 (as explicitly requested) means this
                           // content no longer renders here.
                           customerContextOverview={
-                            activeInteractionIsRealCustomer
+                            aiInPanel
+                              ? undefined
+                              : activeInteractionIsRealCustomer
                               ? // Per explicit request ("i want the next best
                                 // action content ... to populate like the way
                                 // claude asks questions"), Marcus Webb's own
@@ -11074,7 +11368,9 @@ export function AgentWorkspaceAdvancedPage({
                             (activeInteraction.id === LUCAS_THOMAS_ID && lucasThomasReviewing)
                           }
                           liveMessages={
-                            isColdCallId(activeInteraction.id)
+                            aiInPanel
+                              ? stripAi(activeInteraction.liveMessages?.[activeChannelKey] ?? [])
+                              : isColdCallId(activeInteraction.id)
                               ? // The call transcript lives in the Transcript tab; the main column keeps only AI action rows (interstitials).
                                 (activeInteraction.liveMessages?.voice ?? []).filter((m) => !!m.instruction)
                               : activeChannelType === "voice"
@@ -11112,45 +11408,7 @@ export function AgentWorkspaceAdvancedPage({
                           // AI-led cases always keep the Autosummary above the conversation, even when the transcript remounts with messages already present.
                           contactOverviewPosition={activeInteraction.id === LUCAS_THOMAS_ID || activeInteraction.id === MARCUS_WEBB_ID || isColdCallId(activeInteraction.id) ? "top" : undefined}
                           activeSnapshotLink={activeInteraction.id === LUCAS_THOMAS_ID || isColdCallId(activeInteraction.id) ? lucasActiveLinkKey : undefined}
-                          onSnapshotLink={
-                            isColdCallId(activeInteraction.id)
-                              ? (key) => {
-                                  if (key === "order" || key === "card" || key === "void-steps" || key === "maya-order" || key === "maya-card" || key === "maya-refund-steps") {
-                                    openDetailPanelContent({ kind: "tom-call", panel: key });
-                                  } else if (key.startsWith("instruction:")) {
-                                    const [, decision, text, time] = key.split(":");
-                                    openDetailPanelContent({
-                                      kind: "lucas-instruction",
-                                      decision,
-                                      text: decodeURIComponent(text ?? ""),
-                                      time: decodeURIComponent(time ?? ""),
-                                    });
-                                  }
-                                }
-                              : activeInteraction.id === MARCUS_WEBB_ID
-                              ? (key) => {
-                                  if (key === "order") openDetailPanelContent({ kind: "order", order: MARCUS_WEBB_ORDER });
-                                }
-                              : activeInteraction.id === LUCAS_THOMAS_ID
-                              ? (key) =>
-                                  key === lucasActiveLinkKey
-                                    // Clicking the row/link whose panel is already open closes it (toggle).
-                                    ? setSelectedDetailPanelContent(null)
-                                    : key.startsWith("instruction:")
-                                    ? (() => {
-                                        const [, decision, text, time] = key.split(":");
-                                        openDetailPanelContent({
-                                          kind: "lucas-instruction",
-                                          decision,
-                                          text: decodeURIComponent(text ?? ""),
-                                          time: decodeURIComponent(time ?? ""),
-                                        });
-                                      })()
-                                    : key.startsWith("memory:")
-                                    ? openExperienceMemoryInSidePanel(key.slice("memory:".length) as LucasThomasMemoryFocus)
-                                    : openDetailPanelContent({ kind: "lucas", panel: key as LucasThomasPanelKey })
-                              : undefined
-                          }
+                          onSnapshotLink={getSnapshotLinkHandler()}
                           // Same union of conditions the "closed
                           // interaction"/"channel closed" banners just above
                           // this transcript already gate on — see `dimmed`'s
@@ -11429,6 +11687,7 @@ export function AgentWorkspaceAdvancedPage({
                           !(activeInteraction.id === MARCUS_WEBB_ID && marcusWebbReviewing) &&
                           (
                             <InteractionComposer
+ copilotMount={aiInPanel ? copilotSlotEl : null}
                               hideAiActions={hideAiActions}
                               onHideAiActionsChange={setHideAiActions}
                               copilotOnly={activeInteraction.id === LUCAS_THOMAS_ID && lucasThomasReviewing}
@@ -11494,6 +11753,7 @@ export function AgentWorkspaceAdvancedPage({
                         {/* Cold call from Tom Lewis: just the Ask Copilot footer (no AI agent to take over from). */}
                         {isColdCallId(activeInteraction.id) && !(activeInteraction.id === TOM_LEWIS_CALL_ID && tomLewisCallRinging) && (
                           <InteractionComposer
+ copilotMount={aiInPanel ? copilotSlotEl : null}
                             copilotOnly
                             onSend={() => {}}
                             copilotSuggestions={activeInteraction.id === MAYA_CHEN_CALL_ID ? MAYA_CHEN_CALL_COPILOT_SUGGESTIONS : TOM_LEWIS_CALL_COPILOT_SUGGESTIONS}
@@ -11507,6 +11767,7 @@ export function AgentWorkspaceAdvancedPage({
                         {activeInteraction.id === MARCUS_WEBB_ID && (
                           // Stays after takeover (Ask Copilot only — a voice call has no chat input); the Takeover Call button only while reviewing.
                           <InteractionComposer
+ copilotMount={aiInPanel ? copilotSlotEl : null}
                             copilotOnly
                             takeoverLabel="Takeover Call"
                             takeoverDisabled={!!liveVoiceCallInteraction && liveVoiceCallInteraction.id !== MARCUS_WEBB_ID}
@@ -11549,6 +11810,19 @@ export function AgentWorkspaceAdvancedPage({
                 </div>
               ) : (
                 <div key="dashboard" className="flex flex-1 flex-col min-w-0 overflow-hidden animate-in fade-in-0 duration-200">
+              {tabKeys.length > 0 && (
+                <TabList className="px-6 bg-lyra-bg-surface-base shrink-0" overflowMenu>
+                  <Tab active={activeDeskTab === "home"} onClick={() => setActiveDeskTab("home")}>
+                    Home
+                  </Tab>
+                  {tabKeys.map((key) => (
+                    <Tab key={key} active={activeDeskTab === key} onClick={() => setActiveDeskTab(key)}>
+                      {PANEL_KEY_METADATA[key].label}
+                    </Tab>
+                  ))}
+                </TabList>
+              )}
+              {activeLeftNavKey && showPageHeader && <PageHeader title={PANEL_KEY_METADATA[activeLeftNavKey].label} />}
               {/* Body row: main content + interior panel */}
               <div className="relative flex flex-1 overflow-hidden">
               {/* Customers list view + row-info panel stay mounted across
@@ -11636,11 +11910,11 @@ export function AgentWorkspaceAdvancedPage({
                   cannot override. */}
               <div
                 className={
-                  activeDeskTab === "customers"
+                  customersViewActive
                     ? "relative flex flex-1 overflow-hidden animate-in fade-in-0 duration-200"
                     : "absolute inset-0 flex overflow-hidden opacity-0"
                 }
-                inert={activeDeskTab !== "customers"}
+                inert={!customersViewActive}
               >
                 <CustomersListView
                   onStartInteraction={(contact, channel, phone, skillId) =>
@@ -11659,7 +11933,9 @@ export function AgentWorkspaceAdvancedPage({
                   // panel's own Customers sub-tab — see `searchContent`'s
                   // own `onRowClick` further up) — this only disables the
                   // click affordance on THIS table's own rows.
-                  onRowClick={() => {}}
+                  onRowClick={(row) =>
+                    setSelectedCustomerRow((prev) => (prev?.contactNumber === row.contactNumber ? null : row))
+                  }
                   searchQuery={customerSearchQuery}
                   onSearchChange={setCustomerSearchQuery}
                   sortKey={customerSortKey}
@@ -11704,7 +11980,7 @@ export function AgentWorkspaceAdvancedPage({
                   hidePrevNext
                 />
               </div>
-              {activeDeskTab !== "customers" && (activeDeskTab !== "home" ? (
+              {!customersViewActive && (mainAreaKey ? (
                 // Accounts/Tickets/WEM — no content built yet; same
                 // "Coming soon" placeholder treatment used elsewhere in
                 // this file for in-progress tabs (e.g. the Customer
@@ -11719,8 +11995,10 @@ export function AgentWorkspaceAdvancedPage({
                 // branch here — that content moved to the Search right
                 // panel (see `searchContent`'s own doc comment), so this
                 // page's `activeDeskTab` union no longer offers it at all.
-                <div key={activeDeskTab} className="flex flex-1 items-center justify-center p-4 animate-in fade-in-0 duration-200">
-                  <p className="lyra-body-md text-lyra-fg-disabled text-center">Coming soon</p>
+                // Shows the same body the app's header panel would (Schedule's schedule, or the blank placeholder for
+                // Accounts/Tickets/WEM), here in the main area.
+                <div key={mainAreaKey} className="flex min-h-0 flex-1 flex-col overflow-auto animate-in fade-in-0 duration-200">
+                  {contentByPanelKey[mainAreaKey].body}
                 </div>
               ) : (
                 <>
@@ -12288,6 +12566,8 @@ export function AgentWorkspaceAdvancedPage({
                   className="shrink-0 h-full z-[5] animate-in fade-in-0 duration-200 delay-150 fill-mode-backwards"
                 >
                 <CustomerInformationSidePanel
+                  copilotSlotRef={aiInPanel ? setCopilotSlotEl : undefined}
+                  copilotSlotHidden={!channelPreviewThread && (customerPanelActiveTab === "Customer Info" || customerPanelActiveTab === "Experience Memory" || customerPanelActiveTab === "Artifacts")}
                   open={sidePanelOpen || !!channelPreviewThreadKey}
                   // Always unpinned (floating overlay) while full-screen —
                   // per explicit request this should overlay the parent
@@ -12548,6 +12828,7 @@ export function AgentWorkspaceAdvancedPage({
                           !activeInteraction.closed &&
                           activeInteraction.threadStatuses?.[channelPreviewThreadStableKey!] !== "Closed" && (
                             <InteractionComposer
+ copilotMount={aiInPanel ? copilotSlotEl : null}
                               hideAiActions={hideAiActions}
                               onHideAiActionsChange={setHideAiActions}
                               onSend={(text) =>
@@ -12659,7 +12940,7 @@ export function AgentWorkspaceAdvancedPage({
                         channelAddressLabel={panelVoiceThread?.addressLabel}
                         skillLabel={panelVoiceThread?.preview}
                         isFreshLaunch={!!panelVoiceThread?.startedFresh}
-                        liveMessages={activeInteraction.liveMessages?.[panelVoiceThread?.id ?? "voice"] ?? []}
+                        liveMessages={stripAi(activeInteraction.liveMessages?.[panelVoiceThread?.id ?? "voice"] ?? [])}
                         dimmed={!!activeInteraction.closed || activeChannelStatus === "Closed"}
                         currentStatus={activeChannelStatus}
                         onCurrentStatusChange={(status) =>
@@ -12677,6 +12958,7 @@ export function AgentWorkspaceAdvancedPage({
                       sessionDetailsTabContent.body
                     ) : (
                       <DetailsPanelAccordions
+ aiFeed={aiInPanel ? renderAiPanelFeed() : undefined}
  artifacts={panelArtifacts}
  onOpenArtifact={reopenPanelArtifact}
  onViewAllArtifacts={() => setCustomerPanelActiveTab("Artifacts")}
@@ -12982,6 +13264,7 @@ export function AgentWorkspaceAdvancedPage({
           {liveVoiceCallInteraction &&
           liveVoiceCallThread &&
           !(marcusWebbReviewing && liveVoiceCallInteraction.id === MARCUS_WEBB_ID) ? (
+            (voiceControlsAtTop ? (node: React.ReactNode) => createPortal(node, voiceSlotEl!) : (node: React.ReactNode) => node)(
             <VoiceCallControls
               // Per explicit follow-up request/reference screenshot, now
               // that this bar sits directly on the page background instead
@@ -13003,7 +13286,12 @@ export function AgentWorkspaceAdvancedPage({
               // entrance utilities, replaying on their own every time this
               // mounts fresh (a real call starting, or `marcusWebbReviewing`
               // switching back to `false`) without needing a `key`.
-              className="bg-transparent px-0 pt-2 pb-0 animate-in slide-in-from-bottom-4 fade-in-0 duration-200"
+              stacked={voiceControlsAtTop}
+              className={
+                voiceControlsAtTop
+                  ? "bg-transparent px-0 pt-0 pb-2 animate-in fade-in-0 duration-200"
+                  : "bg-transparent px-0 pt-2 pb-0 animate-in slide-in-from-bottom-4 fade-in-0 duration-200"
+              }
               // Per explicit request ("hide the video button in v3 for now
               // - keep it in phase 2"): re-using the same `showAddVideo`
               // flag Agent Workspace 2.0 Phase 1 already established (see
@@ -13174,6 +13462,7 @@ export function AgentWorkspaceAdvancedPage({
                   : undefined
               }
             />
+            )
           ) : null}
 
           {/* Shared single-container panel — float (CSS transitions, not

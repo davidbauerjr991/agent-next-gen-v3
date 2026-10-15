@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {"baseUrl": ".", "paths": {"@/*": ["./src/*"],
+   "@nicecxone/lyra-ui/agents-data": ["../lyra-ui/src/components/__stories__/create-new-agents-data.ts"],
+   "@nicecxone/lyra-ui/customers-data": ["../lyra-ui/src/components/__stories__/create-new-customers-data.ts"],
+   "@nicecxone/lyra-ui": ["../lyra-ui/src/index.ts"]}},
+  "include": ["src"]
+}

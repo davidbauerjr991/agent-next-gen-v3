@@ -13,6 +13,8 @@ import {
   DateRangeFilterChip,
   Label,
   Button,
+  AICard,
+  Link,
   TabList,
   Tab,
   Accordion,
@@ -3624,7 +3626,10 @@ export function DetailsPanelAccordions({
   artifacts,
   onOpenArtifact,
   onViewAllArtifacts,
+  aiFeed,
 }: {
+  /** "AI in panel" mode: the AI cards/interstitials (see `AiActionsFeed`), shown below the original cards. */
+  aiFeed?: React.ReactNode;
   /** Fired by "View All" (only shown when more than 10 artifacts are listed). */
   onViewAllArtifacts?: () => void;
   /** Side panels the agent has opened on this interaction — listed as links in the Artifacts card; clicking re-opens one. */
@@ -3716,8 +3721,32 @@ export function DetailsPanelAccordions({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // "AI in panel": chat-style — keep the scroll pinned to the bottom as the feed grows
+  // (unless the agent has scrolled up), with the Ask Copilot slot fixed under the scroller.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const docked = !!aiFeed;
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    const content = contentRef.current;
+    if (!docked || !scroller || !content) return;
+    const toBottom = () => { scroller.scrollTop = scroller.scrollHeight; };
+    toBottom();
+    const onScroll = () => {
+      stickToBottom.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
+    };
+    scroller.addEventListener("scroll", onScroll);
+    const ro = new ResizeObserver(() => { if (stickToBottom.current) toBottom(); });
+    ro.observe(content);
+    ro.observe(scroller);
+    return () => { scroller.removeEventListener("scroll", onScroll); ro.disconnect(); };
+  }, [docked]);
+
   return (
-    <div className="flex flex-col gap-3 p-4 overflow-y-auto">
+    <div className={docked ? "flex h-full min-h-0 flex-col" : undefined}>
+    <div ref={scrollRef} className={docked ? "min-h-0 flex-1 overflow-y-auto" : "overflow-y-auto"}>
+    <div ref={contentRef} className="flex flex-col gap-3 p-4">
       {onLinkCustomer && (
         <Button variant="outline" className="w-full" onClick={onLinkCustomer}>
           Link to existing customer
@@ -3743,6 +3772,7 @@ export function DetailsPanelAccordions({
           realTimeSummaryUpdatedLabel={realTimeSummaryUpdatedLabel}
           onViewExperienceMemory={onViewExperienceMemory}
           showNextBestAction={false}
+          aiCards
           // Per explicit follow-up request ("if a new call is made or the
           // customer does not have any information, do not display the
           // customer profile") — see `renderContactOverviewBlock`'s
@@ -3755,96 +3785,52 @@ export function DetailsPanelAccordions({
           className="pt-0"
         />
       )}
-      <Accordion
-        // Open by default per explicit request — this is a single-item
-        // `Accordion` (`type="single"`, the component's own default), so
-        // its one item's own `id` ("files", kept from the pre-rename
-        // internal identifier — see that field's own comment below) is
-        // exactly the uncontrolled `defaultValue` that starts it expanded.
-        // Paired with `key={activeInteractionId}` on `DetailsPanelAccordions`
-        // itself (AgentWorkspaceAdvancedPage.tsx's two render sites) — an
-        // uncontrolled `defaultValue` only applies on mount, so without that
-        // key this component (and this prop) would only ever take effect
-        // for the very first contact ever shown, not each new one opened
-        // afterward. See bug report ("the artifacts is not open when I open
-        // a new contact from contact history").
-        defaultValue="files"
+      {/* Artifacts is now the lyra-ui `AICard` (blue, accordion) — per
+          explicit request to match the lyra-ui AICards. Still open by
+          default (`defaultOpen`; `key={activeInteractionId}` on
+          `DetailsPanelAccordions` remounts it per contact) and keeps the
+          same list/empty-state/"View All" behavior as before. */}
+      <div
         className={cn(
-          CUSTOMER_INFO_ACCORDION_CLASSNAME,
           "transition-all duration-700 ease-out",
           filesEntered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"
         )}
-        items={[
-          {
-            // Per explicit request, renamed "Files" → "Artifacts" in this
-            // Details panel — `id` kept as the old "files" internal
-            // identifier (not user-facing, and nothing keys off the
-            // string elsewhere) rather than churning it for no reason.
-            id: "files",
-            title: "Artifacts",
-            // Per explicit follow-up request ("make the artifacts accordion
-            // background white and the header the same purple as the
-            // autosummary") — originally the same `lyra-accent-purple-
-            // soft`/`-strong` pairing `CustomerContextOverview`'s own
-            // Autosummary header used (lyra-ui/contact-overview.tsx), via
-            // `Accordion`'s `headerClassName`/`contentClassName` props
-            // rather than a bespoke hand-rolled accordion item — this is
-            // still the shared, single-item `Accordion` every other
-            // consumer of this component gets, just with this one item's
-            // header/body tinted. Recolored per a LATER explicit request
-            // ("make all the card headers in the contact details subtle
-            // blue like the customer info card") to the exact same
-            // `bg-lyra-status-info-subtle`/`text-lyra-status-info-strong`
-            // pairing "Customer Info"'s own header now uses (`Customer
-            // ContextOverview`'s "customer-profile" item, lyra-ui/contact-
-            // overview.tsx) — plain `bg-lyra-status-info-subtle`, not a
-            // `-fix` class, since (unlike the purple token this replaces)
-            // its dark-mode value was never reported as an outlier.
-            headerClassName: "bg-lyra-status-info-subtle",
-            contentClassName: "bg-lyra-bg-surface-base",
-            icon: (
-              <Paperclip
-                className="h-4 w-4 text-lyra-status-info-strong"
-                strokeWidth={1.5}
-                aria-hidden="true"
-              />
-            ),
-            content: (
-              <div className="flex flex-col gap-3">
-                {/* lyra-body-md, not -sm — see `viewAllLinkClassName`'s own
-                    comment just above for the same request. */}
-                {artifacts && artifacts.length > 0 ? (
-                  <ul className="flex flex-col gap-1.5">
-                    {artifacts.slice(0, 10).map((a) => (
-                      <li key={a.id} className="flex min-w-0 items-center gap-2">
-                        <Paperclip className="h-3.5 w-3.5 shrink-0 text-lyra-fg-secondary" strokeWidth={1.5} aria-hidden="true" />
-                        <button
-                          type="button"
-                          onClick={() => onOpenArtifact?.(a.id)}
-                          className="min-w-0 truncate text-left lyra-body-md text-lyra-fg-link hover:underline"
-                        >
-                          {a.label}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="lyra-body-md text-lyra-fg-secondary">{FILES_EMPTY_TEXT}</p>
-                )}
-                {/* "View All" sits below the artifact list (here, the empty-
-                    state text above) per explicit request, rather than above
-                    it. TODO: no destination defined yet for this link — see
-                    this component's own top doc comment. */}
-                {artifacts && artifacts.length > 10 && (
-                  <button type="button" className={viewAllLinkClassName} onClick={onViewAllArtifacts}>
-                    View All
-                  </button>
-                )}
-              </div>
-            ),
-          },
-        ]}
-      />
+      >
+        <AICard
+          title="Artifacts"
+          count={artifacts && artifacts.length > 0 ? artifacts.length : undefined}
+          color="blue"
+          icon={<Paperclip className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />}
+          defaultOpen
+        >
+          <div className="flex flex-col gap-3">
+            {artifacts && artifacts.length > 0 ? (
+              <ul className="flex flex-col gap-1">
+                {artifacts.slice(0, 10).map((a) => (
+                  <li key={a.id} className="flex min-w-0 items-center gap-2">
+                    <Paperclip className="h-3.5 w-3.5 shrink-0 text-lyra-fg-secondary" strokeWidth={1.5} aria-hidden="true" />
+                    <Link onClick={() => onOpenArtifact?.(a.id)} className="min-w-0 truncate">
+                      {a.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-lyra-fg-secondary">{FILES_EMPTY_TEXT}</p>
+            )}
+            {artifacts && artifacts.length > 10 && (
+              <Link onClick={onViewAllArtifacts} className="min-w-0 truncate">
+                View All
+              </Link>
+            )}
+          </div>
+        </AICard>
+      </div>
+      {/* "AI in panel" mode: the AI cards/interstitials sit BELOW the
+          original three items (Customer Info, Journey Summary, Artifacts). */}
+      {aiFeed}
+    </div>
+    </div>
     </div>
   );
 }
@@ -4161,6 +4147,8 @@ export function CustomerInformationSidePanel({
   focusTabOverride,
   bodyOverride,
   footerOverride,
+  copilotSlotRef,
+  copilotSlotHidden,
   headerTitleOverride,
   headerTabsOverride,
   headerIconOverride,
@@ -4338,6 +4326,10 @@ export function CustomerInformationSidePanel({
    * default) leaves the existing footer chain completely unaffected.
    */
   footerOverride?: React.ReactNode;
+  /** "AI in panel": callback ref for a persistent footer slot the Ask Copilot input is portaled into (stays put across Details / Customer Info / Experience Memory views). */
+  copilotSlotRef?: (el: HTMLDivElement | null) => void;
+  /** Hides (but keeps mounted) the Ask Copilot slot while the Customer Info / Experience Memory / Artifacts drill-in shows. */
+  copilotSlotHidden?: boolean;
   /**
    * Replaces the fixed "Customer Information" header title (used whenever
    * `matchState` isn't set) — per later explicit request ("put the
@@ -4508,6 +4500,23 @@ export function CustomerInformationSidePanel({
   const { subhead: matchSubhead, visibleList: matchVisibleList } = matchState
     ? buildCustomerMatchSubhead(matchState.query, matchState.possibleMatches, matchState.searchResults)
     : { subhead: "", visibleList: [] };
+
+  const withCopilotSlot = (f: React.ReactNode) =>
+    copilotSlotRef ? (
+      <>
+        {f}
+        <div className={copilotSlotHidden ? "relative hidden" : "relative"}>
+          <div ref={copilotSlotRef} className="peer w-full p-4 empty:hidden" />
+          {/* Soft fade (same as the composer / Overview footer): content scrolls under the input. */}
+          <div
+            className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-b from-transparent to-lyra-bg-surface-container-subtle peer-empty:hidden"
+            aria-hidden="true"
+          />
+        </div>
+      </>
+    ) : (
+      f
+    );
 
   return (
     <SidePanel
@@ -4700,7 +4709,7 @@ export function CustomerInformationSidePanel({
       // tab is active, so it needs to outrank both the Copilot- and
       // Overview-scoped footers rather than only showing while Detail/
       // Directory happens to be the active tab.
-      footer={
+      footer={withCopilotSlot(
         // While `matchState` is set, this footer is EITHER the search
         // step's full-width "Create New Customer" button or the create
         // step's Cancel/Save pair — checked first, ahead of even the
@@ -4774,7 +4783,7 @@ export function CustomerInformationSidePanel({
             <AIInput placeholder="Ask about this customer..." showAttach={false} className="w-full" />
           </PanelFooter>
         ) : undefined
-      }
+      )}
     >
       {matchState ? (
         matchState.step === "search" ? (
