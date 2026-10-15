@@ -2818,6 +2818,10 @@ export function AgentWorkspaceAdvancedPage({
   // (all of that moves to the Contact Details panel; the main area shows just the voice transcript / chat).
   const [aiPlacement, setAiPlacement] = useState<"inline" | "panel">("inline");
   const aiInPanel = aiPlacement === "panel";
+  // Left nav config (Settings → Left nav).
+  const [newOutboundAtBottom, setNewOutboundAtBottom] = useState(false);
+  const [navItemsAtTop, setNavItemsAtTop] = useState(false);
+  const [noInteractionCollapse, setNoInteractionCollapse] = useState(false);
   const [copilotSlotEl, setCopilotSlotEl] = useState<HTMLDivElement | null>(null);
   const stripAi = (msgs: TranscriptMessage[]) => (aiInPanel ? msgs.filter((m) => !isAiActionMessage(m)) : msgs);
   const [voiceSlotEl, setVoiceSlotEl] = useState<HTMLDivElement | null>(null);
@@ -7545,6 +7549,111 @@ export function AgentWorkspaceAdvancedPage({
     }
   }, [aiInPanel, activeInteractionId]);
 
+  // Left nav config (Settings → Left nav): Home/Settings/app items, built lazily so they can render in `items` (top) or `footer` (bottom).
+  const buildNavRailItems = () => {
+                // Home no longer resets All Contacts state (see `showAllContacts`); it only leaves Customers/Settings.
+                const navBase = buildNavItems(
+                  Boolean(activeInteraction) || activeLeftNavKey !== null,
+                  () => { switchActiveInteraction(null); setShowSettings(false); setLeftNavView(null); },
+                  showSettings,
+                  () => { setShowSettings(true); switchActiveInteraction(null); setLeftNavView(null); }
+                );
+                if (leftNavKeys.length === 0) return navBase;
+                const appItems = leftNavKeys.map((key) => {
+                  const { label, icon: KeyIcon } = PANEL_KEY_METADATA[key];
+                  return {
+                    icon: <KeyIcon className="h-4 w-4" strokeWidth={1.5} />,
+                    label,
+                    active: activeLeftNavKey === key && !activeInteraction && !showSettings,
+                    onClick: () => {
+                      switchActiveInteraction(null);
+                      setShowSettings(false);
+                      setShowAllContacts(false);
+                      setLeftNavView(key);
+                    },
+                  };
+                });
+                return [navBase[0], ...appItems, ...navBase.slice(1)];
+  };
+
+  const renderNewOutbound = () => (
+            <CreateNew
+              title="New Outbound"
+              outbound={{
+                ...outboundConfig,
+                // `outboundConfig` itself keeps every group, "customers"
+                // included (see `HIDDEN_OUTBOUND_GROUP_IDS`'s own doc
+                // comment, agent-next-gen-outbound-data.tsx, for why:
+                // this app's `useAddChannelButton` call further down
+                // needs the full group set to resolve a known customer's
+                // own "+" button) — this picker's own browsable "Choose
+                // group" list is narrowed independently, without touching
+                // `outboundConfig` itself, so that lookup keeps working.
+                // Originally just excluded "customers" here (via
+                // `HIDDEN_OUTBOUND_GROUP_IDS`, "keep dial pad but not
+                // customers"). Per a later explicit request ("match the
+                // outbound options to [Agent Workspace 2.0 | Phase 1] but
+                // remove the recents — just have dialpad"), this now
+                // keeps ONLY the "dialpad" group — same one-group filter
+                // AgentNextGenPage.tsx's own `outboundConfig` memo uses
+                // for Phase 1 (see that file's own doc comment), just
+                // applied here at the render site instead of inside the
+                // memo (Phase 1 has no "customers" group to protect in
+                // its own `outboundConfig`, so it can filter there
+                // directly; this page still needs `outboundConfig`
+                // itself untouched for the reason above). Unlike Phase
+                // 1, no "recents" group is added back in — per this
+                // explicit request, Dial Pad is the only option.
+                groups: outboundConfig.groups.filter((group) => group.id === "dialpad"),
+                // "all" (`OUTBOUND_CONFIG.defaultGroupId`, spread in via
+                // `outboundConfig` above) is no longer a valid group id
+                // once every other group is filtered out above — this
+                // picker needs its own default now, same reasoning as
+                // Phase 1's own `outboundConfig.defaultGroupId` override.
+                defaultGroupId: "dialpad",
+                onStartCall: handleStartCall,
+                // Per explicit follow-up request ("add the number / skill
+                // selection popover to the click of a redial to phase 1B -
+                // same functionality as in Phase 1") — see `dialpadRequest`'s
+                // own doc comment above for why this is `handleDialpadSubmit`
+                // (which tells a completed redial apart from an ordinary
+                // dial) rather than `handleQuickDial` directly. Mirrors
+                // AgentNextGenPage.tsx's own identical wiring.
+                onQuickDial: handleDialpadSubmit,
+                dialpadRequest,
+                onDialpadRequestHandled: () => setDialpadRequest(null),
+                // Per explicit request ("when the user clicks New Outbound
+                // just display the dial pad content with no back button
+                // and rename the header 'New Outbound' instead of 'Dial
+                // Pad' since we are not doing omnichannel for phase 1"):
+                // with `groups` filtered down to just "dialpad" above,
+                // screen 1's own group-row list would otherwise show a
+                // single, pointless "Dial Pad" row to click through before
+                // reaching the exact same screen this now opens on
+                // directly — see `skipGroupPicker`'s own doc comment
+                // (create-new.tsx) for the full mechanics (no back button,
+                // header falls back to this popover's own `title` instead
+                // of the group's "Dial Pad" label).
+                skipGroupPicker: true,
+              }}
+              expanded={navOpen}
+              // Per explicit request ("in phase 1, we cannot have 2 or
+              // more calls at the same time, so if an agent is on an
+              // active call then disable the new outbound button"), then a
+              // follow-up bug report ("marcus webb new outbound shouldn't
+              // be disabled until takeover is clicked since the agent is
+              // not on the call yet"): `agentOnActiveVoiceCall` (see that
+              // const's own doc comment above) — not the plain
+              // `liveVoiceCallInteraction` this originally read — since a
+              // live voice THREAD existing somewhere (e.g. Marcus's own
+              // scripted call, handled solo by the AI agent before anyone
+              // clicks "Takeover") isn't the same thing as the AGENT
+              // themself being on a call.
+              disabled={agentOnActiveVoiceCall}
+              disabledReason="A call is already in progress"
+            />
+  );
+
   const contentByPanelKey: Record<PanelKey, EmbeddablePanelContent> = {
     notif: notifContent,
     conversations: blankPanelContent("Agent Chat"),
@@ -8597,7 +8706,7 @@ export function AgentWorkspaceAdvancedPage({
           // (`homeNavItem` here, `settingsNavItem` there) — that was itself
           // mirroring an EARLIER shape of 2.0's own left nav, since
           // superseded there by this "both together in footer" arrangement.
-          items={[]}
+          items={navItemsAtTop ? buildNavRailItems() : []}
           open={navOpen}
           onToggle={() => setNavOpen((v) => !v)}
           overlay={isNavNarrow}
@@ -8637,6 +8746,7 @@ export function AgentWorkspaceAdvancedPage({
               onSortDirectionChange={setAssignmentSortDirection}
               allExpanded={channelsAllExpanded}
               onToggleAllExpanded={handleToggleAllChannelsExpanded}
+              hideExpandCollapseAll={noInteractionCollapse}
               // See `AssignmentsSectionCaption`'s own doc comment on
               // `compact` — see 2.0's own copy for the full reasoning.
               compact
@@ -8658,48 +8768,12 @@ export function AgentWorkspaceAdvancedPage({
           // styling `items` itself uses — mirrors `AgentNextGenPage.tsx`'s
           // own identical `footer` exactly.
           footer={
-            // `expanded={navOpen}` passed explicitly, NOT left to
-            // `injectExpanded` — `left-nav.tsx`'s INLINE (non-overlay)
-            // mode renders `footer` as `{footer}` directly, with no
-            // `injectExpanded` call at all (only the OVERLAY-mode branch
-            // auto-injects `expanded`), so `NavRail` would otherwise be
-            // stuck on its `expanded = false` default — always the
-            // icon-only collapsed button, even with the nav wide open.
-            // Same reason `AssignmentsSectionCaption`/`EmptyState` below
-            // (in `header`) already take `expanded={navOpen}` explicitly.
-            <NavRail
-              expanded={navOpen}
-              // Passed straight through as the full `buildNavItems(...)`
-              // pair (Home first, then Settings) rather than destructuring
-              // just one element out of it, now that both live here
-              // together — same shape `AgentNextGenPage.tsx`'s own `footer`
-              // already passes.
-              items={(() => {
-                // Home no longer resets All Contacts state (see `showAllContacts`); it only leaves Customers/Settings.
-                const navBase = buildNavItems(
-                  Boolean(activeInteraction) || activeLeftNavKey !== null,
-                  () => { switchActiveInteraction(null); setShowSettings(false); setLeftNavView(null); },
-                  showSettings,
-                  () => { setShowSettings(true); switchActiveInteraction(null); setLeftNavView(null); }
-                );
-                if (leftNavKeys.length === 0) return navBase;
-                const appItems = leftNavKeys.map((key) => {
-                  const { label, icon: KeyIcon } = PANEL_KEY_METADATA[key];
-                  return {
-                    icon: <KeyIcon className="h-4 w-4" strokeWidth={1.5} />,
-                    label,
-                    active: activeLeftNavKey === key && !activeInteraction && !showSettings,
-                    onClick: () => {
-                      switchActiveInteraction(null);
-                      setShowSettings(false);
-                      setShowAllContacts(false);
-                      setLeftNavView(key);
-                    },
-                  };
-                });
-                return [navBase[0], ...appItems, ...navBase.slice(1)];
-              })()}
-            />
+            <div className="flex w-full min-w-0 flex-col">
+              {!navItemsAtTop && (
+                <NavRail expanded={navOpen} items={buildNavRailItems()} />
+              )}
+              {newOutboundAtBottom && <div className="pt-2">{renderNewOutbound()}</div>}
+            </div>
           }
           // "New Outbound" itself has moved several times now: started as
           // this exact `pinnedHeader` (fixed at the very TOP of the whole
@@ -8713,83 +8787,7 @@ export function AgentWorkspaceAdvancedPage({
           // for the middle arrangement) was already removed entirely once
           // nothing used it — not re-added for this reversion since
           // `pinnedHeader` covers this exact spot on its own.
-          pinnedHeader={
-            <CreateNew
-              title="New Outbound"
-              outbound={{
-                ...outboundConfig,
-                // `outboundConfig` itself keeps every group, "customers"
-                // included (see `HIDDEN_OUTBOUND_GROUP_IDS`'s own doc
-                // comment, agent-next-gen-outbound-data.tsx, for why:
-                // this app's `useAddChannelButton` call further down
-                // needs the full group set to resolve a known customer's
-                // own "+" button) — this picker's own browsable "Choose
-                // group" list is narrowed independently, without touching
-                // `outboundConfig` itself, so that lookup keeps working.
-                // Originally just excluded "customers" here (via
-                // `HIDDEN_OUTBOUND_GROUP_IDS`, "keep dial pad but not
-                // customers"). Per a later explicit request ("match the
-                // outbound options to [Agent Workspace 2.0 | Phase 1] but
-                // remove the recents — just have dialpad"), this now
-                // keeps ONLY the "dialpad" group — same one-group filter
-                // AgentNextGenPage.tsx's own `outboundConfig` memo uses
-                // for Phase 1 (see that file's own doc comment), just
-                // applied here at the render site instead of inside the
-                // memo (Phase 1 has no "customers" group to protect in
-                // its own `outboundConfig`, so it can filter there
-                // directly; this page still needs `outboundConfig`
-                // itself untouched for the reason above). Unlike Phase
-                // 1, no "recents" group is added back in — per this
-                // explicit request, Dial Pad is the only option.
-                groups: outboundConfig.groups.filter((group) => group.id === "dialpad"),
-                // "all" (`OUTBOUND_CONFIG.defaultGroupId`, spread in via
-                // `outboundConfig` above) is no longer a valid group id
-                // once every other group is filtered out above — this
-                // picker needs its own default now, same reasoning as
-                // Phase 1's own `outboundConfig.defaultGroupId` override.
-                defaultGroupId: "dialpad",
-                onStartCall: handleStartCall,
-                // Per explicit follow-up request ("add the number / skill
-                // selection popover to the click of a redial to phase 1B -
-                // same functionality as in Phase 1") — see `dialpadRequest`'s
-                // own doc comment above for why this is `handleDialpadSubmit`
-                // (which tells a completed redial apart from an ordinary
-                // dial) rather than `handleQuickDial` directly. Mirrors
-                // AgentNextGenPage.tsx's own identical wiring.
-                onQuickDial: handleDialpadSubmit,
-                dialpadRequest,
-                onDialpadRequestHandled: () => setDialpadRequest(null),
-                // Per explicit request ("when the user clicks New Outbound
-                // just display the dial pad content with no back button
-                // and rename the header 'New Outbound' instead of 'Dial
-                // Pad' since we are not doing omnichannel for phase 1"):
-                // with `groups` filtered down to just "dialpad" above,
-                // screen 1's own group-row list would otherwise show a
-                // single, pointless "Dial Pad" row to click through before
-                // reaching the exact same screen this now opens on
-                // directly — see `skipGroupPicker`'s own doc comment
-                // (create-new.tsx) for the full mechanics (no back button,
-                // header falls back to this popover's own `title` instead
-                // of the group's "Dial Pad" label).
-                skipGroupPicker: true,
-              }}
-              expanded={navOpen}
-              // Per explicit request ("in phase 1, we cannot have 2 or
-              // more calls at the same time, so if an agent is on an
-              // active call then disable the new outbound button"), then a
-              // follow-up bug report ("marcus webb new outbound shouldn't
-              // be disabled until takeover is clicked since the agent is
-              // not on the call yet"): `agentOnActiveVoiceCall` (see that
-              // const's own doc comment above) — not the plain
-              // `liveVoiceCallInteraction` this originally read — since a
-              // live voice THREAD existing somewhere (e.g. Marcus's own
-              // scripted call, handled solo by the AI agent before anyone
-              // clicks "Takeover") isn't the same thing as the AGENT
-              // themself being on a call.
-              disabled={agentOnActiveVoiceCall}
-              disabledReason="A call is already in progress"
-            />
-          }
+          pinnedHeader={newOutboundAtBottom ? undefined : renderNewOutbound()}
           header={
             <>
               {/* Per explicit request ("add a message and icon into the left
@@ -9595,7 +9593,7 @@ export function AgentWorkspaceAdvancedPage({
                     // by it — see `InteractionNavItem`'s own `collapsible`
                     // doc comment (interaction-nav-item.tsx) for the shared
                     // slot's current behavior.
-                    collapsible
+                    collapsible={!noInteractionCollapse}
                     // "Collapse all"/"Expand all" (`AssignmentsExpandCollapseAllButton`
                     // above) — see `channelsAllExpanded`'s own doc comment
                     // near its declaration for why this is a one-shot
@@ -9758,6 +9756,12 @@ export function AgentWorkspaceAdvancedPage({
                         onValueChange={(v) => setVoiceControlsPlacement(v as "bottom" | "top")}
                       />
                     </div>
+                    <fieldset className="mt-4 flex flex-col gap-3">
+                      <legend className="mb-1 lyra-body-md-emphasis text-lyra-fg-default">Left nav</legend>
+                      <Switch size="sm" label="New Outbound at the bottom" checked={newOutboundAtBottom} onCheckedChange={setNewOutboundAtBottom} />
+                      <Switch size="sm" label="Home / Settings at the top" checked={navItemsAtTop} onCheckedChange={setNavItemsAtTop} />
+                      <Switch size="sm" label="Don't allow interactions to collapse" checked={noInteractionCollapse} onCheckedChange={setNoInteractionCollapse} />
+                    </fieldset>
                     {showAppIcons && (
                       <fieldset className="mt-4 flex flex-col gap-3">
                         <legend className="mb-1 lyra-body-md-emphasis text-lyra-fg-default">Apps to show</legend>
