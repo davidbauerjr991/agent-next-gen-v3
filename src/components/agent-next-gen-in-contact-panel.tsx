@@ -44,8 +44,13 @@ export function InContactInteriorPanel({
   headerTabs,
   footer,
   onBack,
+  width,
+  minWidth,
   children,
 }: {
+  /** Default opening width (px), e.g. to match a right-hand column the panel slides over. */
+  width?: number;
+  minWidth?: number;
   open: boolean;
   onClose: () => void;
   headerTitle?: string;
@@ -82,6 +87,8 @@ export function InContactInteriorPanel({
       headerTabs={headerTabs}
       footer={footer}
       onBack={onBack}
+      width={width}
+      minWidth={minWidth}
     >
       {children}
     </InteriorPanel>

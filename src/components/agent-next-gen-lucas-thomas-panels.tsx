@@ -490,8 +490,68 @@ export function LucasThomasArticlePanelBody() {
 }
 
 /** Mock Copilot answers for the questions the chips ask; anything else gets a generic grounded summary. */
-function copilotAnswerFor(question: string): { summary: string; points: string[] } {
+function copilotAnswerFor(question: string, customer: "lucas" | "tom" | "maya" = "lucas"): { summary: string; points: string[] } {
   const q = question.toLowerCase();
+  if (customer === "tom") {
+    if (q.includes("history") || q.includes("orders")) {
+      return {
+        summary: "Tom has been a member since 2021 with 3 orders. One of them, NR-50877, was charged twice today.",
+        points: [
+          "NR-50877 · today · $86.40 · charged on Visa 2210 and Mastercard 9031",
+          "Mastercard 9031 became his default card on Sep 27.",
+          "He asked for a person on his last 2 calls.",
+        ],
+      };
+    }
+    if (q.includes("summar")) {
+      return {
+        summary: "Tom is calling to void one of two $86.40 charges on order NR-50877.",
+        points: [
+          "Only one order was placed, but it was charged on Visa 2210 and Mastercard 9031.",
+          "He prefers to keep the Mastercard 9031 charge since it is his default card.",
+          "The duplicate-charge review is at stage 3 of 5, waiting on a person.",
+        ],
+      };
+    }
+    return {
+      summary: "Here is what Copilot found from the call and Tom's customer record.",
+      points: [
+        "Tom was charged $86.40 twice for order NR-50877, on Visa 2210 and Mastercard 9031.",
+        "He wants the Visa 2210 charge voided and the Mastercard 9031 charge kept.",
+        "A person needs to approve the void because the charges are on different cards.",
+      ],
+    };
+  }
+  if (customer === "maya") {
+    if (q.includes("history") || q.includes("orders")) {
+      return {
+        summary: "Maya has been a member since 2022 with 6 orders. This is her first damage claim in 2 years.",
+        points: [
+          "NR-10871 · Sep 25 · $412.00 · Espresso machine · Visa 4417 · cracked water tank",
+          "NR-10544 · Jun 18 · $49.00 · Milk frother",
+          "She rated her last 3 contacts 5 of 5.",
+        ],
+      };
+    }
+    if (q.includes("summar")) {
+      return {
+        summary: "Maya is calling for a $412.00 refund on an espresso machine that arrived with a cracked water tank.",
+        points: [
+          "She wants a refund, not a replacement, and the damage photo check passed.",
+          "The refund is within your $500 limit with a confirmed photo check (RET-1.3).",
+          "The refund review is at stage 3 of 5.",
+        ],
+      };
+    }
+    return {
+      summary: "Here is what Copilot found from the call and Maya's customer record.",
+      points: [
+        "Maya wants a $412.00 refund on order NR-10871 and will buy a different model.",
+        "The damage photo check passed and the refund goes back to Visa 4417.",
+        "The prepaid return label is emailed once the refund is issued.",
+      ],
+    };
+  }
   if (q.includes("purchase history")) {
     return {
       summary: "Lucas has 3 completed orders in the last 60 days, all paid, and one open order that has not been placed.",
@@ -613,9 +673,20 @@ export function MarcusWebbCopilotPanelBody({ text, time }: { text: string; time:
   );
 }
 
-export function LucasThomasInstructionPanelBody({ decision, text, time }: { decision: string; text: string; time: string }) {
+export function LucasThomasInstructionPanelBody({
+  decision,
+  text,
+  time,
+  customer = "lucas",
+}: {
+  decision: string;
+  text: string;
+  time: string;
+  /** Whose record the Copilot answer is about (Tom and Maya are the cold-call cases). */
+  customer?: "lucas" | "tom" | "maya";
+}) {
   const isCopilot = decision === "copilot";
-  const answer = isCopilot ? copilotAnswerFor(text) : null;
+  const answer = isCopilot ? copilotAnswerFor(text, customer) : null;
   return (
     <div className="flex flex-col gap-4 p-4">
       {answer && (

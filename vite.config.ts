@@ -20,6 +20,8 @@ export default defineConfig({
       // second, drifting list. See lyra-ui/CONTRIBUTING.md §1.
       "@nicecxone/lyra-ui/agents-data": path.resolve(__dirname, "../lyra-ui/src/components/__stories__/create-new-agents-data.ts"),
       "@nicecxone/lyra-ui/customers-data": path.resolve(__dirname, "../lyra-ui/src/components/__stories__/create-new-customers-data.ts"),
+      // Agentic AI card compositions (Real-Time Summary, Journey Summary...) live with the stories; aliased the same way.
+      "@nicecxone/lyra-ui/agentic-cards": path.resolve(__dirname, "../lyra-ui/src/components/__stories__/AgenticAICard.shared.tsx"),
       "@nicecxone/lyra-ui": path.resolve(__dirname, "../lyra-ui/src/index.ts"),
     },
   },

@@ -1603,7 +1603,8 @@ export function ChannelStatusTag({
       onOpenChange={onMenuOpenChange}
       placement="bottom"
       align="end"
-      className="w-72"
+      showArrow={false}
+      className="w-56"
       bodyPadding={menuView === "confirm"}
       header={
         menuView === "confirm" ? (
@@ -1663,20 +1664,12 @@ export function ChannelStatusTag({
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        className={cn("h-auto shrink-0 rounded-full p-0 disabled:opacity-100", className)}
+        className={cn("h-auto shrink-0 rounded-lyra-xs p-0 disabled:opacity-100", className)}
       >
         <Tag
           label={status}
           variant={TRANSCRIPT_SESSION_STATUS_VARIANT[status] ?? "neutral"}
-          shape="pill"
-          trailingIcon={
-            !disabled && (
-              <ChevronDown
-                className={cn("transition-transform", menuOpen && "rotate-180")}
-                strokeWidth={1.5}
-              />
-            )
-          }
+          trailingIcon={!disabled && <ChevronDown className="h-3 w-3" strokeWidth={1.5} />}
         />
       </Button>
     </Popover>
@@ -2187,7 +2180,7 @@ showViewDetails?: boolean;
           external panel instead of expanding content below, this is simply
           the bottom border of the collapsed row. */}
       <div className="border-b border-lyra-border-subtle">
-        <div className="flex flex-wrap items-center justify-between gap-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-2 pt-1">
           {/* Flat, left-aligned case info — no wrapping pill border/
               background and no flanking divider lines (per earlier design
               update matching the reference screenshot): plain inline
@@ -2860,6 +2853,7 @@ export function InteractionTranscript({
   contactOverview: contactOverviewIn,
   customerContextOverview: customerContextOverviewIn,
   hideAiActions = false,
+  reserveRightColumn,
   showCustomerContextProfile,
   showCustomerContextSnapshot,
   showCustomerContextNextBestAction,
@@ -3005,6 +2999,8 @@ export function InteractionTranscript({
   contactOverview?: ContactOverviewInfo;
   /** When true, only chat bubbles show: no autosummary/context overview, interstitials, approval summaries, events or wrap-up cards. */
   hideAiActions?: boolean;
+  /** On wide screens (xl), reserves 382px on the right of the message column (left-aligned) so a right-hand column can overlay that space; the session row still spans the full width. */
+  reserveRightColumn?: boolean;
   /**
    * When set, renders the newer `CustomerContextOverview` block (Customer
    * Profile / Customer Snapshot / Next Best Action — see that component's
@@ -4483,6 +4479,8 @@ export function InteractionTranscript({
                   // same width.
                   className={cn(
                     "w-full max-w-[768px] mx-auto px-6",
+                    // Centered in the space left of the right column (382px): width shrinks to fit, margin splits any extra room evenly.
+                    reserveRightColumn && "xl:mr-0 xl:w-[calc(100%_-_382px)] xl:ml-[max(0px,calc((100%_-_1150px)/2))]",
                     sessionContentDimmed && "opacity-50 transition-opacity",
                     session.id === lastSessionId && "pb-9"
                   )}
@@ -4801,7 +4799,7 @@ export function InteractionTranscript({
         </div>
       )}
       {!isAtBottom && channelType !== "voice" && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">
+        <div className={cn("pointer-events-none absolute inset-x-0 bottom-4 flex justify-center", reserveRightColumn && "xl:right-[382px]")}>
           <Button
             variant="outline"
             size="lg"
@@ -5049,6 +5047,11 @@ const EXTRA_COPILOT_SUGGESTIONS = [
 ];
 export const QUICK_REPLY_TRIGGER_CHAR = "/";
 export const QUICK_REPLY_TRIGGER_PATTERN = /\/(\w*)$/;
+/** Wraps children in a single-cell grid (so panes stack and keep the taller height), or renders them bare when `on` is false. */
+function MaybeGrid({ on, children }: { on: boolean; children: React.ReactNode }) {
+  return on ? <div className="grid">{children}</div> : <>{children}</>;
+}
+
 export function InteractionComposer({
   onSend,
   prefill,
@@ -5066,7 +5069,10 @@ export function InteractionComposer({
   hideAiActions,
   onHideAiActionsChange,
   copilotMount,
+  copilotSingleLineRounded,
 }: {
+  /** Uses AIInput's single-line, fully rounded variant for the Ask Copilot field. */
+  copilotSingleLineRounded?: boolean;
   /** "AI in panel": portal the Ask Copilot pane into this element (the Contact Details panel). Null/undefined → inline. */
   copilotMount?: HTMLElement | null;
   /** Shows a "Hide AI Actions" switch at the right of the mode toggle row. */
@@ -5392,10 +5398,12 @@ export function InteractionComposer({
                 setCopilotQuestion("");
               }}
               placeholder="Ask Copilot about this customer or conversation..."
+              singleLine={copilotSingleLineRounded}
+              rounded={copilotSingleLineRounded}
               helperText=""
               className={`w-full ${copilotDocked && copilotNarrow ? "order-2" : ""}`}
             />
-            <div className={`${copilotDocked ? "" : "mt-3"} ${copilotDocked && copilotNarrow ? "contents" : "flex items-start justify-between gap-3"}`}>
+            <div className={`${copilotDocked ? "" : copilotSuggestions?.length || (copilotOnly && onTakeover) ? "mt-3" : ""} ${copilotDocked && copilotNarrow ? "contents" : "flex items-start justify-between gap-3"}`}>
             {copilotSuggestions && copilotSuggestions.length > 0 ? (
               <div className={`flex flex-wrap items-center gap-2 ${copilotDocked && copilotNarrow ? "order-1" : ""}`}>
                 {(() => {
@@ -5556,9 +5564,9 @@ export function InteractionComposer({
         </div>
         )}
         {/* Both panes share one grid cell so the area keeps the taller (chat) height on either tab. */}
-        <div className="grid">
+        <MaybeGrid on={!copilotOnly}>
         {!copilotDocked && copilotPaneEl}
-        <div className={`col-start-1 row-start-1 ${composerTab === "chat" ? "" : "invisible pointer-events-none"}`} aria-hidden={composerTab !== "chat"}>
+        <div className={`col-start-1 row-start-1 ${copilotOnly ? "hidden" : composerTab === "chat" ? "" : "invisible pointer-events-none"}`} aria-hidden={composerTab !== "chat"}>
         <Textarea
           ref={textareaRef}
           placeholder="Type a message... or / for quick replies"
@@ -5612,7 +5620,7 @@ export function InteractionComposer({
           </div>
         </div>
         </div>
-        </div>
+        </MaybeGrid>
       </div>
     </div>
   );

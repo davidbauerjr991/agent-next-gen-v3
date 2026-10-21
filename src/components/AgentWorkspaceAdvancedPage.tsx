@@ -254,6 +254,7 @@ import {
   TOM_LEWIS_CALL_COPILOT_LINKS,
   buildTomLewisCallInteraction,
 } from "@/components/agent-next-gen-tom-lewis-void-call-scenario";
+import { RealTimeSummaryCard, JourneySummaryCard } from "@nicecxone/lyra-ui/agentic-cards";
 import {
   MAYA_CHEN_CALL_ID,
   MAYA_CHEN_CALL_LIVE_LINES,
@@ -319,6 +320,7 @@ type DetailPanelContent =
   | { kind: "order"; order: MarcusWebbOrderInfo }
   | { kind: "lucas"; panel: LucasThomasPanelKey }
   | { kind: "lucas-memory"; focus: LucasThomasMemoryFocus }
+  | { kind: "summaries" }
   | { kind: "lucas-instruction"; decision: string; text: string; time: string }
   | { kind: "marcus-copilot"; id: string; text: string; time: string }
   | { kind: "tom-call"; panel: TomLewisCallPanelKey }
@@ -344,7 +346,7 @@ import {
   Search,
   Bell,
   Pin,
-  IdCard,
+  ContactRound,
   PanelLeftClose,
   History,
   Maximize2,
@@ -363,6 +365,7 @@ import {
   ChevronUp,
   type LucideIcon,
   ArrowLeft,
+  Columns2,
 } from "lucide-react";
 
 /** Bare digits only — used to match a dialed/SMS'd phone number against
@@ -3678,6 +3681,20 @@ export function AgentWorkspaceAdvancedPage({
   // "switch interaction" call site that's fine with the normal "Details"
   // reset.
   const restoredCustomerPanelTabRef = useRef<typeof customerPanelActiveTab | null>(null);
+  // Height of the inline notices (SLA, closed, hold) above the session row, so the right-hand summary column starts below them.
+  const [noticeStackEl, setNoticeStackEl] = useState<HTMLDivElement | null>(null);
+  const [noticeStackHeight, setNoticeStackHeight] = useState(0);
+  useEffect(() => {
+    if (!noticeStackEl) {
+      setNoticeStackHeight(0);
+      return;
+    }
+    const update = () => setNoticeStackHeight(noticeStackEl.offsetHeight);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(noticeStackEl);
+    return () => observer.disconnect();
+  }, [noticeStackEl]);
   const pendingCustomerPanelTabRef = useRef<"Transcript" | null>(null);
   // The Marcus Webb action-log detail panel and the "Do Something"
   // knowledge-article panel used to be two SEPARATE floating
@@ -3719,6 +3736,7 @@ export function AgentWorkspaceAdvancedPage({
       case "order": return `order:${c.order.orderId}`;
       case "lucas": return `lucas:${c.panel}`;
       case "lucas-memory": return "lucas-memory";
+      case "summaries": return "summaries";
       case "lucas-instruction": return `lucas-instruction:${c.text}`;
       case "marcus-copilot": return `marcus-copilot:${c.id}`;
       case "tom-call": return `tom-call:${c.panel}`;
@@ -3734,6 +3752,7 @@ export function AgentWorkspaceAdvancedPage({
       case "order": return `Order ${c.order.orderId} · ${c.order.itemName}`;
       case "lucas": return LUCAS_THOMAS_PANEL_TITLES[c.panel].title;
       case "lucas-memory": return "Experience Memory";
+      case "summaries": return "Summaries";
       case "lucas-instruction": return c.text;
       case "marcus-copilot": return c.text;
       case "tom-call": return TOM_LEWIS_CALL_PANEL_TITLES[c.panel].title;
@@ -3747,7 +3766,7 @@ export function AgentWorkspaceAdvancedPage({
   useEffect(() => {
     if (!activeInteractionId || !selectedDetailPanelContent) return;
     // Experience Memory lives in the docked side panel, so it is never listed as an artifact.
-    if (selectedDetailPanelContent.kind === "lucas-memory") return;
+    if (selectedDetailPanelContent.kind === "lucas-memory" || selectedDetailPanelContent.kind === "summaries") return;
     const content = selectedDetailPanelContent;
     const id = detailPanelArtifactKey(content);
     setPanelArtifactsByInteraction((prev) => {
@@ -3816,6 +3835,60 @@ export function AgentWorkspaceAdvancedPage({
   // (same semantics `selectedActionLogEntryId`'s own doc comment already
   // established); clicking something else just swaps this one panel's
   // content, per the "like the home page" request above.
+  // Customer Info, Real-Time Summary and Journey Summary cards for Maya and Lucas: shown in the right column on wide
+  // screens and in the "summaries" slide-out when the column is hidden.
+  const renderSummaryCards = () => {
+    if (!activeInteraction) return null;
+    return (
+      <>
+                          {customerContextOverviewInfo && (
+                            <div className="w-full max-w-[350px]">
+                              {/* Customer Info only: no summary copy and no "View customer info" link. */}
+                              <CustomerContextOverview
+                                customerName={activeInteraction.customerName ?? (activeInteraction.id === LUCAS_THOMAS_ID ? "Lucas Thomas" : "Maya Chen")}
+                                customerCard={customerContextOverviewInfo.customerCard}
+                                showContactSnapshot={false}
+                                showNextBestAction={false}
+                                customerInfoWhiteHeader
+                              />
+                            </div>
+                          )}
+                          <div className="w-full max-w-[350px]">
+                            <RealTimeSummaryCard
+                              frame="Live"
+                              text={activeInteraction.id === LUCAS_THOMAS_ID ? customerContextOverviewInfo?.realTimeSummary ?? "" : MAYA_CHEN_CALL_OVERVIEW.realTimeSummary}
+                              subhead={activeInteraction.id === LUCAS_THOMAS_ID ? realTimeSummaryUpdatedLabel : "Updated 2:14 PM"}
+                            />
+                          </div>
+                          <div className="w-full max-w-[350px]">
+                            {activeInteraction.id === LUCAS_THOMAS_ID ? (
+                              <JourneySummaryCard
+                                summary="Lucas tried to buy the Aurora X2 launch edition at $189.00. Card checkout failed twice during payment incident INC-2207, and the pay-another-way link failed too. Checkout AI Agent is requesting an authorization exception."
+                                statusLabel="Active today"
+                                subhead="3 interactions · today"
+                                onViewMemory={() => openExperienceMemoryInSidePanel()}
+                                detail={[
+                                  { name: "Now · Chat", detail: "Checkout AI Agent requesting an exception" },
+                                  { name: "Earlier · Web", detail: "Pay-another-way link failed" },
+                                  { name: "Earlier · Web", detail: "Card declined twice on order NR-11056" },
+                                ]}
+                              />
+                            ) : (
+                            <JourneySummaryCard
+                              summary="First damage claim in 2 years. Maya's return failed in the app at 1:58 PM, she resubmitted it with a photo at 1:59 PM, and the refund review is at stage 3 of 5."
+                              statusLabel="Active today"
+                              subhead="3 interactions · today"
+                              detail={[
+                                { name: "2:14 PM · Voice", detail: "Calling for a refund on NR-10871" },
+                                { name: "1:59 PM · App", detail: "Return request submitted with a photo" },
+                                { name: "1:58 PM · App", detail: "Return failed in the app" },
+                              ]}
+                            />
+                            )}
+                          </div>
+                              </>
+    );
+  };
   const openDetailPanelContent = (next: DetailPanelContent) => {
     setSelectedDetailPanelContent((current) => {
       if (!current) return next;
@@ -3900,7 +3973,8 @@ export function AgentWorkspaceAdvancedPage({
         setCustomerPanelActiveTab(restoredCustomerPanelTabRef.current);
         restoredCustomerPanelTabRef.current = null;
       } else {
-        setCustomerPanelActiveTab("Details");
+        // Maya's right column already carries the summaries, so her docked panel opens straight on Customer Info.
+        setCustomerPanelActiveTab((activeInteractionId === MAYA_CHEN_CALL_ID || activeInteractionId === LUCAS_THOMAS_ID) ? "Customer Info" : "Details");
       }
       setSelectedVoiceDetailsSession(null);
       setCurrentVoiceSession(null);
@@ -4385,6 +4459,13 @@ export function AgentWorkspaceAdvancedPage({
   const [marcusMemoryFocus, setMarcusMemoryFocus] = useState<string>("refund-escalated");
   const [experienceMemoryFocus, setExperienceMemoryFocus] = useState<LucasThomasMemoryFocus>("card-declined");
   const openExperienceMemoryInSidePanel = (focus: LucasThomasMemoryFocus = "card-declined") => {
+    // Lucas's Experience Memory opens as a slide-out over the right column, not inside the docked Contact Details panel.
+    if (activeInteractionId === LUCAS_THOMAS_ID) {
+      clearTimeout(customerInfoPreviewTimer.current);
+      setCustomerInfoPreviewOpen(false);
+      openDetailPanelContent({ kind: "lucas-memory", focus });
+      return;
+    }
     setExperienceMemoryFocus(focus);
     setCustomerPanelActiveTab("Experience Memory");
     setSidePanelOpen(true);
@@ -4573,8 +4654,8 @@ export function AgentWorkspaceAdvancedPage({
     // into the new customer information side panel"): a closed-then-
     // reopened panel always lands back on "Details" (the accordions),
     // same as a freshly switched-to interaction — see
-    // `customerPanelActiveTab`'s own doc comment.
-    setCustomerPanelActiveTab("Details");
+    // `customerPanelActiveTab`'s own doc comment. Maya's panel lands on Customer Info instead.
+    setCustomerPanelActiveTab((activeInteractionId === MAYA_CHEN_CALL_ID || activeInteractionId === LUCAS_THOMAS_ID) ? "Customer Info" : "Details");
   };
 
   /* Per-assignment memory for the Customer Information panel's full-screen
@@ -7574,7 +7655,7 @@ export function AgentWorkspaceAdvancedPage({
   // Declared after the interaction-switch reset effects/handlers so it wins.
   useEffect(() => {
     if (aiInPanel && activeInteractionId) {
-      setCustomerPanelActiveTab("Details");
+      setCustomerPanelActiveTab((activeInteractionId === MAYA_CHEN_CALL_ID || activeInteractionId === LUCAS_THOMAS_ID) ? "Customer Info" : "Details");
       setSidePanelOpen(true);
     }
   }, [aiInPanel, activeInteractionId]);
@@ -10349,73 +10430,40 @@ export function AgentWorkspaceAdvancedPage({
                       // customer concept here; an agent's own status
                       // already has its own dedicated surface elsewhere
                       // (the status menu).
-                      icon={
-                        <span className="relative inline-flex">
-                          {/* Per explicit follow-up request ("avatars
-                              within the contact and call details should be
-                              the initials of the customer OR a customer
-                              avatar if no customer name is known", then
-                              "add a story to the avatar component ... use
-                              it in agent-next-gen-v3"): now built on
-                              lyra-ui's shared `Avatar` (avatar.tsx) instead
-                              of the hand-rolled `Icon`/purple-circle split
-                              this block used right after the first request
-                              — that hand-rolled version is exactly what
-                              `Avatar` generalizes (see its own doc
-                              comment). `color="active"` for an agent call
-                              (was `Icon background="active"`), `color=
-                              "primary"` (this app's purple "identified
-                              customer" chip, same as `VoiceCallControls`'s
-                              own) once a real match's name is known, else
-                              `color="shell"` with no `initials` — `Avatar`
-                              itself falls back to a generic `User` glyph
-                              whenever `initials` is omitted, so that
-                              branch no longer needs its own explicit
-                              `icon={User}`. `size="md"` matches this
-                              header's prior `Icon size="md"` exactly (both
-                              are the same 36px circle). */}
-                          {activeInteractionIsAgentCall ? (
-                            <Avatar icon={Headphones} color="active" size="md" />
-                          ) : activeInteractionIsRealCustomer && activeInteraction.customerName ? (
-                            <Avatar initials={initialsFor(activeInteraction.customerName)} color="primary" size="md" />
-                          ) : (
-                            <Avatar color="shell" size="md" />
-                          )}
-                          {!activeInteractionIsAgentCall && hasOpenChatThread && (
-                            // Per explicit request ("add a tooltip to the
-                            // user status badge"), wrapped in a real
-                            // `Tooltip` on hover — same "Online"/"Offline"
-                            // wording as this badge's own `aria-label`
-                            // just below (not "Available"/"Unavailable":
-                            // this is customer CHAT presence, a distinct
-                            // concept from the agent's own Available/
-                            // Unavailable status elsewhere in this app —
-                            // see `AgentStatus`, agent-profile.tsx). No
-                            // `asLabel`: the Badge already sets its own
-                            // `aria-label` below, so this stays purely a
-                            // visual hover affordance on top of that, not
-                            // a second/duplicate accessible name.
-                            <Tooltip
-                              content={activeInteraction.closed ? "Offline" : "Online"}
-                              placement="bottom"
-                            >
+                      // Large (44px) avatar with a plain presence dot, matching lyra-ui's
+                      // PageHeader agent story. Same avatar choices as before (agent call
+                      // glyph, customer initials, generic user) and the same Online/Offline
+                      // tooltip + aria-label; only the size and the dot's look changed (the
+                      // check/x glyph inside the badge is gone, the colour still tells
+                      // online (green) from offline (neutral)).
+                      icon={(() => {
+                        const presenceBadge =
+                          !activeInteractionIsAgentCall && hasOpenChatThread ? (
+                            <Tooltip content={activeInteraction.closed ? "Offline" : "Online"} placement="bottom">
                               <Badge
                                 shape="circle"
+                                dot
+                                bordered
+                                size="md"
                                 variant={activeInteraction.closed ? "neutral" : "success"}
-                                size="sm"
                                 aria-label={activeInteraction.closed ? "Offline" : "Online"}
-                                className="absolute bottom-[-2px] right-[-2px] px-0 border border-lyra-bg-surface-base"
-                              >
-                                {activeInteraction.closed ? (
-                                  <X className="h-2 w-2" strokeWidth={3} aria-hidden="true" />
-                                ) : (
-                                  <Check className="h-2 w-2" strokeWidth={3} aria-hidden="true" />
-                                )}
-                              </Badge>
+                              />
                             </Tooltip>
-                          )}
-                        </span>
-                      }
+                          ) : undefined;
+                        return activeInteractionIsAgentCall ? (
+                          <Avatar icon={Headphones} color="active" size="lg" />
+                        ) : activeInteractionIsRealCustomer && activeInteraction.customerName ? (
+                          <Avatar
+                            initials={initialsFor(activeInteraction.customerName)}
+                            color="primary"
+                            size="lg"
+                            badge={presenceBadge}
+                            badgePosition="bottom-right"
+                          />
+                        ) : (
+                          <Avatar color="shell" size="lg" badge={presenceBadge} badgePosition="bottom-right" />
+                        );
+                      })()}
                       iconDivider={false}
                       title={activeInteraction.customerName ?? "Customer"}
                       // Per explicit request ("a badge to the left of the
@@ -10569,7 +10617,7 @@ export function AgentWorkspaceAdvancedPage({
                       // panel-toggle button sit beside it as a sibling,
                       // rather than needing its own separate `actions` slot.
                       actions={
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5">
                         {/* "+" Add Channel trigger — per explicit follow-up
                             request ("move the + button outside of the
                             toggle group and hide the toggle group for
@@ -10585,13 +10633,13 @@ export function AgentWorkspaceAdvancedPage({
                             fallback) pair, unchanged. */}
                         {SHOW_ADD_CHANNEL_HEADER_BUTTONS && SHOW_ADD_CHANNEL_HEADER_BUTTON && (getHeaderAction(
                           activeInteraction.id,
-                          "ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed",
+                          "border-0 bg-transparent px-0 text-lyra-fg-default shadow-none hover:bg-lyra-state-hover hover:text-lyra-fg-default active:bg-lyra-state-pressed",
                           { label: "Add Channel", showLabel: false }
                         ) ?? (
                           <AddChannelAdHocButton
                             onLaunch={handleAddAdHocChannel}
                             skillOptions={OUTBOUND_CONFIG.skillOptions}
-                            className="ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed"
+                            className="border-0 bg-transparent px-0 text-lyra-fg-default shadow-none hover:bg-lyra-state-hover hover:text-lyra-fg-default active:bg-lyra-state-pressed"
                           />
                         ))}
                         {/* Per explicit request ("add an icon representing
@@ -10800,7 +10848,7 @@ export function AgentWorkspaceAdvancedPage({
                               >
                                 <Button
                                   variant="outline"
-                                  size="icon-sm"
+                                  size="icon-md"
                                   aria-pressed={isOpen}
                                   aria-label={
                                     isVoiceChannel
@@ -10808,8 +10856,8 @@ export function AgentWorkspaceAdvancedPage({
                                       : `${isOpen ? "Close" : "Open"} ${previewLabel} preview`
                                   }
                                   className={cn(
-                                    "ml-0.5 h-8 w-8 px-0 border border-lyra-border-soft bg-lyra-bg-control text-lyra-fg-action hover:bg-lyra-state-hover active:bg-lyra-state-pressed",
-                                    isOpen && PANEL_BUTTON_SELECTED_CLASS
+                                    isOpen &&
+                                      "border-lyra-border-active bg-lyra-bg-active-subtle text-lyra-fg-action hover:bg-lyra-bg-active-subtle"
                                   )}
                                   onClick={() => {
                                     if (isVoiceChannel) return;
@@ -10995,7 +11043,7 @@ export function AgentWorkspaceAdvancedPage({
                                   className="flex max-h-[70vh] w-[340px] flex-col overflow-hidden rounded-lyra-lg border border-lyra-border-soft bg-lyra-bg-surface-container-subtle shadow-lg"
                                 >
                                   <PanelHeader
-                                    title="Contact Details"
+                                    title={(activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID) ? customerInfoOverlayContent.headerTitle : "Contact Details"}
                                     // Per explicit follow-up request: same
                                     // clickable-name treatment the docked
                                     // panel's own header already has (see
@@ -11010,7 +11058,7 @@ export function AgentWorkspaceAdvancedPage({
                                     // no extra close handling is needed
                                     // here.
                                     subhead={
-                                      activeInteractionIsRealCustomer && activeInteraction.customerName ? (
+                                      (activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID) ? customerInfoOverlayContent.headerSubhead : activeInteractionIsRealCustomer && activeInteraction.customerName ? (
                                         <Tooltip content="View Customer Info" placement="bottom">
                                           <button
                                             type="button"
@@ -11025,7 +11073,7 @@ export function AgentWorkspaceAdvancedPage({
                                       )
                                     }
                                     tabs={
-                                      <TabList className="px-4">
+                                      (activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID) ? customerInfoOverlayContent.headerTabs : <TabList className="px-4">
                                         {(panelVoiceThread
                                           ? (["Details", "Transcript", "Session Details"] as const)
                                           : (["Details", "Session Details"] as const)
@@ -11050,7 +11098,9 @@ export function AgentWorkspaceAdvancedPage({
                                     }
                                   />
                                   <div className="flex-1 overflow-y-auto">
-                                    {customerPanelActiveTab === "Transcript" && panelVoiceThread ? (
+                                    {(activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID) ? (
+                                      customerInfoOverlayContent.body
+                                    ) : customerPanelActiveTab === "Transcript" && panelVoiceThread ? (
                                       <InteractionTranscript
  hideAiActions={hideAiActions}
                                         hideMockFollowUpMessages={activeInteraction.id === LUCAS_THOMAS_ID}
@@ -11135,6 +11185,7 @@ export function AgentWorkspaceAdvancedPage({
                                       />
                                     )}
                                   </div>
+                                  {(activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID) && customerInfoOverlayContent.footer}
                                 </div>
                               }
                             >
@@ -11178,11 +11229,28 @@ export function AgentWorkspaceAdvancedPage({
                                     : sidePanelToggleLabel ?? "Open Contact Details"
                                 }
                               >
-                                <IdCard className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                                <ContactRound className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                                 {recordHeaderWidth >= 768 && <span>Contact Details</span>}
                               </Button>
                             </Popover>
                           </div>
+                        )}
+                        {/* Below xl the right-hand summary column is hidden; this toggle slides the same cards out as a panel. */}
+                        {(activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID) && (
+                          <Button
+                            variant="outline"
+                            size="md"
+                            className={cn(
+                              "w-8 shrink-0 gap-0 px-0 xl:hidden",
+                              selectedDetailPanelContent?.kind === "summaries" && PANEL_BUTTON_SELECTED_CLASS
+                            )}
+                            aria-pressed={selectedDetailPanelContent?.kind === "summaries"}
+                            aria-label={selectedDetailPanelContent?.kind === "summaries" ? "Close summaries" : "Show summaries"}
+                            title="Summaries"
+                            onClick={() => openDetailPanelContent({ kind: "summaries" })}
+                          >
+                            <Columns2 className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                          </Button>
                         )}
                         </div>
                       }
@@ -11209,7 +11277,7 @@ export function AgentWorkspaceAdvancedPage({
                       `CUSTOMER_PANEL_TABS`), so this is unconditional
                       again.) */}
                   <div className="relative flex flex-1 overflow-hidden">
-                      <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+                      <div className="relative flex flex-1 flex-col min-w-0 overflow-hidden">
                         {isHistoryConversationView && historyConversationForActive ? (
                           /* Past-session conversation, opened as its own tab in
                              this record area (see the history `Tab` in the
@@ -11230,6 +11298,7 @@ export function AgentWorkspaceAdvancedPage({
                             `InteractionComposer` below and every channel's
                             kebab, both in this column and in the LeftNav
                             card/ChannelToggleGroup above). */}
+                        <div ref={setNoticeStackEl} className="shrink-0">
                         {activeInteraction.closed && (
                           <div className="shrink-0 px-6 pt-4">
                             <InlineNotification variant="info">
@@ -11301,6 +11370,7 @@ export function AgentWorkspaceAdvancedPage({
                             </InlineNotification>
                           </div>
                         )}
+                        </div>
                         <InteractionTranscript
  hideAiActions={hideAiActions}
                           hideMockFollowUpMessages={activeInteraction.id === LUCAS_THOMAS_ID}
@@ -11598,6 +11668,7 @@ export function AgentWorkspaceAdvancedPage({
                           isAiTyping={!!aiTyping[`${activeInteraction.id}:${activeChannelKey}`]}
                           onApprovalDecision={activeInteraction.id === LUCAS_THOMAS_ID ? handleLucasApprovalDecision : undefined}
                           onApprovalCallRequest={activeInteraction.id === LUCAS_THOMAS_ID ? handleLucasCallRequest : undefined}
+                          reserveRightColumn={(activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID)}
                           onWrapUpComplete={
                             activeInteraction.id === LUCAS_THOMAS_ID
                               ? () => {
@@ -11899,6 +11970,7 @@ export function AgentWorkspaceAdvancedPage({
                           activeInteraction.threadStatuses?.[activeChannelKey] !== "Closed" &&
                           !(activeInteraction.id === MARCUS_WEBB_ID && marcusWebbReviewing) &&
                           (
+                            <div className={activeInteraction.id === LUCAS_THOMAS_ID ? "xl:pr-[382px]" : undefined}>
                             <InteractionComposer
  copilotMount={aiInPanel ? copilotSlotEl : null}
                               hideAiActions={hideAiActions}
@@ -11906,9 +11978,11 @@ export function AgentWorkspaceAdvancedPage({
                               copilotOnly={activeInteraction.id === LUCAS_THOMAS_ID && lucasThomasReviewing}
                               onTakeover={activeInteraction.id === LUCAS_THOMAS_ID ? () => handleLucasTakeover() : undefined}
                               onSend={(text) => handleSendMessage(activeInteraction.id, text, activeChannelKey)}
+                              // Lucas matches Maya's footer: bare single-line rounded Copilot input, no suggestion chips.
+                              copilotSingleLineRounded={activeInteraction.id === LUCAS_THOMAS_ID}
                               copilotSuggestions={
                                 activeInteraction.id === LUCAS_THOMAS_ID
-                                  ? LUCAS_THOMAS_COPILOT_SUGGESTIONS
+                                  ? undefined
                                   : ["Summarize this conversation", "Suggest a reply", "What is the customer's history?"]
                               }
                               copilotSuggestionLinks={
@@ -11924,6 +11998,7 @@ export function AgentWorkspaceAdvancedPage({
                               }
                               onCopilotAsk={(text: string) => handleCopilotAsk(activeInteraction.id, activeChannelKey, text)}
                             />
+                            </div>
                           )}
                         {/* Per explicit request ("don't add the chat input
                             to the main container when a new chat is open -
@@ -11965,17 +12040,21 @@ export function AgentWorkspaceAdvancedPage({
                             than it needs. */}
                         {/* Cold call from Tom Lewis: just the Ask Copilot footer (no AI agent to take over from). */}
                         {isColdCallId(activeInteraction.id) && !(activeInteraction.id === TOM_LEWIS_CALL_ID && tomLewisCallRinging) && (
+                          <div className={activeInteraction.id === MAYA_CHEN_CALL_ID ? "xl:pr-[382px]" : undefined}>
                           <InteractionComposer
  copilotMount={aiInPanel ? copilotSlotEl : null}
                             copilotOnly
                             onSend={() => {}}
-                            copilotSuggestions={activeInteraction.id === MAYA_CHEN_CALL_ID ? MAYA_CHEN_CALL_COPILOT_SUGGESTIONS : TOM_LEWIS_CALL_COPILOT_SUGGESTIONS}
+                            // Maya's footer is the bare rounded input: no suggestion chips.
+                            copilotSuggestions={activeInteraction.id === MAYA_CHEN_CALL_ID ? undefined : TOM_LEWIS_CALL_COPILOT_SUGGESTIONS}
                             copilotSuggestionLinks={activeInteraction.id === MAYA_CHEN_CALL_ID ? MAYA_CHEN_CALL_COPILOT_LINKS : TOM_LEWIS_CALL_COPILOT_LINKS}
                             onCopilotSuggestionLink={(key: string) =>
                               openDetailPanelContent({ kind: "tom-call", panel: key as TomLewisCallPanelKey })
                             }
                             onCopilotAsk={(text: string) => handleCopilotAsk(activeInteraction.id, "voice", text)}
+                            copilotSingleLineRounded={activeInteraction.id === MAYA_CHEN_CALL_ID}
                           />
+                          </div>
                         )}
                         {activeInteraction.id === MARCUS_WEBB_ID && (
                           // Stays after takeover (Ask Copilot only — a voice call has no chat input); the Takeover Call button only while reviewing.
@@ -12007,6 +12086,17 @@ export function AgentWorkspaceAdvancedPage({
                         )}
                         </>
                         )}
+                      {/* Maya's call: Real-Time Summary and Journey Summary cards in a right-hand column under the session row. */}
+                      {(activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID) && (
+                        <aside
+                          aria-label="AI summaries"
+                          // Overlays the right edge of the conversation column, starting below the session row so the session row spans the full width.
+                          style={{ top: 39 + noticeStackHeight }}
+                          className="absolute bottom-0 right-0 hidden w-[382px] flex-col gap-4 overflow-y-auto px-4 pb-4 xl:flex"
+                        >
+                          {renderSummaryCards()}
+                        </aside>
+                      )}
                       </div>
                       {/* The separate voice/non-voice "Session Details"
                           `InteriorPanel` overlay that used to render here
@@ -12837,7 +12927,9 @@ export function AgentWorkspaceAdvancedPage({
                         <ArrowLeft className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
                       </button>
                     ) : !channelPreviewThread && customerPanelActiveTab === "Customer Info"
-                      ? customerInfoOverlayContent.headerIcon
+                      ? (activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID)
+                        ? undefined
+                        : customerInfoOverlayContent.headerIcon
                       : undefined
                   }
                   headerSubheadOverride={
@@ -13151,8 +13243,13 @@ export function AgentWorkspaceAdvancedPage({
               <InContactInteriorPanel
                 open={!!selectedDetailPanelContent}
                 onClose={() => setSelectedDetailPanelContent(null)}
+                // Maya's call: open at the right column's width so the panel slides over those cards.
+                width={(activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID) ? 382 : undefined}
+                minWidth={(activeInteraction.id === MAYA_CHEN_CALL_ID || activeInteraction.id === LUCAS_THOMAS_ID) ? 382 : undefined}
                 headerTitle={
-                  lastDetailPanelContent?.kind === "action-log"
+                  lastDetailPanelContent?.kind === "summaries"
+                    ? "Summaries"
+                    : lastDetailPanelContent?.kind === "action-log"
                     ? lastDetailPanelContent.entry.title
                     : lastDetailPanelContent?.kind === "article"
                       ? lastDetailPanelContent.article.title
@@ -13175,7 +13272,9 @@ export function AgentWorkspaceAdvancedPage({
                             : undefined
                 }
                 headerSubhead={
-                  lastDetailPanelContent?.kind === "action-log"
+                  lastDetailPanelContent?.kind === "summaries"
+                    ? activeInteraction.customerName
+                    : lastDetailPanelContent?.kind === "action-log"
                     ? lastDetailPanelContent.entry.timestamp
                     : lastDetailPanelContent?.kind === "transactions"
                       ? lastDetailPanelContent.timestamp
@@ -13229,6 +13328,9 @@ export function AgentWorkspaceAdvancedPage({
                   />
                 )}
                 {lastDetailPanelContent?.kind === "tom-call" && <TomLewisCallPanelBody panel={lastDetailPanelContent.panel} />}
+                {lastDetailPanelContent?.kind === "summaries" && (
+                  <div className="flex flex-col gap-4 p-4">{renderSummaryCards()}</div>
+                )}
                 {lastDetailPanelContent?.kind === "marcus-copilot" && (
                   <MarcusWebbCopilotPanelBody text={lastDetailPanelContent.text} time={lastDetailPanelContent.time} />
                 )}
@@ -13237,6 +13339,9 @@ export function AgentWorkspaceAdvancedPage({
                     decision={lastDetailPanelContent.decision}
                     text={lastDetailPanelContent.text}
                     time={lastDetailPanelContent.time}
+                    customer={
+                      activeInteraction?.id === MAYA_CHEN_CALL_ID ? "maya" : activeInteraction?.id === TOM_LEWIS_CALL_ID ? "tom" : "lucas"
+                    }
                   />
                 )}
                 {lastDetailPanelContent?.kind === "lucas-order" && (
