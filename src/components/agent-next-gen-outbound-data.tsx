@@ -515,8 +515,11 @@ export const OUTBOUND_CONFIG: CreateNewOutboundConfig = {
     // `WhatsAppChannelRow`/`CHANNEL_TYPE_META.whatsapp` already used
     // everywhere else (the LeftNav's own channel chips, the record-header
     // tabs) for the exact same channel.
-    { id: "whatsapp", label: "WhatsApp",                       icon: <WhatsAppIcon className="h-5 w-5" /> },
+    // `addressKind: "phone"`: WhatsApp is addressed by phone number, so its detail form reads "Select Phone" with the typed number.
+    { id: "whatsapp", label: "WhatsApp",                       icon: <WhatsAppIcon className="h-5 w-5" />, addressKind: "phone" },
   ],
+  // A typed phone number offers Voice, SMS and WhatsApp through "Continue with"; a typed email offers Email.
+  adHocChannels: { phone: ["voice", "sms", "whatsapp"], email: ["email"] },
   phoneOptions: [
     { value: "+14563833329", label: "(456) 383-3329" },
     { value: "+14565559981", label: "(456) 555-9981" },

@@ -677,7 +677,8 @@ function buildOpenChannelTagger(interactions: Interaction[]) {
     if (!openChannelTypes || openChannelTypes.size === 0) return contact;
     return {
       ...contact,
-      ...(openChannelAddresses && Object.keys(openChannelAddresses).length > 0 ? { openChannelAddresses } : {}),
+      // Addresses already in use stay listed in the detail field, disabled with a reason, instead of being dropped.
+      ...(openChannelAddresses && Object.keys(openChannelAddresses).length > 0 ? { openChannelAddresses, openAddressReason: "Already open" } : {}),
       openChannelTypes: [...openChannelTypes],
     };
   };
